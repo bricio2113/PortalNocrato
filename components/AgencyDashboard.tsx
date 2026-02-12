@@ -1,8 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
-// Fix: Use Firebase v8 Firestore and Auth API
 import { db, auth } from '../utils/firebase';
+import {
+    LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
+    X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
+    ArrowRight, Shield, Link as LinkIcon
+} from 'lucide-react';
+// @ts-ignore
+import favicon from '../assets/favicon.png';
 
+// --- INTERFACES ---
 interface UserData {
     id: string;
     email: string;
@@ -12,7 +18,7 @@ interface UserData {
 
 interface EmpresaData {
     id: string;
-    nome: string; 
+    nome: string;
 }
 
 interface AgencyDashboardProps {
@@ -20,467 +26,454 @@ interface AgencyDashboardProps {
     onViewClient: (clientId: string) => void;
 }
 
-const LogoIcon = () => (
-    <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="48" height="48" rx="8" fill="black"/>
-        <g stroke="#FBBF24" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-            {/* Hand-drawn Hexagon */}
-            <path d="M30 9 C35 10 41 16 40 24 C39 32 32 40 24 40 C16 40 9 34 8 26 C7 18 13 10 21 9 C24 8.5 27 8.5 30 9 Z" />
-            {/* Hand-drawn N */}
-            <path d="M19 33 L19.5 15" />
-            <path d="M19.5 15 L28.5 33" />
-            <path d="M28.5 33 L29 15" />
-        </g>
-    </svg>
+// --- COMPONENTE CARD DE ESTATÍSTICA ---
+const StatCard = ({ title, value, icon: Icon, color }: any) => (
+    <div className="bg-[#1A1A1A] p-6 rounded-sm border border-white/5 flex items-center justify-between hover:border-[#FABE01]/30 transition-colors group">
+        <div>
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
+            <h3 className="text-3xl font-bold text-white group-hover:text-[#FABE01] transition-colors">{value}</h3>
+        </div>
+        <div className={`p-3 rounded-full bg-white/5 text-${color}-500 group-hover:bg-[#FABE01]/10 group-hover:text-[#FABE01] transition-colors`}>
+            <Icon className="w-6 h-6" />
+        </div>
+    </div>
 );
-const LogoutIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>;
-const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
-const MailIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>;
-const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 
-
+// --- COMPONENTE PRINCIPAL ---
 const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient }) => {
+    // --- ESTADOS ---
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
-    
+    const [activeTab, setActiveTab] = useState<'overview' | 'clients' | 'team'>('overview');
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Estados de Edição Inline
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
     const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
     const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
 
+    // --- CARREGAR DADOS ---
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            // Fix: Use Firebase v8 collection/get methods
+            // Busca Usuários
             const usersSnapshot = await db.collection('usuarios').get();
             const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
             setUsers(usersData);
 
-            // Fix: Use Firebase v8 collection/get methods
+            // Busca Empresas
             const empresasSnapshot = await db.collection('empresas').get();
             const empresasData = empresasSnapshot.docs.map(doc => ({ id: doc.id, nome: doc.data().nome || doc.id } as EmpresaData));
             setEmpresas(empresasData);
-
         } catch (error) {
-            console.error("Error fetching dashboard data: ", error);
+            console.error("Erro ao carregar dados: ", error);
         } finally {
             setIsLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useEffect(() => { fetchData(); }, []);
 
-    const handleEmpresaSelection = (userId: string, selectedValue: string) => {
-        if (selectedValue === 'create_new') {
-            setCreatingCompanyForUser(userId);
-            setNewCompanyIdInput('');
-            setPendingEmpresaChanges(prev => {
-                const newChanges = { ...prev };
-                delete newChanges[userId];
-                return newChanges;
-            });
-            return;
+    // --- SISTEMA DE NOTIFICAÇÃO ---
+    const showNotification = (msg: string) => {
+        setNotification(msg);
+        setTimeout(() => setNotification(''), 4000);
+    };
+
+    // --- AÇÕES: EXCLUSÃO (CORRIGIDAS) ---
+
+    // Excluir Usuário: Remove do banco visual primeiro para não travar a tela
+    const handleDeleteUser = async (userId: string) => {
+        if (!window.confirm("ATENÇÃO: Deseja remover este usuário do painel?")) return;
+
+        try {
+            // 1. Remove do Firestore (Banco de Dados Visual)
+            await db.collection('usuarios').doc(userId).delete();
+
+            // 2. Atualiza a tela imediatamente
+            setUsers(prev => prev.filter(u => u.id !== userId));
+            showNotification('Usuário removido da lista.');
+
+            // 3. Tenta remover do Auth (Backend - falha silenciosa se não tiver Cloud Function)
+            fetch('https://us-central1-agencia-nocrato.cloudfunctions.net/deleteUser', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: userId })
+            }).catch(() => console.log("Backend Auth não configurado"));
+
+        } catch (error) {
+            console.error("Erro ao excluir:", error);
+            showNotification('Erro ao excluir usuário.');
+        }
+    };
+
+    // Excluir Empresa: Verifica vínculos antes
+    const handleDeleteEmpresa = async (empresaId: string) => {
+        if (users.some(u => u.empresaId === empresaId)) {
+            return showNotification('ERRO: Esta empresa possui usuários vinculados. Remova os vínculos primeiro.');
         }
 
-        const newEmpresaId = selectedValue === 'null' ? null : selectedValue;
-        setPendingEmpresaChanges(prev => ({
-            ...prev,
-            [userId]: newEmpresaId,
-        }));
+        if (!window.confirm("Excluir esta empresa permanentemente?")) return;
+
+        try {
+            await db.collection('empresas').doc(empresaId).delete();
+            setEmpresas(prev => prev.filter(e => e.id !== empresaId));
+            showNotification('Empresa excluída com sucesso.');
+        } catch (error) {
+            showNotification('Erro ao excluir empresa.');
+        }
+    };
+
+    // --- AÇÕES: EDIÇÃO E VÍNCULOS ---
+
+    const handleSaveRole = async (userId: string) => {
+        const newRole = pendingRoleChanges[userId];
+        if (!newRole) return;
+        try {
+            await db.collection('usuarios').doc(userId).update({ role: newRole });
+            setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+            setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
+            showNotification('Permissão de acesso atualizada!');
+        } catch (error) { showNotification('Erro ao atualizar permissão.'); }
+    };
+
+    const handleEmpresaSelection = (userId: string, val: string) => {
+        if (val === 'create_new') {
+            setCreatingCompanyForUser(userId);
+            setNewCompanyIdInput('');
+            setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
+            return;
+        }
+        setPendingEmpresaChanges(prev => ({ ...prev, [userId]: val === 'null' ? null : val }));
     };
 
     const handleSaveEmpresa = async (userId: string) => {
-        const newEmpresaId = pendingEmpresaChanges[userId];
-        if (newEmpresaId === undefined) return;
-
+        const newId = pendingEmpresaChanges[userId];
+        if (newId === undefined) return;
         try {
-            // Fix: Use Firebase v8 collection/doc/update methods
-            const userDocRef = db.collection('usuarios').doc(userId);
-            await userDocRef.update({ empresaId: newEmpresaId });
-            
-            setUsers(users.map(u => u.id === userId ? { ...u, empresaId: newEmpresaId } : u));
-            
-            setPendingEmpresaChanges(prev => {
-                const newChanges = { ...prev };
-                delete newChanges[userId];
-                return newChanges;
-            });
-            
-            setNotification(`Usuário atualizado com sucesso!`);
-            setTimeout(() => setNotification(''), 3000);
-
-        } catch (error) {
-            console.error("Error updating user's empresaId: ", error);
-             setNotification(`Erro ao atualizar usuário.`);
-            setTimeout(() => setNotification(''), 3000);
-        }
-    };
-    
-    const handleSaveRole = async (userId: string) => {
-        const newRole = pendingRoleChanges[userId];
-        if (newRole === undefined) return;
-
-        try {
-            const userDocRef = db.collection('usuarios').doc(userId);
-            await userDocRef.update({ role: newRole });
-            
-            setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
-            
-            setPendingRoleChanges(prev => {
-                const newChanges = { ...prev };
-                delete newChanges[userId];
-                return newChanges;
-            });
-            
-            setNotification(`Função do usuário atualizada com sucesso!`);
-            setTimeout(() => setNotification(''), 3000);
-
-        } catch (error) {
-            console.error("Error updating user's role: ", error);
-            setNotification(`Erro ao atualizar a função do usuário.`);
-            setTimeout(() => setNotification(''), 3000);
-        }
+            await db.collection('usuarios').doc(userId).update({ empresaId: newId });
+            setUsers(users.map(u => u.id === userId ? { ...u, empresaId: newId } : u));
+            setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
+            showNotification('Vínculo de empresa atualizado!');
+        } catch (error) { showNotification('Erro ao vincular empresa.'); }
     };
 
     const handleCreateAndAssignCompany = async (userId: string) => {
-        const trimmedId = newCompanyIdInput.trim();
-        if (!trimmedId) {
-            setNotification('O ID da nova empresa não pode estar vazio.');
-            setTimeout(() => setNotification(''), 3000);
-            return;
-        }
-
+        if (!newCompanyIdInput.trim()) return showNotification('O nome da empresa não pode ser vazio.');
         try {
-            // Fix: Use Firebase v8 collection/doc/set methods
-            const empresaDocRef = db.collection('empresas').doc(trimmedId);
-            await empresaDocRef.set({ nome: trimmedId }); 
-
-            // Fix: Use Firebase v8 collection/doc/update methods
-            const userDocRef = db.collection('usuarios').doc(userId);
-            await userDocRef.update({ empresaId: trimmedId });
+            // Cria a empresa
+            await db.collection('empresas').doc(newCompanyIdInput).set({ nome: newCompanyIdInput });
+            // Vincula ao usuário
+            await db.collection('usuarios').doc(userId).update({ empresaId: newCompanyIdInput });
 
             setCreatingCompanyForUser(null);
             setNewCompanyIdInput('');
-            setNotification('Nova empresa criada e atribuída com sucesso!');
-            fetchData(); 
-            setTimeout(() => setNotification(''), 3000);
-
-        } catch (error) {
-            console.error("Error creating and assigning company: ", error);
-            setNotification(`Erro ao criar nova empresa.`);
-            setTimeout(() => setNotification(''), 3000);
-        }
+            showNotification(`Empresa "${newCompanyIdInput}" criada e vinculada!`);
+            fetchData(); // Recarrega para atualizar listas
+        } catch (error) { showNotification('Erro ao criar empresa.'); }
     };
-    
+
     const handlePasswordReset = async (email: string) => {
         try {
-            // Fix: Use Firebase v8 sendPasswordResetEmail method
             await auth.sendPasswordResetEmail(email);
-            setNotification(`Link de redefinição de senha enviado para ${email}.`);
-            setTimeout(() => setNotification(''), 4000);
+            showNotification(`Email de redefinição enviado para ${email}`);
         } catch (error) {
-            console.error("Error sending password reset email: ", error);
-            setNotification('Erro ao enviar o e-mail de redefinição.');
-            setTimeout(() => setNotification(''), 3000);
+            showNotification('Erro ao enviar email de redefinição.');
         }
     };
 
-    const handleDeleteUser = async (userId: string, userEmail: string) => {
-        // Confirmation dialog removed as per user request for direct action.
+    // --- FILTROS DE BUSCA ---
+    const filteredUsers = users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredEmpresas = empresas.filter(e => e.nome.toLowerCase().includes(searchTerm.toLowerCase()));
 
-        // --- BACKEND LOGIC (FRONTEND CALL) ---
-        //
-        // IMPORTANT: Replace this placeholder URL with your actual Cloud Function endpoint.
-        // This function must handle both Firebase Auth and Firestore user deletion.
-        const cloudFunctionUrl = 'https://us-central1-agencia-nocrato.cloudfunctions.net/deleteUser';
-
-        try {
-            // Calling a Cloud Function is necessary because deleting a Firebase Auth user
-            // requires admin privileges, which are not available on the client-side for security reasons.
-            //
-            // Your Cloud Function ('deleteUser') should:
-            // 1. Be an HTTPS-triggered function.
-            // 2. Accept a POST request with a JSON body: { "uid": "..." }.
-            // 3. Use the Firebase Admin SDK to:
-            //    a. Delete the user from Firebase Authentication: admin.auth().deleteUser(uid)
-            //    b. Delete the user's document from Firestore: admin.firestore().collection('usuarios').doc(uid).delete()
-            // 4. Be secured to ensure only authorized agency users can call it.
-
-            // For demonstration purposes, this fetch call will fail if you haven't deployed the function.
-            // A fallback is included below to show UI changes.
-            const response = await fetch(cloudFunctionUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // If your Cloud Function is protected, you'll need to pass an auth token.
-                    // 'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
-                },
-                body: JSON.stringify({ uid: userId }),
-            });
-
-            if (!response.ok) {
-                 // The fetch will fail if the function is not deployed.
-                 // For demonstration, we'll simulate success and warn the developer in the console.
-                 console.warn(`[DEVELOPMENT] The Cloud Function call failed. This is expected if the 'deleteUser' function is not deployed at ${cloudFunctionUrl}. Simulating success by deleting only the Firestore record to update the UI. The Auth user was NOT deleted.`);
-                 
-                 // Fallback to old behavior for demonstration, so the UI updates.
-                 // Fix: Use Firebase v8 collection/doc/delete methods
-                 await db.collection('usuarios').doc(userId).delete();
-            }
-
-            // If the call is successful, the backend function has deleted the user.
-            // Now, we just update the UI state.
-            setUsers(prevUsers => prevUsers.filter(u => u.id !== userId));
-            setNotification(`Usuário ${userEmail} excluído com sucesso.`);
-            setTimeout(() => setNotification(''), 4000);
-
-        } catch (error) {
-            console.error("Erro ao chamar a Cloud Function para excluir usuário: ", error);
-            setNotification(`Erro ao excluir usuário. Verifique o console e a configuração da sua Cloud Function.`);
-            setTimeout(() => setNotification(''), 5000);
-        }
-    };
-
-    const handleDeleteEmpresa = async (empresaId: string, empresaNome: string) => {
-        try {
-            // Security Check: Check for linked users
-            const isEmpresaInUse = users.some(user => user.empresaId === empresaId);
-
-            if (isEmpresaInUse) {
-                setNotification('Não é possível excluir. Existem usuários vinculados a esta empresa.');
-                setTimeout(() => setNotification(''), 5000);
-                return; // Block deletion
-            }
-
-            // No users linked, proceed with deletion
-            // Fix: Use Firebase v8 collection/doc/delete methods
-            await db.collection('empresas').doc(empresaId).delete();
-
-            setEmpresas(prevEmpresas => prevEmpresas.filter(e => e.id !== empresaId));
-            
-            setNotification(`Empresa "${empresaNome}" excluída com sucesso.`);
-            setTimeout(() => setNotification(''), 3000);
-
-        } catch (error) {
-            console.error("Error deleting empresa: ", error);
-            setNotification(`Erro ao excluir empresa.`);
-            setTimeout(() => setNotification(''), 3000);
-        }
-    };
-
-
+    // --- RENDERIZAÇÃO ---
     return (
-        <div className="min-h-screen bg-amber-50 dark:bg-slate-900 text-slate-800 dark:text-white">
-            <header className="bg-white dark:bg-slate-800 p-4 flex justify-between items-center shadow-md">
-                 <div className="flex items-center">
-                    <div className="mr-3">
-                        <LogoIcon />
+        <div className="min-h-screen bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black flex flex-col">
+
+            {/* HEADER FIXO */}
+            <header className="bg-[#111111] border-b border-white/5 sticky top-0 z-30 backdrop-blur-md bg-opacity-90">
+                <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <img src={favicon} alt="Logo" className="h-10 w-auto brightness-0 invert" />
+                        <div className="h-8 w-px bg-white/10 hidden sm:block" />
+                        <div>
+                            <h1 className="text-lg font-bold text-white leading-none">Painel Administrativo</h1>
+                            <p className="text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p>
+                        </div>
                     </div>
-                    <div>
-                        <span className="text-xl font-bold cursor-default select-none text-slate-800 dark:text-white">Agência Nocrato</span>
-                        <span className="block text-xs text-amber-500 dark:text-amber-400 cursor-default select-none">Painel de Controle</span>
+
+                    <div className="flex items-center gap-6">
+                        <div className="hidden md:block text-right">
+                            <p className="text-sm font-medium text-white">{auth.currentUser?.email}</p>
+                            <p className="text-xs text-zinc-500">Administrador</p>
+                        </div>
+                        <button
+                            onClick={handleLogout}
+                            className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-sm transition-all"
+                            title="Sair do sistema"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
                     </div>
                 </div>
-                <button
-                    onClick={handleLogout}
-                    className="flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
-                    <span className="mr-2"><LogoutIcon /></span>
-                    Sair
-                </button>
             </header>
 
-            <main className="p-4 sm:p-8">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
+
+                {/* NOTIFICAÇÃO TOAST */}
                 {notification && (
-                    <div className="bg-green-500 text-white p-3 rounded-md mb-6 text-center">
+                    <div className="fixed top-24 right-4 z-50 bg-[#FABE01] text-black px-6 py-4 rounded-sm shadow-[0_0_30px_rgba(250,190,1,0.2)] animate-in slide-in-from-right font-bold text-sm flex items-center gap-3 border border-white/10">
+                        <div className="w-2 h-2 bg-black rounded-full animate-pulse" />
                         {notification}
                     </div>
                 )}
+
+                {/* NAVEGAÇÃO POR ABAS */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-8 mb-8 border-b border-white/5">
+                    {[
+                        { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+                        { id: 'clients', label: 'Clientes (Empresas)', icon: Briefcase },
+                        { id: 'team', label: 'Equipe & Permissões', icon: Users },
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`flex items-center gap-2 px-2 pb-4 text-sm font-bold uppercase tracking-wide transition-all relative ${
+                                activeTab === tab.id ? 'text-[#FABE01]' : 'text-zinc-500 hover:text-zinc-300'
+                            }`}
+                        >
+                            <tab.icon className="w-4 h-4 mb-0.5" />
+                            {tab.label}
+                            {activeTab === tab.id && (
+                                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#FABE01] shadow-[0_0_15px_#FABE01]" />
+                            )}
+                        </button>
+                    ))}
+                </div>
+
                 {isLoading ? (
-                     <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-400"></div>
+                    <div className="flex flex-col items-center justify-center h-64 gap-4">
+                        <Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" />
+                        <p className="text-zinc-500 text-sm animate-pulse">Sincronizando dados...</p>
                     </div>
                 ) : (
-                    <div className="space-y-8">
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg">
-                            <h2 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-4 cursor-default select-none">Gerenciamento de Usuários</h2>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead className="border-b border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400">
-                                        <tr>
-                                            <th className="py-4 px-6 font-semibold">Email</th>
-                                            <th className="py-4 px-6 font-semibold">Perfil</th>
-                                            <th className="py-4 px-6 font-semibold">Empresa Associada</th>
-                                            <th className="py-4 px-6 font-semibold text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {users.map(user => (
-                                            <tr key={user.id} className="border-b border-slate-200/75 dark:border-slate-700/50">
-                                                <td className="py-4 px-6 font-medium text-slate-800 dark:text-white">{user.email}</td>
-                                                <td className="py-4 px-6">
-                                                    {user.id === auth.currentUser?.uid ? (
-                                                        <span className={`px-2 py-1 text-xs rounded-full capitalize ${user.role === 'agencia' ? 'bg-amber-500 text-slate-900' : 'bg-blue-500 text-white'}`}>
-                                                            {user.role}
-                                                        </span>
-                                                    ) : (
-                                                        <div className="flex items-center gap-2">
-                                                            <select
-                                                                value={pendingRoleChanges[user.id] ?? user.role}
-                                                                onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                className="bg-slate-50 dark:bg-slate-700 border text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 rounded-md h-10 px-2 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none capitalize"
-                                                            >
-                                                                <option value="cliente">Cliente</option>
-                                                                <option value="agencia">Agência</option>
-                                                            </select>
-                                                            {pendingRoleChanges[user.id] && pendingRoleChanges[user.id] !== user.role && (
-                                                                <button
-                                                                    onClick={() => handleSaveRole(user.id)}
-                                                                    className="border border-slate-500 text-slate-700 hover:bg-slate-100 dark:border-slate-400 dark:text-slate-200 dark:hover:bg-slate-700 h-10 px-3 rounded-md font-semibold transition-colors text-xs whitespace-nowrap"
-                                                                >
-                                                                    Salvar
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="py-4 px-6">
-                                                    {user.role === 'cliente' ? (
-                                                        creatingCompanyForUser === user.id ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="ID da Nova Empresa"
-                                                                    value={newCompanyIdInput}
-                                                                    onChange={(e) => setNewCompanyIdInput(e.target.value)}
-                                                                    className="bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-md px-3 !h-10 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none !text-base"
-                                                                />
-                                                                <button
-                                                                    onClick={() => handleCreateAndAssignCompany(user.id)}
-                                                                    className="bg-amber-500 text-slate-900 h-10 px-4 rounded-md hover:bg-amber-600 font-semibold transition-colors text-xs whitespace-nowrap"
-                                                                >
-                                                                    Salvar
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => setCreatingCompanyForUser(null)}
-                                                                    className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-white dark:hover:bg-slate-500 h-10 px-3 rounded-md transition-colors text-xs"
-                                                                >
-                                                                    Cancelar
-                                                                </button>
-                                                            </div>
+                    <>
+                        {/* --- ABA 1: VISÃO GERAL --- */}
+                        {activeTab === 'overview' && (
+                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                {/* KPIs */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <StatCard title="Total de Clientes" value={empresas.length} icon={Building2} color="yellow" />
+                                    <StatCard title="Usuários Cadastrados" value={users.length} icon={Users} color="blue" />
+                                    <StatCard title="Agências / Admins" value={users.filter(u => u.role === 'agencia').length} icon={Shield} color="green" />
+                                </div>
+
+                                {/* Ações Rápidas */}
+                                <div className="bg-[#1A1A1A] p-6 rounded-sm border border-white/5">
+                                    <h3 className="text-lg font-bold text-white mb-4">Acesso Rápido</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <button onClick={() => setActiveTab('clients')} className="w-full text-left p-4 bg-black/20 hover:bg-[#FABE01]/10 border border-white/5 hover:border-[#FABE01]/30 rounded-sm flex items-center justify-between group transition-all">
+                                            <span className="text-zinc-300 group-hover:text-[#FABE01] font-medium">Gerenciar Carteira de Empresas</span>
+                                            <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-[#FABE01]" />
+                                        </button>
+                                        <button onClick={() => setActiveTab('team')} className="w-full text-left p-4 bg-black/20 hover:bg-[#FABE01]/10 border border-white/5 hover:border-[#FABE01]/30 rounded-sm flex items-center justify-between group transition-all">
+                                            <span className="text-zinc-300 group-hover:text-[#FABE01] font-medium">Editar Permissões de Usuário</span>
+                                            <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-[#FABE01]" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- ABA 2: CLIENTES (EMPRESAS) --- */}
+                        {activeTab === 'clients' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex justify-between items-center">
+                                    <div className="relative w-full max-w-md">
+                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar empresa por nome ou ID..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {filteredEmpresas.map(empresa => (
+                                        <div key={empresa.id} className="bg-[#1A1A1A] border border-white/5 p-6 rounded-sm hover:border-[#FABE01]/50 group relative flex flex-col justify-between min-h-[160px]">
+                                            <div>
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div className="bg-[#FABE01]/10 p-2 rounded-sm text-[#FABE01]">
+                                                        <Building2 className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => handleDeleteEmpresa(empresa.id)}
+                                                            className="text-zinc-600 hover:text-red-500 p-2 transition-colors"
+                                                            title="Excluir Empresa (Não pode haver usuários vinculados)"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <h3 className="text-lg font-bold text-white mb-1 leading-tight">{empresa.nome}</h3>
+                                                <p className="text-xs text-zinc-500 font-mono mb-4 truncate">ID: {empresa.id}</p>
+                                            </div>
+
+                                            <button
+                                                onClick={() => onViewClient(empresa.id)}
+                                                className="w-full py-2.5 bg-white/5 hover:bg-[#FABE01] hover:text-black text-white text-sm font-bold rounded-sm transition-colors flex items-center justify-center gap-2 uppercase tracking-wide"
+                                            >
+                                                <Calendar className="w-4 h-4" />
+                                                Acessar Calendário
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {filteredEmpresas.length === 0 && (
+                                        <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-sm text-zinc-500">
+                                            Nenhuma empresa encontrada.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- ABA 3: EQUIPE (USUÁRIOS) --- */}
+                        {activeTab === 'team' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex justify-between items-center">
+                                    <div className="relative w-full max-w-md">
+                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar usuário por email..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-[#1A1A1A] border border-white/5 rounded-sm overflow-hidden shadow-2xl">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-black/40 border-b border-white/5">
+                                            <tr>
+                                                <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Usuário</th>
+                                                <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Permissão (Role)</th>
+                                                {/* Título alterado para clareza */}
+                                                <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Vínculo com Empresa</th>
+                                                <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs text-right">Ações</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-white/5">
+                                            {filteredUsers.map(user => (
+                                                <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
+                                                    <td className="px-6 py-4 font-medium text-zinc-300">{user.email}</td>
+
+                                                    {/* COLUNA 1: PERMISSÃO (ROLE) */}
+                                                    <td className="px-6 py-4">
+                                                        {user.id === auth.currentUser?.uid ? (
+                                                            <span className="px-2 py-1 bg-[#FABE01]/10 text-[#FABE01] text-xs font-bold rounded-sm border border-[#FABE01]/20">VOCÊ (ADMIN)</span>
                                                         ) : (
                                                             <div className="flex items-center gap-2">
                                                                 <select
-                                                                    value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
-                                                                    onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                    className="bg-slate-50 dark:bg-slate-700 border text-slate-800 dark:text-white border-slate-300 dark:border-slate-600 rounded-md h-10 px-2 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                                                                    value={pendingRoleChanges[user.id] ?? user.role}
+                                                                    onChange={(e) => setPendingRoleChanges(prev => ({...prev, [user.id]: e.target.value}))}
+                                                                    className="bg-[#0a0a0a] border border-zinc-700 text-zinc-300 text-xs rounded-sm p-1.5 focus:border-[#FABE01] outline-none cursor-pointer"
                                                                 >
-                                                                    <option value="null">Nenhuma</option>
-                                                                    {empresas.map(e => (
-                                                                        <option key={e.id} value={e.id}>{e.nome}</option>
-                                                                    ))}
-                                                                    <option value="create_new" className="font-bold text-amber-500 dark:text-amber-400 bg-slate-100 dark:bg-slate-800">+ Criar Nova Empresa</option>
+                                                                    <option value="cliente">Cliente (Restrito)</option>
+                                                                    <option value="agencia">Agência (Admin)</option>
                                                                 </select>
-                                                                {pendingEmpresaChanges[user.id] !== undefined && pendingEmpresaChanges[user.id] !== (user.empresaId ?? null) && (
-                                                                    <button
-                                                                        onClick={() => handleSaveEmpresa(user.id)}
-                                                                        className="border border-slate-500 text-slate-700 hover:bg-slate-100 dark:border-slate-400 dark:text-slate-200 dark:hover:bg-slate-700 h-10 px-3 rounded-md font-semibold transition-colors text-xs whitespace-nowrap"
-                                                                    >
-                                                                        Salvar
-                                                                    </button>
+                                                                {pendingRoleChanges[user.id] && (
+                                                                    <button onClick={() => handleSaveRole(user.id)} className="text-[#FABE01] hover:text-white transition-colors" title="Salvar alteração"><Save className="w-4 h-4"/></button>
                                                                 )}
                                                             </div>
-                                                        )
-                                                    ) : (
-                                                        <span className="text-slate-500">-</span>
-                                                    )}
-                                                </td>
-                                                <td className="py-4 px-6 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        {user.role === 'cliente' && (
-                                                            <>
-                                                                <button 
-                                                                    onClick={() => handlePasswordReset(user.email)}
-                                                                    className="bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 h-9 px-3 rounded-md font-semibold transition-colors text-xs flex items-center justify-center"
-                                                                    title="Enviar e-mail de redefinição de senha"
-                                                                >
-                                                                    <MailIcon />
-                                                                    <span className="ml-1.5 hidden lg:inline">Redefinir Senha</span>
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteUser(user.id, user.email)}
-                                                                    className="bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60 h-9 px-3 rounded-md font-semibold transition-colors text-xs flex items-center justify-center"
-                                                                    title="Excluir usuário"
-                                                                >
-                                                                    <TrashIcon />
-                                                                    <span className="ml-1.5 hidden lg:inline">Excluir</span>
-                                                                </button>
-                                                            </>
                                                         )}
-                                                        {user.role === 'cliente' && user.empresaId && (
-                                                            <button 
-                                                                onClick={() => onViewClient(user.empresaId as string)}
-                                                                className="border border-blue-500 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-900/40 h-9 px-3 rounded-md font-semibold transition-colors text-xs flex items-center justify-center"
-                                                            >
-                                                                <CalendarIcon />
-                                                                <span className="ml-2">Acessar Calendário</span>
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                                                    </td>
 
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg">
-                             <h2 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-4 cursor-default select-none">Clientes (Empresas)</h2>
-                             <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead className="border-b border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400">
-                                        <tr>
-                                            <th className="py-3 px-4">Nome da Empresa</th>
-                                            <th className="py-3 px-4">ID</th>
-                                            <th className="py-3 px-4 text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {empresas.map(empresa => (
-                                            <tr key={empresa.id} className="border-b border-slate-200/50 dark:border-slate-700/50">
-                                                <td className="py-4 px-4 font-medium text-slate-800 dark:text-white">{empresa.nome}</td>
-                                                <td className="py-4 px-4 font-mono text-xs text-slate-500">{empresa.id}</td>
-                                                <td className="py-4 px-4 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <button 
-                                                            onClick={() => onViewClient(empresa.id)}
-                                                            className="border border-blue-500 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-900/40 py-1.5 px-3 rounded-md font-semibold transition-colors text-xs flex items-center justify-center"
-                                                        >
-                                                            <CalendarIcon />
-                                                            <span className="ml-2">Acessar</span>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteEmpresa(empresa.id, empresa.nome)}
-                                                            className="bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60 py-1.5 px-3 rounded-md font-semibold transition-colors text-xs flex items-center justify-center"
-                                                            title="Excluir empresa"
-                                                        >
-                                                            <TrashIcon />
-                                                            <span className="ml-1.5 hidden sm:inline">Excluir</span>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                                    {/* COLUNA 2: VÍNCULO (EMPRESA) - LÓGICA VISUAL CLARA */}
+                                                    <td className="px-6 py-4">
+                                                        {user.role === 'agencia' ? (
+                                                            /* VISUAL 1: SE FOR ADMIN, MOSTRA SELO DE ACESSO GLOBAL */
+                                                            <div className="flex items-center gap-2 text-zinc-500 opacity-50 select-none" title="Agências podem ver todas as empresas">
+                                                                <Shield className="w-4 h-4" />
+                                                                <span className="text-xs font-medium italic">Acesso Global</span>
+                                                            </div>
+                                                        ) : (
+                                                            /* VISUAL 2: SE FOR CLIENTE, MOSTRA DROPDOWN OU CRIAÇÃO */
+                                                            creatingCompanyForUser === user.id ? (
+                                                                <div className="flex gap-2 items-center animate-in fade-in slide-in-from-left-2">
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={newCompanyIdInput}
+                                                                        onChange={e => setNewCompanyIdInput(e.target.value)}
+                                                                        placeholder="Nome Nova Empresa"
+                                                                        className="bg-[#0a0a0a] border border-[#FABE01] text-xs p-1.5 w-32 text-white outline-none rounded-sm"
+                                                                    />
+                                                                    <button onClick={() => handleCreateAndAssignCompany(user.id)} className="text-[#FABE01] hover:text-white p-1" title="Criar e Vincular"><Save className="w-4 h-4"/></button>
+                                                                    <button onClick={() => setCreatingCompanyForUser(null)} className="text-zinc-500 hover:text-red-400 p-1" title="Cancelar"><X className="w-4 h-4"/></button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="relative group">
+                                                                        <LinkIcon className="absolute left-2 top-2 w-3 h-3 text-zinc-600" />
+                                                                        <select
+                                                                            value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
+                                                                            onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
+                                                                            className={`bg-[#0a0a0a] border ${user.empresaId ? 'border-zinc-700 text-white' : 'border-zinc-800 text-zinc-500'} text-xs rounded-sm p-1.5 pl-7 max-w-[180px] outline-none focus:border-[#FABE01] cursor-pointer`}
+                                                                        >
+                                                                            <option value="null">-- Sem Vínculo --</option>
+                                                                            {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                                            <option value="create_new" className="text-[#FABE01] font-bold">+ Criar Nova</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    {pendingEmpresaChanges[user.id] !== undefined && (
+                                                                        <button onClick={() => handleSaveEmpresa(user.id)} className="text-[#FABE01] hover:text-white transition-colors" title="Salvar Vínculo"><Save className="w-4 h-4"/></button>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        )}
+                                                    </td>
+
+                                                    {/* COLUNA 3: AÇÕES */}
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                onClick={() => handlePasswordReset(user.email)}
+                                                                className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-sm transition-colors"
+                                                                title="Enviar Email de Redefinição de Senha"
+                                                            >
+                                                                <Mail className="w-4 h-4" />
+                                                            </button>
+                                                            {user.id !== auth.currentUser?.uid && (
+                                                                <button
+                                                                    onClick={() => handleDeleteUser(user.id)}
+                                                                    className="p-2 text-zinc-400 hover:text-red-400 hover:bg-red-400/10 rounded-sm transition-colors"
+                                                                    title="Remover Usuário"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
+                                        {filteredUsers.length === 0 && <p className="text-center py-12 text-zinc-500">Nenhum usuário encontrado.</p>}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
+                        )}
+                    </>
                 )}
             </main>
         </div>

@@ -1,42 +1,19 @@
-
 import React, { useState } from 'react';
-// Fix: Use Firebase v8 namespaced API for auth
+// Mantendo a lógica original
 import { auth } from '../utils/firebase';
+// Ícones
+import { Eye, EyeOff, Loader2, Mail, Lock, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const LogoIcon = () => (
-    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="48" height="48" rx="8" fill="black"/>
-        <g stroke="#FBBF24" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-            {/* Hand-drawn Hexagon */}
-            <path d="M30 9 C35 10 41 16 40 24 C39 32 32 40 24 40 C16 40 9 34 8 26 C7 18 13 10 21 9 C24 8.5 27 8.5 30 9 Z" />
-            {/* Hand-drawn N */}
-            <path d="M19 33 L19.5 15" />
-            <path d="M19.5 15 L28.5 33" />
-            <path d="M28.5 33 L29 15" />
-        </g>
-    </svg>
-);
-
-const EyeIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    </svg>
-);
-
-const EyeOffIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274 4.057 5.064 7-9.542 7 .847 0 1.673.124 2.464.352M6.58 6.58A1.98 1.98 0 008 8.5a1.982 1.982 0 003.42 1.42M12 15a3 3 0 110-6 3 3 0 010 6z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M1 1l22 22" />
-    </svg>
-);
+// IMAGEM
+// @ts-ignore
+import favicon from '../assets/favicon.png';
 
 interface LoginProps {
     onSwitchToSignup: () => void;
 }
 
-
 const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
+    // --- ESTADOS ---
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -49,17 +26,16 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     const [resetError, setResetError] = useState('');
     const [isSendingReset, setIsSendingReset] = useState(false);
 
-
+    // --- LÓGICA DE LOGIN ---
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
         try {
-            // Fix: Use Firebase v8 signInWithEmailAndPassword method
             await auth.signInWithEmailAndPassword(email, password);
         } catch (err: any) {
             if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-                setError('E-mail ou senha inválidos. Por favor, verifique seus dados e tente novamente.');
+                setError('E-mail ou senha inválidos.');
             } else {
                 setError('Ocorreu um erro ao fazer login.');
             }
@@ -69,147 +45,201 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         }
     };
 
+    // --- LÓGICA DE RESET ---
     const handlePasswordReset = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSendingReset(true);
         setResetMessage('');
         setResetError('');
         try {
-            // Fix: Use Firebase v8 sendPasswordResetEmail method
             await auth.sendPasswordResetEmail(resetEmail);
-            setResetMessage('Um link para redefinição de senha foi enviado para o seu e-mail.');
+            setResetMessage('Link enviado para seu e-mail.');
         } catch (err: any) {
             if (err.code === 'auth/user-not-found') {
-                setResetError('O e-mail informado não foi encontrado.');
+                setResetError('E-mail não encontrado.');
             } else {
-                setResetError('Ocorreu um erro ao tentar redefinir a senha.');
+                setResetError('Erro ao enviar link.');
             }
-            console.error(err);
         } finally {
             setIsSendingReset(false);
         }
     };
-    
-    const switchToReset = () => {
-        setIsResettingPassword(true);
-        setError(null);
-    };
 
-    const switchToLogin = () => {
-        setIsResettingPassword(false);
-        setResetMessage('');
-        setResetError('');
-    };
+    const switchToReset = () => { setIsResettingPassword(true); setError(null); };
+    const switchToLogin = () => { setIsResettingPassword(false); setResetMessage(''); setResetError(''); };
 
+    // --- RENDERIZAÇÃO (Identidade Visual Brício Marketing) ---
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-amber-100 to-amber-200 dark:from-slate-800 dark:via-slate-900 dark:to-black p-4">
-            <div className="w-full max-w-md">
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm shadow-2xl rounded-2xl p-8 sm:p-10">
-                    <div className="flex flex-col items-center mb-8">
-                         <div className="mb-4">
-                            <LogoIcon />
-                        </div>
-                        <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Portal do Cliente</h1>
-                        <p className="text-amber-500 dark:text-amber-400 mt-1 font-semibold tracking-wide">Agência Nocrato</p>
+        <div className="min-h-screen flex bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
+
+            {/* LADO ESQUERDO: Banner com Estética "Hero" */}
+            <div className="hidden lg:flex w-1/2 relative overflow-hidden bg-black border-r border-white/5">
+                {/* Fundo com imagem + overlay escuro (igual ao Hero da LP) */}
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-40 mix-blend-overlay" />
+
+                {/* Gradientes para dar o clima "Dark Mode Premium" */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-[#111111]/50 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#111111]/80 to-transparent" />
+
+                {/* Conteúdo */}
+                <div className="relative z-10 p-16 flex flex-col justify-between h-full w-full">
+
+                    {/* Logo Branca */}
+                    <div className="flex items-center gap-3">
+                        <img src={favicon} alt="Nocrato" className="h-10 w-auto brightness-0 invert opacity-90" />
                     </div>
 
+                    {/* Título com o Gradiente Dourado (Assinatura do outro projeto) */}
+                    <div className="space-y-6 max-w-lg">
+                        <h1 className="text-5xl font-bold leading-[1.1] tracking-tight">
+                            Gestão de alta <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FABE01] to-[#DE7928]">
+                                performance
+                            </span>
+                        </h1>
+                        <p className="text-zinc-300 text-lg leading-relaxed font-medium">
+                            Acesse seu painel exclusivo e acompanhe a evolução da sua clínica em tempo real.
+                        </p>
+                    </div>
+
+                    {/* Elemento Decorativo (Linha Dourada) */}
+                    <div className="w-24 h-1 bg-gradient-to-r from-[#FABE01] to-[#DE7928] rounded-full" />
+                </div>
+            </div>
+
+            {/* LADO DIREITO: Formulário */}
+            <div className="flex-1 flex items-center justify-center p-6 lg:p-16 bg-[#111111] relative">
+
+                {/* Glow Dourado de Fundo (Sutil) */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-[#FABE01]/5 rounded-full blur-[100px] pointer-events-none" />
+
+                <div className="w-full max-w-[400px] space-y-8 relative z-10">
+
+                    {/* Logo Mobile */}
+                    <div className="lg:hidden flex justify-center mb-8">
+                        <img src={favicon} alt="Nocrato" className="h-14 w-auto brightness-0 invert" />
+                    </div>
+
+                    <div className="text-center lg:text-left space-y-1">
+                        <h2 className="text-2xl font-bold text-white tracking-tight">
+                            {isResettingPassword ? 'Recuperar Acesso' : 'Acesse sua conta'}
+                        </h2>
+                        <p className="text-zinc-400 text-sm">
+                            {isResettingPassword ? 'Enviaremos as instruções por e-mail' : 'Bem-vindo ao Portal do Cliente'}
+                        </p>
+                    </div>
+
+                    {/* Alertas */}
+                    {(error || resetError) && (
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-sm text-sm flex items-center gap-3">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <p>{error || resetError}</p>
+                        </div>
+                    )}
+                    {resetMessage && (
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-sm text-sm flex items-center gap-3">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <p>{resetMessage}</p>
+                        </div>
+                    )}
+
                     {isResettingPassword ? (
-                        <>
-                            <h2 className="text-xl font-semibold text-slate-700 dark:text-slate-200 mb-4 text-center">Redefinir Senha</h2>
-                            <form onSubmit={handlePasswordReset} className="space-y-6">
-                                <div>
-                                    <label htmlFor="reset-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+                        /* --- FORM RESET --- */
+                        <form onSubmit={handlePasswordReset} className="space-y-5">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Email</label>
+                                <div className="relative group">
+                                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-500 group-focus-within:text-[#FABE01] transition-colors" />
+                                    {/* Input Estilo Brício: Fundo #1A1A1A, Borda Escura, Foco Dourado */}
                                     <input
-                                        id="reset-email"
                                         type="email"
                                         value={resetEmail}
                                         onChange={(e) => setResetEmail(e.target.value)}
                                         required
-                                        autoComplete="email"
-                                        className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-slate-800 dark:text-white"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
                                 </div>
-                                {resetMessage && <p className="text-sm text-green-600 bg-green-50 dark:bg-green-900/50 dark:text-green-300 p-3 rounded-md">{resetMessage}</p>}
-                                {resetError && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/50 dark:text-red-300 p-3 rounded-md">{resetError}</p>}
-                                <div>
-                                    <button
-                                        type="submit"
-                                        disabled={isSendingReset}
-                                        className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg focus:scale-105 focus:shadow-lg"
-                                    >
-                                        {isSendingReset ? 'Enviando...' : 'Enviar Link de Redefinição'}
-                                    </button>
-                                </div>
-                            </form>
-                             <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                                <button onClick={switchToLogin} className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors duration-200">
-                                    Voltar para o Login
-                                </button>
-                            </p>
-                        </>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={isSendingReset}
+                                className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)]"
+                            >
+                                {isSendingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar Link'}
+                            </button>
+
+                            <button type="button" onClick={switchToLogin} className="w-full text-center text-sm text-zinc-500 hover:text-white transition-colors py-2">
+                                Voltar para o Login
+                            </button>
+                        </form>
                     ) : (
-                        <>
-                            <form onSubmit={handleLogin} className="space-y-6">
-                                <div>
-                                    <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+                        /* --- FORM LOGIN --- */
+                        <form onSubmit={handleLogin} className="space-y-5">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Email</label>
+                                <div className="relative group">
+                                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-500 group-focus-within:text-[#FABE01] transition-colors" />
                                     <input
                                         id="email"
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         required
-                                        autoComplete="email"
-                                        className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-slate-800 dark:text-white"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
                                 </div>
-                                <div className="relative">
-                                    <label htmlFor="password"className="block text-sm font-medium text-slate-700 dark:text-slate-300">Senha</label>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Senha</label>
+                                    <button type="button" onClick={switchToReset} className="text-xs font-medium text-[#FABE01] hover:text-[#FABE01]/80 transition-colors">
+                                        Esqueceu?
+                                    </button>
+                                </div>
+                                <div className="relative group">
+                                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-500 group-focus-within:text-[#FABE01] transition-colors" />
                                     <input
                                         id="password"
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
-                                        autoComplete="current-password"
-                                        className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-slate-800 dark:text-white"
-                                        placeholder="Sua senha"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                        placeholder="••••••••"
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute inset-y-0 right-0 top-6 pr-3 flex items-center text-sm leading-5"
-                                        aria-label={showPassword ? "Esconder senha" : "Mostrar senha"}
-                                    >
-                                        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-zinc-500 hover:text-white transition-colors">
+                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                     </button>
                                 </div>
+                            </div>
 
-                                {error && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/50 dark:text-red-300 p-3 rounded-md">{error}</p>}
-                                
-                                <div className="pt-2">
-                                    <button 
-                                        type="submit" 
-                                        disabled={isLoading}
-                                        className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg focus:scale-105 focus:shadow-lg"
-                                    >
-                                        {isLoading ? 'Entrando...' : 'Entrar'}
-                                    </button>
-                                </div>
-                                 <div className="text-sm text-center">
-                                    <button onClick={switchToReset} className="font-medium text-slate-500 dark:text-slate-400 hover:text-blue-500 transition-colors duration-200">
-                                        Esqueceu sua senha?
-                                    </button>
-                                </div>
-                            </form>
-                            <p className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                                Não tem uma conta?{' '}
-                                <button onClick={onSwitchToSignup} className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors duration-200">
-                                    Cadastre-se
+                            <div className="pt-4">
+                                <button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3.5 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5"
+                                >
+                                    {isLoading ? (
+                                        <> <Loader2 className="w-4 h-4 animate-spin" /> ACESSANDO... </>
+                                    ) : (
+                                        'ACESSAR PORTAL'
+                                    )}
                                 </button>
-                            </p>
-                        </>
+                            </div>
+                        </form>
+                    )}
+
+                    {!isResettingPassword && (
+                        <p className="text-center text-sm text-zinc-500 pt-6 border-t border-zinc-800/50">
+                            Ainda não tem cadastro?{' '}
+                            <button onClick={onSwitchToSignup} className="font-bold text-white hover:text-[#FABE01] transition-colors">
+                                Solicite aqui
+                            </button>
+                        </p>
                     )}
                 </div>
             </div>

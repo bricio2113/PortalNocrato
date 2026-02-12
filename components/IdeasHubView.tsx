@@ -1,131 +1,256 @@
-
-
 import React, { useState, useEffect } from 'react';
-import { Idea } from '../types';
-import { INITIAL_IDEAS } from '../constants';
 import { db } from '../utils/firebase';
-// Fix: Import firebase for Timestamp type and use v8 Firestore API
-// Fix: Use compat imports for Firebase v8 API
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 
-interface IdeasHubViewProps {
-    empresaId: string;
+// Ícones Lucide
+import {
+  Folder, FileText, ExternalLink, Plus, Trash2,
+  Link as LinkIcon, Image, FileSpreadsheet, DownloadCloud, Loader2
+} from 'lucide-react';
+
+interface DriveLink {
+  id: string;
+  title: string;
+  url: string;
+  category: 'Mídia' | 'Contratos' | 'Relatórios' | 'Outros';
+  createdAt: Date;
 }
 
+interface IdeasHubViewProps {
+  empresaId: string;
+}
+
+// Categorias disponíveis
+const CATEGORIES = ['Mídia', 'Contratos', 'Relatórios', 'Outros'];
+
 const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
-  const [ideas, setIdeas] = useState<Idea[]>([]);
-  const [newIdea, setNewIdea] = useState('');
+  // --- ESTADOS ---
+  const [links, setLinks] = useState<DriveLink[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Estado do Formulário
+  const [formData, setFormData] = useState({
+    title: '',
+    url: '',
+    category: 'Outros'
+  });
+
+  // --- BUSCAR DADOS ---
   useEffect(() => {
     if (!empresaId) return;
 
-    const fetchIdeas = async () => {
+    const fetchLinks = async () => {
       setIsLoading(true);
       try {
-        // Fix: Use Firebase v8 collection/orderBy/get methods
-        const ideasCollection = db.collection('empresas').doc(empresaId).collection('ideas');
-        const q = ideasCollection.orderBy('timestamp', 'desc');
+        const collectionRef = db.collection('empresas').doc(empresaId).collection('drive_links');
+        const q = collectionRef.orderBy('createdAt', 'desc');
         const querySnapshot = await q.get();
 
-        if (querySnapshot.empty) {
-          // Fix: Use Firebase v8 collection.add method
-          const seedingPromises = INITIAL_IDEAS.map(idea => ideasCollection.add(idea));
-          await Promise.all(seedingPromises);
-          const newSnapshot = await q.get();
-          const ideasData = newSnapshot.docs.map(doc => {
-            const data = doc.data();
-            // Fix: Use firebase.firestore.Timestamp
-            return { id: doc.id, ...data, timestamp: (data.timestamp as firebase.firestore.Timestamp).toDate() } as Idea
-          });
-          setIdeas(ideasData);
-        } else {
-          const ideasData = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            // Fix: Use firebase.firestore.Timestamp
-            return { id: doc.id, ...data, timestamp: (data.timestamp as firebase.firestore.Timestamp).toDate() } as Idea
-          });
-          setIdeas(ideasData);
-        }
+        const linksData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: (data.createdAt as firebase.firestore.Timestamp).toDate()
+          } as DriveLink;
+        });
+        setLinks(linksData);
       } catch (error) {
-        console.error("Error fetching ideas: ", error);
+        console.error("Erro ao buscar links: ", error);
       } finally {
         setIsLoading(false);
       }
     };
-    fetchIdeas();
+    fetchLinks();
   }, [empresaId]);
 
-  const handleSubmitIdea = async (e: React.FormEvent) => {
+  // --- SALVAR NOVO LINK ---
+  const handleSaveLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newIdea.trim() === '') return;
-    
+    if (!formData.title.trim() || !formData.url.trim()) return;
+
+    // Garante que o link tenha https://
+    let formattedUrl = formData.url.trim();
+    if (!formattedUrl.startsWith('http')) {
+      formattedUrl = `https://${formattedUrl}`;
+    }
+
     try {
-      // Fix: Use Firebase v8 collection/add methods
-      const ideasCollection = db.collection('empresas').doc(empresaId).collection('ideas');
-      const ideaObject: Omit<Idea, 'id'> = {
-        text: newIdea.trim(),
-        author: 'Cliente',
-        timestamp: new Date()
+      const collectionRef = db.collection('empresas').doc(empresaId).collection('drive_links');
+
+      const newLinkObj = {
+        title: formData.title,
+        url: formattedUrl,
+        category: formData.category,
+        createdAt: new Date()
       };
-      const docRef = await ideasCollection.add(ideaObject);
-      setIdeas([{ id: docRef.id, ...ideaObject }, ...ideas]);
-      setNewIdea('');
+
+      const docRef = await collectionRef.add(newLinkObj);
+
+      // Atualiza estado local
+      setLinks([{ id: docRef.id, ...newLinkObj } as DriveLink, ...links]);
+
+      // Limpa form
+      setFormData({ title: '', url: '', category: 'Outros' });
+
     } catch (error) {
-      console.error("Error submitting idea: ", error);
+      console.error("Erro ao salvar link: ", error);
+    }
+  };
+
+  // --- EXCLUIR LINK ---
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Deseja remover este link?")) return;
+    try {
+      await db.collection('empresas').doc(empresaId).collection('drive_links').doc(id).delete();
+      setLinks(prev => prev.filter(link => link.id !== id));
+    } catch (error) {
+      console.error("Erro ao excluir", error);
+    }
+  };
+
+  // --- HELPER: Ícone por Categoria ---
+  const getIconByCategory = (cat: string) => {
+    switch (cat) {
+      case 'Mídia': return <Image className="w-6 h-6 text-purple-400" />;
+      case 'Contratos': return <FileText className="w-6 h-6 text-blue-400" />;
+      case 'Relatórios': return <FileSpreadsheet className="w-6 h-6 text-green-400" />;
+      default: return <Folder className="w-6 h-6 text-[#FABE01]" />;
     }
   };
 
   return (
-    <div>
-      <header className="mb-12">
-        <h1 className="text-4xl md:text-5xl font-bold text-amber-600 dark:text-amber-400 tracking-wide cursor-default select-none">Hub de Ideias</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-2 text-lg cursor-default select-none">Compartilhe suas ideias e inspire nossa próxima grande campanha.</p>
-      </header>
-      <div className="space-y-12">
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg dark:shadow-2xl dark:shadow-black/20 p-8">
-          <form onSubmit={handleSubmitIdea}>
-            <h3 className="text-2xl font-semibold text-slate-900 dark:text-white mb-2 tracking-wide">Tem uma nova ideia?</h3>
-            <p className="text-base text-slate-600 dark:text-slate-400 mb-6">
-              Adoramos ouvir suas sugestões! Escreva abaixo e clique em "Enviar Ideia".
-            </p>
-            <textarea
-              value={newIdea}
-              onChange={(e) => setNewIdea(e.target.value)}
-              rows={4}
-              placeholder="Ex: Uma campanha de reels mostrando os bastidores da empresa..."
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm p-4 focus:ring-1 focus:ring-amber-500 focus:border-amber-500 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 transition-colors"
-            ></textarea>
-            <div className="flex justify-end items-center mt-6">
-              <button type="submit" className="bg-amber-500 text-slate-900 py-3 px-6 rounded-lg shadow-md hover:bg-amber-600 font-semibold disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200" disabled={!newIdea.trim()}>
-                Enviar Ideia
-              </button>
-            </div>
-          </form>
-        </div>
+      <div className="text-zinc-100 font-sans">
 
-        {isLoading ? (
-            <div className="text-center p-8 text-slate-500 dark:text-slate-400">Carregando ideias...</div>
-        ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {ideas.map(idea => (
-                <div key={idea.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg dark:shadow-2xl dark:shadow-black/20 p-6 flex flex-col transition-transform hover:scale-[1.02]">
-                <p className="text-slate-700 dark:text-slate-300 flex-1 mb-6 text-lg leading-relaxed">"{idea.text}"</p>
-                <div className="pt-4 flex justify-between items-center text-sm text-slate-500">
-                    <span className="font-medium">
-                        Por: <span className="text-slate-600 dark:text-slate-400">{idea.author}</span>
-                    </span>
-                    <span className="font-mono">
-                        {idea.timestamp.toLocaleDateString('pt-BR')}
-                    </span>
+        {/* HEADER */}
+        <header className="mb-10">
+          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
+            <DownloadCloud className="w-8 h-8 text-[#FABE01]" />
+            Arquivos & Materiais
+          </h1>
+          <p className="text-zinc-400 mt-2 text-lg max-w-2xl">
+            Centralize links importantes, pastas do Drive e materiais de campanha em um só lugar.
+          </p>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+          {/* COLUNA 1: FORMULÁRIO DE ADIÇÃO */}
+          <div className="lg:col-span-1">
+            <div className="bg-[#1A1A1A] rounded-sm border border-white/5 p-6 sticky top-8">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-[#FABE01]" />
+                Adicionar Novo Link
+              </h3>
+
+              <form onSubmit={handleSaveLink} className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Título do Arquivo</label>
+                  <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) => setFormData({...formData, title: e.target.value})}
+                      placeholder="Ex: Pasta de Fotos Maio"
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                      required
+                  />
                 </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Link (URL)</label>
+                  <div className="relative">
+                    <input
+                        type="text"
+                        value={formData.url}
+                        onChange={(e) => setFormData({...formData, url: e.target.value})}
+                        placeholder="drive.google.com/..."
+                        className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 pl-9 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                        required
+                    />
+                    <LinkIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-600" />
+                  </div>
                 </div>
-            ))}
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Categoria</label>
+                  <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none cursor-pointer"
+                  >
+                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+
+                <button
+                    type="submit"
+                    disabled={!formData.title || !formData.url}
+                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-2.5 rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.1)] transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Salvar Arquivo
+                </button>
+              </form>
             </div>
-        )}
+          </div>
+
+          {/* COLUNA 2: LISTA DE ARQUIVOS */}
+          <div className="lg:col-span-2">
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center h-64 gap-3">
+                  <Loader2 className="w-8 h-8 text-[#FABE01] animate-spin" />
+                  <p className="text-zinc-500 text-sm">Carregando arquivos...</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {links.map(link => (
+                      <div key={link.id} className="group bg-[#1A1A1A] border border-white/5 p-5 rounded-sm hover:border-[#FABE01]/30 transition-all flex flex-col justify-between min-h-[140px]">
+
+                        {/* Topo do Card */}
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="p-2 bg-white/5 rounded-sm group-hover:bg-[#FABE01]/10 transition-colors">
+                            {getIconByCategory(link.category)}
+                          </div>
+                          <button
+                              onClick={() => handleDelete(link.id)}
+                              className="text-zinc-600 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Excluir Arquivo"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Info */}
+                        <div>
+                          <h4 className="text-white font-bold text-lg leading-tight mb-1 line-clamp-2">{link.title}</h4>
+                          <span className="text-xs text-zinc-500 uppercase tracking-wider font-medium">{link.category}</span>
+                        </div>
+
+                        {/* Botão Acessar */}
+                        <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-4 flex items-center justify-center gap-2 w-full py-2 border border-white/10 hover:bg-[#FABE01] hover:border-[#FABE01] text-zinc-300 hover:text-black text-sm font-bold rounded-sm transition-all group/btn"
+                        >
+                          Acessar Drive
+                          <ExternalLink className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
+                        </a>
+                      </div>
+                  ))}
+
+                  {links.length === 0 && (
+                      <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-sm">
+                        <Folder className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
+                        <p className="text-zinc-500 font-medium">Nenhum arquivo adicionado ainda.</p>
+                        <p className="text-zinc-600 text-sm">Use o formulário ao lado para salvar links.</p>
+                      </div>
+                  )}
+                </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
   );
 };
 

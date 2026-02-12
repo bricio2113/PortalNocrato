@@ -1,64 +1,112 @@
 import React, { useState } from 'react';
-import { auth } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
-
-const MailIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-);
+// Ícones Lucide
+import { Mail, RefreshCw, LogOut, CheckCircle2, AlertCircle } from 'lucide-react';
+// Logo (Opcional, mas dá um toque de marca)
+// @ts-ignore
+import favicon from '../assets/favicon.png';
 
 interface VerificationPendingProps {
     user: firebase.User;
     handleLogout: () => void;
 }
 
-const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleLogout }) => {
-    const [message, setMessage] = useState('');
+const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleLogout: onLogout }) => {
+    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [isSending, setIsSending] = useState(false);
 
     const handleResend = async () => {
         setIsSending(true);
-        setMessage('');
+        setMessage(null);
         try {
             await user.sendEmailVerification();
-            setMessage('Um novo e-mail de verificação foi enviado. Verifique sua caixa de entrada e spam.');
-        } catch (error) {
-            console.error(error);
-            setMessage('Ocorreu um erro ao reenviar o e-mail. Por favor, tente novamente mais tarde.');
+            setMessage({ type: 'success', text: 'E-mail de verificação reenviado! Cheque sua caixa de entrada.' });
+        } catch (error: any) {
+            // Tratamento de erro comum (muitas tentativas)
+            if (error.code === 'auth/too-many-requests') {
+                setMessage({ type: 'error', text: 'Muitas tentativas. Aguarde alguns instantes.' });
+            } else {
+                setMessage({ type: 'error', text: 'Erro ao enviar. Tente novamente mais tarde.' });
+            }
         } finally {
             setIsSending(false);
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-amber-50 dark:bg-slate-900 p-4">
-            <div className="w-full max-w-lg text-center bg-white dark:bg-slate-800 shadow-lg rounded-xl p-8">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#111111] p-4 text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
+
+            {/* Logo no Topo */}
+            <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
+                <img src={favicon} alt="Nocrato" className="h-12 w-auto brightness-0 invert opacity-80" />
+            </div>
+
+            {/* Card Principal */}
+            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-8 text-center animate-in zoom-in-95 duration-500">
+
+                {/* Ícone de Destaque */}
                 <div className="flex justify-center mb-6">
-                    <MailIcon />
+                    <div className="w-20 h-20 bg-[#FABE01]/10 rounded-full flex items-center justify-center relative">
+                        <Mail className="w-10 h-10 text-[#FABE01]" />
+                        {/* Bolinha de notificação animada */}
+                        <span className="absolute top-0 right-0 flex h-4 w-4">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FABE01] opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-[#FABE01]"></span>
+                        </span>
+                    </div>
                 </div>
-                <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">Verifique seu E-mail</h1>
-                <p className="text-slate-600 dark:text-slate-400 mb-6">
-                    Enviamos um link de verificação para <strong>{user.email}</strong>. Por favor, clique no link para ativar sua conta e acessar o portal.
+
+                <h1 className="text-2xl font-bold text-white mb-3">Verifique seu E-mail</h1>
+
+                <p className="text-zinc-400 mb-6 leading-relaxed">
+                    Enviamos um link de confirmação para:<br/>
+                    <span className="text-white font-medium bg-white/5 px-2 py-0.5 rounded-sm mt-1 inline-block">{user.email}</span>
                 </p>
-                {message && <p className="text-sm bg-green-50 dark:bg-green-900/50 text-green-700 dark:text-green-300 p-3 rounded-md mb-6">{message}</p>}
-                <div className="space-y-4">
+
+                <p className="text-sm text-zinc-500 mb-8">
+                    Clique no link recebido para ativar sua conta e liberar o acesso ao Portal do Cliente.
+                </p>
+
+                {/* Mensagens de Feedback */}
+                {message && (
+                    <div className={`flex items-center gap-3 p-3 rounded-sm text-sm font-medium mb-6 text-left animate-in fade-in slide-in-from-top-2 ${
+                        message.type === 'success'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }`}>
+                        {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+                        {message.text}
+                    </div>
+                )}
+
+                {/* Ações */}
+                <div className="space-y-3">
                     <button
                         onClick={handleResend}
                         disabled={isSending}
-                        className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed"
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                        {isSending ? 'Enviando...' : 'Reenviar E-mail de Verificação'}
+                        {isSending ? (
+                            <> <RefreshCw className="w-4 h-4 animate-spin" /> Enviando... </>
+                        ) : (
+                            'Reenviar E-mail'
+                        )}
                     </button>
+
                     <button
-                        onClick={handleLogout}
-                        className="w-full flex justify-center py-3 px-4 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        onClick={onLogout}
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white text-sm font-medium rounded-sm transition-colors"
                     >
-                        Sair
+                        <LogOut className="w-4 h-4" />
+                        Sair da conta
                     </button>
                 </div>
-                <p className="mt-6 text-xs text-slate-500">
-                    Se você já verificou seu e-mail, por favor, atualize esta página.
-                </p>
             </div>
+
+            {/* Rodapé */}
+            <p className="mt-8 text-xs text-zinc-600">
+                Já confirmou? <button onClick={() => window.location.reload()} className="text-[#FABE01] hover:underline font-bold">Atualize a página</button>
+            </p>
         </div>
     );
 };

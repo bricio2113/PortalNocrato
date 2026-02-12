@@ -1,21 +1,12 @@
-
-
-
 import React, { useState, useEffect } from 'react';
 import { WeeklyTask } from '../types';
 import { INITIAL_TASKS } from '../constants';
 import { db } from '../utils/firebase';
-// Fix: Use Firebase v8 Firestore API, removed unused v9 imports
-
-
-const TrashIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
+// Ícones Lucide
+import { CheckCircle2, Circle, Trash2, Plus, Target, Loader2 } from 'lucide-react';
 
 interface WeeklyUpdatesViewProps {
-    empresaId: string;
+  empresaId: string;
 }
 
 const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
@@ -23,29 +14,26 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
+  // --- FETCH DATA ---
   useEffect(() => {
     if (!empresaId) return;
 
     const fetchTasks = async () => {
       setIsLoading(true);
       try {
-        // Fix: Use Firebase v8 collection/get methods
         const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks');
         const querySnapshot = await tasksCollection.get();
 
         if (querySnapshot.empty) {
-          // Fix: Use Firebase v8 collection.add method
           const seedingPromises = INITIAL_TASKS.map(task => tasksCollection.add(task));
           await Promise.all(seedingPromises);
           const newSnapshot = await tasksCollection.get();
-          const tasksData = newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask));
-          setTasks(tasksData);
+          setTasks(newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask)));
         } else {
-          const tasksData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask));
-          setTasks(tasksData);
+          setTasks(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask)));
         }
       } catch (error) {
-        console.error("Error fetching tasks: ", error);
+        console.error("Erro ao buscar tarefas: ", error);
       } finally {
         setIsLoading(false);
       }
@@ -53,128 +41,150 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
     fetchTasks();
   }, [empresaId]);
 
+  // --- ACTIONS ---
   const handleToggleTask = async (id: string) => {
     const taskToToggle = tasks.find(task => task.id === id);
     if (!taskToToggle) return;
 
     try {
-      // Fix: Use Firebase v8 collection/doc/update methods
-      const taskDocRef = db.collection('empresas').doc(empresaId).collection('tasks').doc(id);
-      await taskDocRef.update({ completed: !taskToToggle.completed });
-      setTasks(tasks.map(task => 
-        task.id === id ? { ...task, completed: !task.completed } : task
-      ));
-    } catch (error) {
-      console.error("Error toggling task: ", error);
-    }
+      await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).update({ completed: !taskToToggle.completed });
+      setTasks(tasks.map(task => task.id === id ? { ...task, completed: !task.completed } : task));
+    } catch (error) { console.error(error); }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTaskText.trim() === '') return;
+    if (!newTaskText.trim()) return;
     try {
-      // Fix: Use Firebase v8 collection/add methods
-      const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks');
-      const newTaskData = {
-        text: newTaskText.trim(),
-        completed: false,
-      };
-      const docRef = await tasksCollection.add(newTaskData);
-      const newTask: WeeklyTask = {
-        id: docRef.id,
-        ...newTaskData
-      };
-      setTasks([...tasks, newTask]);
+      const newTaskData = { text: newTaskText.trim(), completed: false };
+      const docRef = await db.collection('empresas').doc(empresaId).collection('tasks').add(newTaskData);
+      setTasks([...tasks, { id: docRef.id, ...newTaskData }]);
       setNewTaskText('');
-    } catch (error) {
-      console.error("Error adding task: ", error);
-    }
+    } catch (error) { console.error(error); }
   };
 
   const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      // Fix: Use Firebase v8 collection/doc/delete methods
       await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).delete();
       setTasks(tasks.filter(task => task.id !== id));
-    } catch (error) {
-      console.error("Error deleting task: ", error);
-    }
+    } catch (error) { console.error(error); }
   };
-  
+
+  // Cálculo de Progresso
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;
   const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
   return (
-    <>
-      <header className="mb-8">
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white cursor-default select-none">Foco da Semana</h1>
-          <p className="text-slate-800 dark:text-slate-300 mt-1 cursor-default select-none">Acompanhe as tarefas em que nossa equipe está trabalhando.</p>
-        </div>
-      </header>
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-6 max-w-4xl mx-auto">
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Progresso da Semana</span>
-              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{Math.round(progress)}%</span>
-          </div>
-          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
-            <div className="bg-blue-600 dark:bg-blue-500 h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
-          </div>
-        </div>
-        
-        {isLoading ? (
-          <div className="text-center p-8 text-slate-500 dark:text-slate-400">Carregando tarefas...</div>
-        ) : (
-          <div className="space-y-3">
-            {tasks.map(task => (
-              <div 
-                key={task.id}
-                onClick={() => handleToggleTask(task.id)}
-                className="group flex items-center p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-              >
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center mr-4 flex-shrink-0 ${task.completed ? 'bg-blue-600 border-blue-600' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'}`}>
-                  {task.completed && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                </div>
-                <span className={`flex-1 ${task.completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>
-                  {task.text}
-                </span>
-                <button
-                  onClick={(e) => handleDeleteTask(task.id, e)}
-                  className="ml-4 p-2 rounded-full text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                  aria-label={`Remover tarefa: ${task.text}`}
-                >
-                  <TrashIcon />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
 
-        <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
-          <form onSubmit={handleAddTask} className="flex items-center gap-3">
-              <input
-                  type="text"
-                  value={newTaskText}
-                  onChange={(e) => setNewTaskText(e.target.value)}
-                  placeholder="Adicionar nova tarefa..."
-                  className="flex-grow border border-slate-300 dark:border-slate-600 rounded-md shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white dark:bg-slate-900 dark:text-white"
-                  aria-label="Nova tarefa"
+        {/* HEADER */}
+        <header className="mb-10">
+          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
+            <Target className="w-8 h-8 text-[#FABE01]" />
+            Foco da Semana
+          </h1>
+          <p className="text-zinc-400 mt-2 text-lg max-w-2xl">
+            Acompanhe em tempo real as prioridades e entregas que nossa equipe está preparando para você.
+          </p>
+        </header>
+
+        <div className="max-w-4xl mx-auto">
+
+          {/* PROGRESS BAR CARD */}
+          <div className="bg-[#1A1A1A] border border-white/5 rounded-sm p-6 mb-8 shadow-lg">
+            <div className="flex justify-between items-end mb-3">
+              <div>
+                <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest block mb-1">Status Geral</span>
+                <span className="text-2xl font-bold text-white">{Math.round(progress)}% Concluído</span>
+              </div>
+              <div className="text-right">
+                    <span className="text-sm text-zinc-400">
+                        <span className="text-[#FABE01] font-bold">{completedTasks}</span> de {totalTasks} tarefas
+                    </span>
+              </div>
+            </div>
+            <div className="w-full bg-[#111111] rounded-full h-1.5 overflow-hidden">
+              <div
+                  className="bg-[#FABE01] h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_#FABE01]"
+                  style={{ width: `${progress}%` }}
               />
-              <button 
-                type="submit" 
-                className="bg-blue-600 text-white py-3 px-5 rounded-md shadow-sm hover:bg-blue-700 font-semibold transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex-shrink-0"
-                disabled={!newTaskText.trim()}
-                aria-label="Adicionar tarefa"
-              >
-                Adicionar
-              </button>
-          </form>
+            </div>
+          </div>
+
+          {/* LISTA DE TAREFAS */}
+          <div className="bg-[#1A1A1A] border border-white/5 rounded-sm shadow-2xl overflow-hidden">
+
+            {/* INPUT DE NOVA TAREFA (Sticky Top) */}
+            <div className="p-6 border-b border-white/5 bg-[#1A1A1A]">
+              <form onSubmit={handleAddTask} className="flex items-center gap-3">
+                <div className="relative flex-grow">
+                  <input
+                      type="text"
+                      value={newTaskText}
+                      onChange={(e) => setNewTaskText(e.target.value)}
+                      placeholder="Adicionar nova tarefa ou prioridade..."
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm py-3 pl-4 pr-10 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all"
+                  />
+                  <Plus className="absolute right-3 top-3.5 w-5 h-5 text-zinc-500" />
+                </div>
+                <button
+                    type="submit"
+                    disabled={!newTaskText.trim()}
+                    className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3 px-6 rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide text-sm"
+                >
+                  Adicionar
+                </button>
+              </form>
+            </div>
+
+            {/* LISTA */}
+            <div className="divide-y divide-white/5">
+              {isLoading ? (
+                  <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 text-[#FABE01] animate-spin" />
+                    <p className="text-zinc-500 text-sm">Sincronizando tarefas...</p>
+                  </div>
+              ) : tasks.length === 0 ? (
+                  <div className="p-12 text-center text-zinc-500">
+                    <p>Nenhuma tarefa definida para esta semana.</p>
+                  </div>
+              ) : (
+                  tasks.map(task => (
+                      <div
+                          key={task.id}
+                          onClick={() => handleToggleTask(task.id)}
+                          className={`
+                                group flex items-center p-5 cursor-pointer transition-all duration-200
+                                ${task.completed ? 'bg-black/20 hover:bg-black/30' : 'hover:bg-white/[0.02]'}
+                            `}
+                      >
+                        {/* Checkbox Customizado */}
+                        <div className={`mr-4 transition-colors ${task.completed ? 'text-[#FABE01]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
+                          {task.completed ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
+                        </div>
+
+                        {/* Texto da Tarefa */}
+                        <span className={`flex-1 text-sm font-medium transition-all ${task.completed ? 'text-zinc-500 line-through decoration-zinc-700' : 'text-zinc-200'}`}>
+                                {task.text}
+                            </span>
+
+                        {/* Botão Excluir (Só aparece no hover) */}
+                        <button
+                            onClick={(e) => handleDeleteTask(task.id, e)}
+                            className="ml-4 p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-sm transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            title="Excluir Tarefa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                  ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
-    </>
   );
 };
 
