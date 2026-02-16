@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CalendarEvent, EventStatus } from '../types';
 import { STATUS_OPTIONS, PLATAFORMA_OPTIONS } from '../constants';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     CheckCircle2, AlertCircle, Save, ExternalLink,
-    Instagram, Linkedin, Facebook, Youtube, Twitter, Globe
+    Instagram, Linkedin, Facebook, Youtube, Twitter, Globe, Check, AlertTriangle
 } from 'lucide-react';
 
 interface EventDetailModalProps {
@@ -27,12 +27,40 @@ const getPlatformIcon = (platform: string) => {
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDelete, onClose }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
+    // NOVO ESTADO: Controla se estamos vendo a confirmação de exclusão
+    const [isDeleting, setIsDeleting] = useState(false);
+
     const isCreating = !event.id;
+    const titleRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => { setEditableEvent(event); }, [event]);
 
+    const adjustHeight = (element: HTMLTextAreaElement) => {
+        element.style.height = 'auto';
+        element.style.height = `${element.scrollHeight}px`;
+    };
+
+    useEffect(() => {
+        if (titleRef.current) {
+            adjustHeight(titleRef.current);
+        }
+    }, [editableEvent.title]);
+
     const handleChange = (field: keyof CalendarEvent, value: any) => {
         setEditableEvent(prev => ({...prev, [field]: value}));
+    };
+
+    // --- FUNÇÕES DE EXCLUSÃO ---
+    const handleDeleteClick = () => {
+        setIsDeleting(true); // Ativa o modo de confirmação
+    };
+
+    const handleConfirmDelete = () => {
+        onDelete(event.id); // Deleta de verdade
+    };
+
+    const handleCancelDelete = () => {
+        setIsDeleting(false); // Volta para o modal normal
     };
 
     const labelStyle = "block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5";
@@ -42,21 +70,46 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-            <div className="relative w-full sm:max-w-2xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
+            <div className="relative w-full sm:max-w-2xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+
+                {/* --- TELA DE CONFIRMAÇÃO DE EXCLUSÃO (Sobrepõe o formulário se isDeleting for true) --- */}
+                {isDeleting && (
+                    <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
+                        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+                            <AlertTriangle className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
+                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
+                            Tem certeza que deseja remover este post? Esta ação não pode ser desfeita.
+                        </p>
+
+                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                            <button
+                                onClick={handleCancelDelete}
+                                className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white hover:bg-white/5 font-medium transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmDelete}
+                                className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors shadow-lg shadow-red-900/20"
+                            >
+                                Sim, Excluir
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* --- CONTEÚDO DO FORMULÁRIO (Fica "borrado" ou oculto se estiver deletando, mas tecnicamente está embaixo) --- */}
 
                 {/* Header */}
                 <div className="flex items-start justify-between p-6 border-b border-white/5 shrink-0 gap-4">
                     <div className="flex-1">
                         <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Título da Publicação</label>
-
-                        {/* SOLUÇÃO INFALÍVEL PARA TEXTAREA AUTO-GROW */}
                         <div className="relative w-full min-h-[40px]">
-                            {/* 1. Div invisível que expande o container */}
                             <div className="w-full text-xl sm:text-2xl font-bold text-transparent pointer-events-none whitespace-pre-wrap break-words px-0 py-0 leading-tight border-none" aria-hidden="true">
                                 {editableEvent.title || 'Placeholder'}
                             </div>
-
-                            {/* 2. Textarea absoluto que preenche o espaço */}
                             <textarea
                                 value={editableEvent.title}
                                 onChange={(e) => handleChange('title', e.target.value)}
@@ -69,8 +122,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                     <button onClick={onClose} className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
+                {/* Body Scrollável */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                    {/* ... (Resto do formulário mantido idêntico) ... */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                             <label className={labelStyle}>Status</label>
@@ -134,21 +187,44 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                     </div>
                 </div>
 
-                <div className="p-4 sm:p-6 border-t border-white/5 bg-[#111111] flex flex-col-reverse sm:flex-row justify-between items-center gap-3 shrink-0 pb-8 sm:pb-6">
-                    {!isCreating && (
-                        <button onClick={() => onDelete(event.id)} className="w-full sm:w-auto text-zinc-500 hover:text-red-500 py-3 sm:py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
-                            <Trash2 className="w-4 h-4" /> Excluir
-                        </button>
-                    )}
-                    <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-3">
-                        <button onClick={onClose} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-sm font-medium text-zinc-400 hover:text-white border border-white/10 sm:border-transparent rounded-sm">
+                {/* Footer Desktop/Mobile */}
+                <div className="p-4 sm:p-6 border-t border-white/5 bg-[#111111] flex justify-between items-center gap-3 shrink-0 pb-8 sm:pb-6">
+                    {/* Botão Excluir (Só aparece se não for criação) */}
+                    <div className="flex-1 sm:flex-none">
+                        {!isCreating && (
+                            <>
+                                {/* Desktop: Texto */}
+                                <button onClick={handleDeleteClick} className="hidden sm:flex text-zinc-500 hover:text-red-500 py-2 text-sm font-medium items-center gap-2 transition-colors">
+                                    <Trash2 className="w-4 h-4" /> Excluir
+                                </button>
+                                {/* Mobile: Bola Vermelha */}
+                                <button onClick={handleDeleteClick} className="flex sm:hidden w-12 h-12 bg-red-500/10 text-red-500 rounded-full items-center justify-center border border-red-500/20 active:scale-95 transition-transform">
+                                    <Trash2 className="w-6 h-6" />
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Botões Ação (Direita) */}
+                    <div className="flex gap-3 sm:gap-4">
+                        {/* Desktop: Texto */}
+                        <button onClick={onClose} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm transition-colors">
                             Cancelar
                         </button>
-                        <button onClick={() => onSave(editableEvent)} className="w-full sm:w-auto px-6 py-3 sm:py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] flex items-center justify-center gap-2">
+                        <button onClick={() => onSave(editableEvent)} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90">
                             <Save className="w-4 h-4" /> {isCreating ? 'Agendar' : 'Salvar'}
+                        </button>
+
+                        {/* Mobile: Bolas Inline */}
+                        <button onClick={onClose} className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform">
+                            <X className="w-6 h-6" />
+                        </button>
+                        <button onClick={() => onSave(editableEvent)} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform">
+                            {isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />}
                         </button>
                     </div>
                 </div>
+
             </div>
         </div>
     );
