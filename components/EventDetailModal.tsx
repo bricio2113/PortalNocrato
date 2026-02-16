@@ -36,32 +36,41 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
     };
 
     const labelStyle = "block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5";
-    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none"; // Aumentei py-3 e text-base para toque melhor
+    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none";
 
     return (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-            {/* Modal: Fullscreen no mobile, Card no desktop */}
             <div className="relative w-full sm:max-w-2xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200">
 
                 {/* Header */}
-                <div className="flex items-start justify-between p-6 border-b border-white/5 shrink-0">
-                    <div className="flex-1 mr-4">
-                        <input
-                            type="text"
-                            value={editableEvent.title}
-                            onChange={(e) => handleChange('title', e.target.value)}
-                            placeholder="Título da Publicação"
-                            className="w-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder:text-zinc-600 border-none focus:ring-0 p-0"
-                            autoFocus={isCreating}
-                        />
+                <div className="flex items-start justify-between p-6 border-b border-white/5 shrink-0 gap-4">
+                    <div className="flex-1">
+                        <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Título da Publicação</label>
+
+                        {/* SOLUÇÃO INFALÍVEL PARA TEXTAREA AUTO-GROW */}
+                        <div className="relative w-full min-h-[40px]">
+                            {/* 1. Div invisível que expande o container */}
+                            <div className="w-full text-xl sm:text-2xl font-bold text-transparent pointer-events-none whitespace-pre-wrap break-words px-0 py-0 leading-tight border-none" aria-hidden="true">
+                                {editableEvent.title || 'Placeholder'}
+                            </div>
+
+                            {/* 2. Textarea absoluto que preenche o espaço */}
+                            <textarea
+                                value={editableEvent.title}
+                                onChange={(e) => handleChange('title', e.target.value)}
+                                placeholder="Digite o título aqui..."
+                                className="absolute inset-0 w-full h-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder:text-zinc-600 border-none focus:ring-0 p-0 resize-none overflow-hidden leading-tight break-words whitespace-pre-wrap"
+                                autoFocus={isCreating}
+                            />
+                        </div>
                     </div>
-                    <button onClick={onClose} className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm"><X className="w-6 h-6" /></button>
+                    <button onClick={onClose} className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
-                {/* Body com Scroll */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                    {/* ... (Resto do formulário mantido idêntico) ... */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                             <label className={labelStyle}>Status</label>
@@ -74,7 +83,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                 </div>
                             </div>
                         </div>
-
                         <div>
                             <label className={labelStyle}>Data</label>
                             <div className="relative">
@@ -82,7 +90,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                 <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                             </div>
                         </div>
-
                         <div>
                             <label className={labelStyle}>Plataforma</label>
                             <div className="relative">
@@ -92,7 +99,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-zinc-500">{getPlatformIcon(editableEvent.plataforma)}</div>
                             </div>
                         </div>
-
                         <div>
                             <label className={labelStyle}>Responsável</label>
                             <div className="relative">
@@ -119,7 +125,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
 
                     <div className="flex flex-col flex-1 min-h-[150px]">
                         <label className={labelStyle}>Legenda / Copy</label>
-                        {/* TEXTAREA MELHORADO: Maior, fonte maior, padding maior */}
                         <textarea
                             value={editableEvent.copy || ''}
                             onChange={(e) => handleChange('copy', e.target.value)}
@@ -129,14 +134,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                     </div>
                 </div>
 
-                {/* Footer Fixo no Mobile para fácil acesso */}
                 <div className="p-4 sm:p-6 border-t border-white/5 bg-[#111111] flex flex-col-reverse sm:flex-row justify-between items-center gap-3 shrink-0 pb-8 sm:pb-6">
                     {!isCreating && (
                         <button onClick={() => onDelete(event.id)} className="w-full sm:w-auto text-zinc-500 hover:text-red-500 py-3 sm:py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
                             <Trash2 className="w-4 h-4" /> Excluir
                         </button>
                     )}
-
                     <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-3">
                         <button onClick={onClose} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-sm font-medium text-zinc-400 hover:text-white border border-white/10 sm:border-transparent rounded-sm">
                             Cancelar
