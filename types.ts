@@ -1,25 +1,23 @@
-
 export enum View {
-  CALENDAR,
-  UPDATES,
-  IDEAS,
+  CALENDAR = 'CALENDAR',
+  UPDATES = 'UPDATES',
+  IDEAS = 'IDEAS',
 }
 
-export type EventType = 'REELS' | 'POST' | 'INSTAGRAM' | 'TIKTOK' | 'BLOG' | 'GRAVACAO' | 'REUNIAO';
-export type EventStatus = 'Agendado' | 'Pendente' | 'Em produção' | 'Gravado' | 'Editado' | 'Postado';
-
+// ATUALIZADO: Adicionados 'Pendente' e 'Concluído'
+export type EventStatus = 'Pendente' | 'Concluído' | 'Agendado' | 'Postado' | 'Cancelado' | 'Editado';
 
 export interface CalendarEvent {
   id: string;
-  date: Date;
   title: string;
-  type: EventType;
-  description?: string;
+  date: Date;
+  type: 'POST' | 'STORY' | 'REELS' | 'VIDEO' | 'OUTRO';
   status: EventStatus;
-  proprietario: string | null;
   plataforma: string;
-  url: string;
+  proprietario?: string | null;
+  url?: string;
   copy?: string;
+  description?: string;
 }
 
 export interface WeeklyTask {
@@ -28,7 +26,6 @@ export interface WeeklyTask {
   completed: boolean;
 }
 
-// Fix: Add Idea interface
 export interface Idea {
   id: string;
   text: string;
