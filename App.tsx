@@ -17,6 +17,7 @@ import ClientProductionView from './components/ClientProductionView';
 
 // Ícones e Assets
 import { Menu, Loader2, ArrowLeft } from 'lucide-react';
+// @ts-ignore
 import favicon from './assets/favicon.png';
 
 const LoadingSpinner: React.FC = () => (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CalendarEvent } from '../types';
-import { PLATAFORMA_OPTIONS } from '../constants'; // Removido STATUS_OPTIONS
+import { PLATAFORMA_OPTIONS } from '../constants';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
@@ -97,7 +97,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                    {/* STATUS FOI REMOVIDO DAQUI */}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                             <label className={labelStyle}>Data</label>
@@ -124,18 +124,38 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                         </div>
                     </div>
 
-                    <div>
-                        <label className={labelStyle}>Link do Material</label>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <input type="text" value={editableEvent.url} onChange={(e) => handleChange('url', e.target.value)} placeholder="Cole o link aqui..." className={inputStyle} />
-                                <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                    {/* LINKS: MATERIAL BRUTO E FINALIZADO */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {/* Link Material Bruto */}
+                        <div>
+                            <label className={labelStyle}>Link do Material (Bruto)</label>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input type="text" value={editableEvent.url || ''} onChange={(e) => handleChange('url', e.target.value)} placeholder="Pasta do Drive..." className={inputStyle} />
+                                    <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                </div>
+                                {editableEvent.url && (
+                                    <a href={editableEvent.url.startsWith('http') ? editableEvent.url : `https://${editableEvent.url}`} target="_blank" rel="noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Material Bruto">
+                                        <ExternalLink className="w-5 h-5" />
+                                    </a>
+                                )}
                             </div>
-                            {editableEvent.url && (
-                                <a href={editableEvent.url.startsWith('http') ? editableEvent.url : `https://${editableEvent.url}`} target="_blank" rel="noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-sm flex items-center justify-center shrink-0">
-                                    <ExternalLink className="w-5 h-5" />
-                                </a>
-                            )}
+                        </div>
+
+                        {/* Link Conteúdo Finalizado */}
+                        <div>
+                            <label className={labelStyle}>Link do Conteúdo Finalizado</label>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input type="text" value={editableEvent.finalUrl || ''} onChange={(e) => handleChange('finalUrl', e.target.value)} placeholder="Link aprovado/final..." className={inputStyle} />
+                                    <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                </div>
+                                {editableEvent.finalUrl && (
+                                    <a href={editableEvent.finalUrl.startsWith('http') ? editableEvent.finalUrl : `https://${editableEvent.finalUrl}`} target="_blank" rel="noreferrer" className="px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Conteúdo Final">
+                                        <ExternalLink className="w-5 h-5" />
+                                    </a>
+                                )}
+                            </div>
                         </div>
                     </div>
 

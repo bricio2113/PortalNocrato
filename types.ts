@@ -4,7 +4,6 @@ export enum View {
   IDEAS = 'IDEAS',
 }
 
-// ATUALIZADO: Adicionados 'Pendente' e 'Concluído'
 export type EventStatus = 'Pendente' | 'Concluído' | 'Agendado' | 'Postado' | 'Cancelado' | 'Editado';
 
 export interface CalendarEvent {
@@ -16,6 +15,7 @@ export interface CalendarEvent {
   plataforma: string;
   proprietario?: string | null;
   url?: string;
+  finalUrl?: string; // NOVO CAMPO ADICIONADO
   copy?: string;
   description?: string;
 }

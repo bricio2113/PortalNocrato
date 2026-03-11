@@ -5,7 +5,6 @@ import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-// Novos ícones: LayoutList e Grid3x3
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3 } from 'lucide-react';
 
 interface CalendarViewProps { empresaId: string; }
@@ -15,8 +14,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-
-    // NOVO: Estado para controlar o modo de visualização (Grade ou Lista)
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
     const getDaysInMonth = (year: number, month: number) => { const date = new Date(year, month, 1); const days = []; while (date.getMonth() === month) { days.push(new Date(date)); date.setDate(date.getDate() + 1); } return days; };
@@ -28,8 +25,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
     useEffect(() => { if (!empresaId) return; const fetchData = async () => { setIsLoading(true); try { const eventsCollection = db.collection('empresas').doc(empresaId).collection('events'); const querySnapshot = await eventsCollection.get(); let eventsData: CalendarEvent[] = []; if (querySnapshot.empty) { const seedingPromises = INITIAL_EVENTS.map(event => eventsCollection.add(event)); await Promise.all(seedingPromises); const newSnapshot = await eventsCollection.get(); eventsData = newSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } else { eventsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime())); } catch (error) { console.error(error); } finally { setIsLoading(false); } }; fetchData(); }, [empresaId]);
 
-    const handleAddNewEventClick = () => { setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', copy: '', description: '' }); };
-    const handleCreateEventForDate = (date: Date) => { setSelectedEvent({ id: '', date: date, title: '', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', copy: '', description: '' }); };
+    // AQUI ESTÁ A MUDANÇA: finalUrl: '' adicionado na criação
+    const handleAddNewEventClick = () => { setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
+    const handleCreateEventForDate = (date: Date) => { setSelectedEvent({ id: '', date: date, title: '', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
+
     const handleSaveEvent = async (eventData: CalendarEvent) => { if (eventData.id) { try { const { id, ...data } = eventData; await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data); await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date); setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e)); } catch (e) { console.error(e); } } else { try { const { id, ...data } = eventData; const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data); await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date); setEvents(prev => [...prev, { ...eventData, id: docRef.id }]); } catch (e) { console.error(e); } } setSelectedEvent(null); };
     const handleDeleteEvent = async (eventId: string) => { try { await db.collection('empresas').doc(empresaId).collection('events').doc(eventId).delete(); await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete(); setEvents(prev => prev.filter(e => e.id !== eventId)); setSelectedEvent(null); } catch (e) { alert('Erro ao excluir.'); } };
     const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -37,13 +36,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
     const handleToday = () => setCurrentDate(new Date());
     const isToday = (date: Date) => { const today = new Date(); return date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear(); };
 
-    // Helper para agrupar eventos por dia na visualização de lista
-    const getEventsForMonth = () => {
-        return events.filter(e =>
-            e.date.getMonth() === currentDate.getMonth() &&
-            e.date.getFullYear() === currentDate.getFullYear()
-        );
-    };
+    const getEventsForMonth = () => { return events.filter(e => e.date.getMonth() === currentDate.getMonth() && e.date.getFullYear() === currentDate.getFullYear() ); };
 
     return (
         <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
@@ -59,22 +52,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                    {/* Botão de Alternar Visualização (Grade / Lista) */}
                     <div className="flex bg-[#1A1A1A] p-1 rounded-sm border border-white/10 w-full sm:w-auto">
-                        <button
-                            onClick={() => setViewMode('grid')}
-                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                        >
-                            <Grid3x3 className="w-4 h-4" /> <span className="sm:hidden md:inline">Grade</span>
-                        </button>
-                        <button
-                            onClick={() => setViewMode('list')}
-                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                        >
-                            <LayoutList className="w-4 h-4" /> <span className="sm:hidden md:inline">Lista</span>
-                        </button>
+                        <button onClick={() => setViewMode('grid')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><Grid3x3 className="w-4 h-4" /> <span className="sm:hidden md:inline">Grade</span></button>
+                        <button onClick={() => setViewMode('list')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><LayoutList className="w-4 h-4" /> <span className="sm:hidden md:inline">Lista</span></button>
                     </div>
-
                     <button onClick={handleAddNewEventClick} className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-2.5 px-6 rounded-sm shadow-[0_0_20px_rgba(250,190,1,0.2)] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wide w-full sm:w-auto">
                         <Plus className="w-5 h-5" /> Novo
                     </button>
@@ -100,14 +81,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     </div>
                 ) : (
                     <>
-                        {/* --- VISUALIZAÇÃO EM GRADE (DESKTOP / MOBILE SCROLL) --- */}
                         {viewMode === 'grid' && (
                             <div className="overflow-x-auto">
                                 <div className="grid grid-cols-7 bg-[#1A1A1A] min-w-[1200px]">
                                     {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-                                        <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500 uppercase tracking-widest border-b border-r border-white/5 bg-[#111111]">
-                                            {day}
-                                        </div>
+                                        <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500 uppercase tracking-widest border-b border-r border-white/5 bg-[#111111]">{day}</div>
                                     ))}
 
                                     {calendarDays.map((date, index) => {
@@ -118,9 +96,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                         return (
                                             <div key={date.toISOString()} className={`group relative min-h-[140px] p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
                                                 <div className="flex justify-between items-start mb-2">
-                                                    <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>
-                                                        {date.getDate()}
-                                                    </span>
+                                                    <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{date.getDate()}</span>
                                                     <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-sm transition-all"><Plus className="w-4 h-4" /></button>
                                                 </div>
                                                 <div className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
@@ -140,13 +116,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                             </div>
                         )}
 
-                        {/* --- VISUALIZAÇÃO EM LISTA (MOBILE FRIENDLY) --- */}
                         {viewMode === 'list' && (
                             <div className="p-4 sm:p-6 min-h-[400px]">
                                 {getEventsForMonth().length === 0 ? (
-                                    <div className="text-center py-12 text-zinc-500">
-                                        <p>Nenhum agendamento para este mês.</p>
-                                    </div>
+                                    <div className="text-center py-12 text-zinc-500"><p>Nenhum agendamento para este mês.</p></div>
                                 ) : (
                                     <div className="space-y-4">
                                         {calendarDays.filter(d => d !== null).map(date => {
@@ -162,19 +135,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                                     </div>
                                                     <div className="divide-y divide-white/5">
                                                         {dayEvents.map(event => (
-                                                            <div
-                                                                key={event.id}
-                                                                onClick={() => setSelectedEvent(event)}
-                                                                className="p-4 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-4"
-                                                            >
+                                                            <div key={event.id} onClick={() => setSelectedEvent(event)} className="p-4 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-4">
                                                                 <div className={`p-2 rounded-full ${event.type === 'POST' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
                                                                     {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
                                                                 </div>
                                                                 <div className="flex-1">
                                                                     <h4 className="text-white font-medium text-sm mb-0.5">{event.title || '(Sem título)'}</h4>
                                                                     <div className="flex items-center gap-2 text-xs text-zinc-500">
-                                                                        <span className={`px-1.5 py-0.5 rounded-sm border ${event.status === 'Concluído' ? 'border-green-500/30 text-green-500' : 'border-zinc-700 text-zinc-500'}`}>{event.status}</span>
-                                                                        {event.proprietario && <span>• {event.proprietario}</span>}
+                                                                        {event.proprietario && <span>{event.proprietario}</span>}
                                                                     </div>
                                                                 </div>
                                                             </div>
