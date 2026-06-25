@@ -25,11 +25,73 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
     useEffect(() => { if (!empresaId) return; const fetchData = async () => { setIsLoading(true); try { const eventsCollection = db.collection('empresas').doc(empresaId).collection('events'); const querySnapshot = await eventsCollection.get(); let eventsData: CalendarEvent[] = []; if (querySnapshot.empty) { const seedingPromises = INITIAL_EVENTS.map(event => eventsCollection.add(event)); await Promise.all(seedingPromises); const newSnapshot = await eventsCollection.get(); eventsData = newSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } else { eventsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime())); } catch (error) { console.error(error); } finally { setIsLoading(false); } }; fetchData(); }, [empresaId]);
 
-    // AQUI ESTÁ A MUDANÇA: finalUrl: '' adicionado na criação
     const handleAddNewEventClick = () => { setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
     const handleCreateEventForDate = (date: Date) => { setSelectedEvent({ id: '', date: date, title: '', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
 
-    const handleSaveEvent = async (eventData: CalendarEvent) => { if (eventData.id) { try { const { id, ...data } = eventData; await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data); await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date); setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e)); } catch (e) { console.error(e); } } else { try { const { id, ...data } = eventData; const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data); await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date); setEvents(prev => [...prev, { ...eventData, id: docRef.id }]); } catch (e) { console.error(e); } } setSelectedEvent(null); };
+    const handleSaveEvent = async (eventData: CalendarEvent) => { 
+        
+        // --- LÓGICA MESTRE DE AUTOMAÇÃO KANBAN E AGENDA ---
+        let kanbanStatus = 'TODO';
+        
+        // Se a equipe colocar um link finalizado, o sistema encerra o fluxo automaticamente
+        if (eventData.finalUrl && eventData.finalUrl.trim() !== '') {
+            kanbanStatus = 'DONE';
+            eventData.status = 'Concluído'; // Automação UX: altera o status da agenda automaticamente
+        } 
+        // Se a equipe apenas alterar pelo modal de forma explícita
+        else if (eventData.status === 'Em andamento') {
+            kanbanStatus = 'IN_PROGRESS';
+        } else if (eventData.status === 'Concluído' || eventData.status === 'Postado') {
+            kanbanStatus = 'DONE';
+        } else {
+            kanbanStatus = 'TODO'; // Pendente, Agendado, etc.
+        }
+
+        if (eventData.id) { 
+            try { 
+                const { id, ...data } = eventData; 
+                await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data); 
+                await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date); 
+                setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e)); 
+
+                // Atualiza o card existente no Kanban
+                const tasksRef = db.collection('empresas').doc(empresaId).collection('kanban_tasks');
+                let tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
+
+                if (tasksSnapshot.empty) {
+                    tasksSnapshot = await tasksRef.where('title', '==', eventData.title).get();
+                }
+
+                if (!tasksSnapshot.empty) {
+                    const updatePromises = tasksSnapshot.docs.map(doc => doc.ref.update({ status: kanbanStatus }));
+                    await Promise.all(updatePromises);
+                }
+
+            } catch (e) { 
+                console.error(e); 
+            } 
+        } else { 
+            try { 
+                const { id, ...data } = eventData; 
+                const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data); 
+                await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date); 
+                setEvents(prev => [...prev, { ...eventData, id: docRef.id }]); 
+
+                // Cria o card no Kanban já na coluna correspondente
+                await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
+                    title: eventData.title || 'Nova Publicação',
+                    status: kanbanStatus,
+                    createdAt: new Date(),
+                    eventId: docRef.id
+                });
+
+            } catch (e) { 
+                console.error(e); 
+            } 
+        } 
+        setSelectedEvent(null); 
+    };
+
     const handleDeleteEvent = async (eventId: string) => { try { await db.collection('empresas').doc(empresaId).collection('events').doc(eventId).delete(); await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete(); setEvents(prev => prev.filter(e => e.id !== eventId)); setSelectedEvent(null); } catch (e) { alert('Erro ao excluir.'); } };
     const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
     const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));

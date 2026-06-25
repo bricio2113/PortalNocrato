@@ -1,10 +1,10 @@
 import { EventStatus, CalendarEvent, WeeklyTask, Idea } from './types';
 
-// ATUALIZADO
 export const STATUS_OPTIONS: EventStatus[] = [
   'Pendente',
-  'Concluído',
   'Agendado',
+  'Em andamento',
+  'Concluído',
   'Postado',
   'Editado',
   'Cancelado'

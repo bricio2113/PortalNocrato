@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CalendarEvent } from '../types';
-import { PLATAFORMA_OPTIONS } from '../constants';
+import { PLATAFORMA_OPTIONS, STATUS_OPTIONS } from '../constants';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
@@ -98,12 +98,20 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                         <div>
                             <label className={labelStyle}>Data</label>
                             <div className="relative">
                                 <input type="date" value={editableEvent.date.toISOString().split('T')[0]} onChange={(e) => { const [y, m, d] = e.target.value.split('-').map(Number); handleChange('date', new Date(y, m - 1, d)); }} className={`${inputStyle} [color-scheme:dark]`} />
                                 <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className={labelStyle}>Status</label>
+                            <div className="relative">
+                                <select value={editableEvent.status} onChange={(e) => handleChange('status', e.target.value)} className={inputStyle}>
+                                    {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
                             </div>
                         </div>
                         <div>
@@ -115,7 +123,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-zinc-500">{getPlatformIcon(editableEvent.plataforma)}</div>
                             </div>
                         </div>
-                        <div className="col-span-1 sm:col-span-2">
+                        <div className="col-span-1 sm:col-span-3">
                             <label className={labelStyle}>Responsável</label>
                             <div className="relative">
                                 <input type="text" value={editableEvent.proprietario || ''} onChange={(e) => handleChange('proprietario', e.target.value)} placeholder="Nome" className={inputStyle} />
