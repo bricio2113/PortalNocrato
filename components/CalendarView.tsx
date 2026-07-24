@@ -7,7 +7,9 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3 } from 'lucide-react';
 
-interface CalendarViewProps { empresaId: string; }
+interface CalendarViewProps {
+    empresaId: string;
+}
 
 const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -16,89 +18,151 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-    const getDaysInMonth = (year: number, month: number) => { const date = new Date(year, month, 1); const days = []; while (date.getMonth() === month) { days.push(new Date(date)); date.setDate(date.getDate() + 1); } return days; };
-    const generateCalendarGrid = () => { const year = currentDate.getFullYear(); const month = currentDate.getMonth(); const firstDayOfMonth = new Date(year, month, 1); const startDayOfWeek = firstDayOfMonth.getDay(); const daysInMonth = getDaysInMonth(year, month); const days = []; for (let i = 0; i < startDayOfWeek; i++) { days.push(null); } days.push(...daysInMonth); return days; };
+    const getDaysInMonth = (year: number, month: number) => {
+        const date = new Date(year, month, 1);
+        const days = [];
+        while (date.getMonth() === month) {
+            days.push(new Date(date));
+            date.setDate(date.getDate() + 1);
+        }
+        return days;
+    };
+
+    const generateCalendarGrid = () => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const firstDayOfMonth = new Date(year, month, 1);
+        const startDayOfWeek = firstDayOfMonth.getDay();
+        const daysInMonth = getDaysInMonth(year, month);
+        const days = [];
+        for (let i = 0; i < startDayOfWeek; i++) {
+            days.push(null);
+        }
+        days.push(...daysInMonth);
+        return days;
+    };
+
     const calendarDays = useMemo(() => generateCalendarGrid(), [currentDate]);
 
-    const salvarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => { try { await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).set({ titulo, conteudo, data_agendada }); } catch (error) { console.error(error); } };
-    const atualizarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => { try { await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).update({ titulo, conteudo, data_agendada }); } catch (error) { console.error(error); } };
+    const salvarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => {
+        try {
+            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).set({ titulo, conteudo, data_agendada });
+        } catch (error) { console.error(error); }
+    };
 
-    useEffect(() => { if (!empresaId) return; const fetchData = async () => { setIsLoading(true); try { const eventsCollection = db.collection('empresas').doc(empresaId).collection('events'); const querySnapshot = await eventsCollection.get(); let eventsData: CalendarEvent[] = []; if (querySnapshot.empty) { const seedingPromises = INITIAL_EVENTS.map(event => eventsCollection.add(event)); await Promise.all(seedingPromises); const newSnapshot = await eventsCollection.get(); eventsData = newSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } else { eventsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent)); } setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime())); } catch (error) { console.error(error); } finally { setIsLoading(false); } }; fetchData(); }, [empresaId]);
+    const atualizarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => {
+        try {
+            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).update({ titulo, conteudo, data_agendada });
+        } catch (error) { console.error(error); }
+    };
 
-    const handleAddNewEventClick = () => { setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
-    const handleCreateEventForDate = (date: Date) => { setSelectedEvent({ id: '', date: date, title: '', type: 'POST', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' }); };
+    useEffect(() => {
+        if (!empresaId) return;
+        const fetchData = async () => {
+            setIsLoading(true);
+            try {
+                const eventsCollection = db.collection('empresas').doc(empresaId).collection('events');
+                const querySnapshot = await eventsCollection.get();
+                let eventsData: CalendarEvent[] = [];
+                if (querySnapshot.empty) {
+                    const seedingPromises = INITIAL_EVENTS.map(event => eventsCollection.add(event));
+                    await Promise.all(seedingPromises);
+                    const newSnapshot = await eventsCollection.get();
+                    eventsData = newSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent));
+                } else {
+                    eventsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent));
+                }
+                setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
+            } catch (error) { console.error(error); } finally { setIsLoading(false); }
+        };
+        fetchData();
+    }, [empresaId]);
 
-    const handleSaveEvent = async (eventData: CalendarEvent) => { 
-        
-        // --- LÓGICA MESTRE DE AUTOMAÇÃO KANBAN E AGENDA ---
-        let kanbanStatus = 'TODO';
-        
-        // Se a equipe colocar um link finalizado, o sistema encerra o fluxo automaticamente
-        if (eventData.finalUrl && eventData.finalUrl.trim() !== '') {
-            kanbanStatus = 'DONE';
-            eventData.status = 'Concluído'; // Automação UX: altera o status da agenda automaticamente
-        } 
-        // Se a equipe apenas alterar pelo modal de forma explícita
-        else if (eventData.status === 'Em andamento') {
-            kanbanStatus = 'IN_PROGRESS';
-        } else if (eventData.status === 'Concluído' || eventData.status === 'Postado') {
-            kanbanStatus = 'DONE';
-        } else {
-            kanbanStatus = 'TODO'; // Pendente, Agendado, etc.
-        }
+    const handleAddNewEventClick = () => {
+        setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
+    };
 
-        if (eventData.id) { 
-            try { 
-                const { id, ...data } = eventData; 
-                await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data); 
-                await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date); 
-                setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e)); 
+    const handleCreateEventForDate = (date: Date) => {
+        setSelectedEvent({ id: '', date: date, title: '', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
+    };
 
-                // Atualiza o card existente no Kanban
+    const handleSaveEvent = async (eventData: CalendarEvent) => {
+        if (eventData.id) {
+            try {
+                const { id, ...data } = eventData;
+                await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data);
+                await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date);
+                setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e));
+
+                // Sincroniza exatamente o mesmo status com as Tasks do Kanban
                 const tasksRef = db.collection('empresas').doc(empresaId).collection('kanban_tasks');
                 let tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
-
                 if (tasksSnapshot.empty) {
                     tasksSnapshot = await tasksRef.where('title', '==', eventData.title).get();
                 }
-
                 if (!tasksSnapshot.empty) {
-                    const updatePromises = tasksSnapshot.docs.map(doc => doc.ref.update({ status: kanbanStatus }));
+                    const updatePromises = tasksSnapshot.docs.map(doc => doc.ref.update({ status: eventData.status }));
                     await Promise.all(updatePromises);
                 }
+            } catch (e) { console.error(e); }
+        } else {
+            try {
+                const { id, ...data } = eventData;
+                const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data);
+                await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date);
+                setEvents(prev => [...prev, { ...eventData, id: docRef.id }]);
 
-            } catch (e) { 
-                console.error(e); 
-            } 
-        } else { 
-            try { 
-                const { id, ...data } = eventData; 
-                const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data); 
-                await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date); 
-                setEvents(prev => [...prev, { ...eventData, id: docRef.id }]); 
-
-                // Cria o card no Kanban já na coluna correspondente
+                // Cria o Card no Kanban com o status exato do modal
                 await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
                     title: eventData.title || 'Nova Publicação',
-                    status: kanbanStatus,
+                    status: eventData.status,
                     createdAt: new Date(),
                     eventId: docRef.id
                 });
-
-            } catch (e) { 
-                console.error(e); 
-            } 
-        } 
-        setSelectedEvent(null); 
+            } catch (e) { console.error(e); }
+        }
+        setSelectedEvent(null);
     };
 
-    const handleDeleteEvent = async (eventId: string) => { try { await db.collection('empresas').doc(empresaId).collection('events').doc(eventId).delete(); await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete(); setEvents(prev => prev.filter(e => e.id !== eventId)); setSelectedEvent(null); } catch (e) { alert('Erro ao excluir.'); } };
+    const handleDeleteEvent = async (eventId: string) => {
+        try {
+            await db.collection('empresas').doc(empresaId).collection('events').doc(eventId).delete();
+            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete();
+            setEvents(prev => prev.filter(e => e.id !== eventId));
+            setSelectedEvent(null);
+        } catch (e) { alert('Erro ao excluir.'); }
+    };
+
     const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
     const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
     const handleToday = () => setCurrentDate(new Date());
-    const isToday = (date: Date) => { const today = new Date(); return date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear(); };
 
-    const getEventsForMonth = () => { return events.filter(e => e.date.getMonth() === currentDate.getMonth() && e.date.getFullYear() === currentDate.getFullYear() ); };
+    const isToday = (date: Date) => {
+        const today = new Date();
+        return date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+    };
+
+    const getEventsForMonth = () => {
+        return events.filter(e => e.date.getMonth() === currentDate.getMonth() && e.date.getFullYear() === currentDate.getFullYear());
+    };
+
+    // SISTEMA DE TAGS POR COR BASEADO NO TIPO
+    const getTypeStyles = (type: string) => {
+        const t = (type || '').toUpperCase();
+        if (t.includes('REEL') || t.includes('VÍDEO')) {
+            return { bg: 'bg-blue-500/10', border: 'border-blue-500', text: 'text-blue-300', label: 'bg-blue-500 text-black' };
+        }
+        if (t.includes('POST') || t.includes('CARROSSEL') || t.includes('ESTÁTICO')) {
+            return { bg: 'bg-emerald-500/10', border: 'border-emerald-500', text: 'text-emerald-300', label: 'bg-emerald-500 text-black' };
+        }
+        if (t.includes('STORY') || t.includes('CRIATIVO')) {
+            return { bg: 'bg-[#FABE01]/10', border: 'border-[#FABE01]', text: 'text-[#FABE01]', label: 'bg-[#FABE01] text-black' };
+        }
+        if (t.includes('TRÁFEGO')) {
+            return { bg: 'bg-red-500/10', border: 'border-red-500', text: 'text-red-300', label: 'bg-red-500 text-white' };
+        }
+        return { bg: 'bg-purple-500/10', border: 'border-purple-500', text: 'text-purple-300', label: 'bg-purple-500 text-white' };
+    };
 
     return (
         <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
@@ -112,7 +176,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                         Planeje, agende e visualize todas as suas publicações.
                     </p>
                 </div>
-
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                     <div className="flex bg-[#1A1A1A] p-1 rounded-sm border border-white/10 w-full sm:w-auto">
                         <button onClick={() => setViewMode('grid')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><Grid3x3 className="w-4 h-4" /> <span className="sm:hidden md:inline">Grade</span></button>
@@ -149,12 +212,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                     {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
                                         <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500 uppercase tracking-widest border-b border-r border-white/5 bg-[#111111]">{day}</div>
                                     ))}
-
                                     {calendarDays.map((date, index) => {
                                         if (!date) return <div key={`empty-${index}`} className="bg-[#111111]/50 border-b border-r border-white/5 min-h-[140px]" />;
                                         const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                         const isTodayDate = isToday(date);
-
                                         return (
                                             <div key={date.toISOString()} className={`group relative min-h-[140px] p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
                                                 <div className="flex justify-between items-start mb-2">
@@ -162,14 +223,20 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                                     <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-sm transition-all"><Plus className="w-4 h-4" /></button>
                                                 </div>
                                                 <div className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
-                                                    {dayEvents.map(event => (
-                                                        <div key={event.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }} className={`cursor-pointer p-2 rounded-sm text-xs font-medium border-l-2 transition-colors h-auto ${event.type === 'POST' ? 'bg-blue-500/10 border-blue-500 text-blue-200' : 'bg-purple-500/10 border-purple-500 text-purple-200'}`}>
-                                                            <div className="flex items-start gap-1.5">
-                                                                <div className="mt-0.5 shrink-0">{event.plataforma === 'Instagram' ? <Instagram className="w-3 h-3 opacity-70" /> : <FileText className="w-3 h-3 opacity-70" />}</div>
-                                                                <span className="leading-tight break-words whitespace-normal text-[11px]">{event.title || '(Sem título)'}</span>
+                                                    {dayEvents.map(event => {
+                                                        const styles = getTypeStyles(event.type);
+                                                        return (
+                                                            <div key={event.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }} className={`cursor-pointer p-2 rounded-sm text-xs font-medium border-l-2 transition-colors h-auto ${styles.bg} ${styles.border} ${styles.text}`}>
+                                                                <div className="flex items-start gap-1.5">
+                                                                    <div className="mt-0.5 shrink-0">{event.plataforma === 'Instagram' ? <Instagram className="w-3 h-3 opacity-70" /> : <FileText className="w-3 h-3 opacity-70" />}</div>
+                                                                    <div className="flex flex-col gap-1 w-full">
+                                                                        <span className="leading-tight break-words whitespace-normal text-[11px]">{event.title || '(Sem título)'}</span>
+                                                                        <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         );
@@ -177,7 +244,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                 </div>
                             </div>
                         )}
-
                         {viewMode === 'list' && (
                             <div className="p-4 sm:p-6 min-h-[400px]">
                                 {getEventsForMonth().length === 0 ? (
@@ -188,7 +254,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                             if (!date) return null;
                                             const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                             if (dayEvents.length === 0) return null;
-
                                             return (
                                                 <div key={date.toISOString()} className="bg-[#1A1A1A] border border-white/5 rounded-sm overflow-hidden">
                                                     <div className={`px-4 py-2 text-sm font-bold flex items-center justify-between ${isToday(date) ? 'bg-[#FABE01] text-black' : 'bg-black/40 text-zinc-400'}`}>
@@ -196,19 +261,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                                         <button onClick={() => handleCreateEventForDate(date)} className="p-1 hover:bg-white/20 rounded-sm"><Plus className="w-4 h-4" /></button>
                                                     </div>
                                                     <div className="divide-y divide-white/5">
-                                                        {dayEvents.map(event => (
-                                                            <div key={event.id} onClick={() => setSelectedEvent(event)} className="p-4 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-4">
-                                                                <div className={`p-2 rounded-full ${event.type === 'POST' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
-                                                                    {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                                                                </div>
-                                                                <div className="flex-1">
-                                                                    <h4 className="text-white font-medium text-sm mb-0.5">{event.title || '(Sem título)'}</h4>
-                                                                    <div className="flex items-center gap-2 text-xs text-zinc-500">
-                                                                        {event.proprietario && <span>{event.proprietario}</span>}
+                                                        {dayEvents.map(event => {
+                                                            const styles = getTypeStyles(event.type);
+                                                            return (
+                                                                <div key={event.id} onClick={() => setSelectedEvent(event)} className="p-4 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-4">
+                                                                    <div className={`p-2 rounded-full ${styles.bg} ${styles.text}`}>
+                                                                        {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                                            <h4 className="text-white font-medium text-sm">{event.title || '(Sem título)'}</h4>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                                                            {event.proprietario && <span>{event.proprietario}</span>}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        ))}
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             );
@@ -220,7 +291,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     </>
                 )}
             </div>
-
             {selectedEvent && <EventDetailModal event={selectedEvent} onSave={handleSaveEvent} onDelete={handleDeleteEvent} onClose={() => setSelectedEvent(null)} />}
         </div>
     );

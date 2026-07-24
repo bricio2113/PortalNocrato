@@ -25,10 +25,11 @@ const getPlatformIcon = (platform: string) => {
     }
 };
 
+const FORMATO_OPTIONS = ['Post', 'Reel', 'Criativo', 'Tráfego', 'Story', 'Vídeo', 'Carrossel', 'Outro'];
+
 const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDelete, onClose }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
     const [isDeleting, setIsDeleting] = useState(false);
-
     const isCreating = !event.id;
     const titleRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,7 +47,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
     }, [editableEvent.title]);
 
     const handleChange = (field: keyof CalendarEvent, value: any) => {
-        setEditableEvent(prev => ({...prev, [field]: value}));
+        setEditableEvent(prev => ({ ...prev, [field]: value }));
     };
 
     const handleDeleteClick = () => setIsDeleting(true);
@@ -59,14 +60,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
     return (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
-
-            <div className="relative w-full sm:max-w-2xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
-
+            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+                
                 {isDeleting && (
                     <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
                         <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
                         <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
-                            Esta ação não pode ser desfeita.
+                            Esta ação pode ser desfeita.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
                             <button onClick={handleCancelDelete} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Cancelar</button>
@@ -97,8 +97,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div>
                             <label className={labelStyle}>Data</label>
                             <div className="relative">
@@ -115,6 +114,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                             </div>
                         </div>
                         <div>
+                            <label className={labelStyle}>Formato / Tipo</label>
+                            <div className="relative">
+                                <select value={editableEvent.type} onChange={(e) => handleChange('type', e.target.value)} className={inputStyle}>
+                                    {FORMATO_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div>
                             <label className={labelStyle}>Plataforma</label>
                             <div className="relative">
                                 <select value={editableEvent.plataforma} onChange={(e) => handleChange('plataforma', e.target.value)} className={inputStyle}>
@@ -123,7 +130,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-zinc-500">{getPlatformIcon(editableEvent.plataforma)}</div>
                             </div>
                         </div>
-                        <div className="col-span-1 sm:col-span-3">
+                        <div className="col-span-1 sm:col-span-2 lg:col-span-4">
                             <label className={labelStyle}>Responsável</label>
                             <div className="relative">
                                 <input type="text" value={editableEvent.proprietario || ''} onChange={(e) => handleChange('proprietario', e.target.value)} placeholder="Nome" className={inputStyle} />
@@ -192,11 +199,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                             </>
                         )}
                     </div>
-
                     <div className="flex gap-3 sm:gap-4">
                         <button onClick={onClose} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm transition-colors">Cancelar</button>
                         <button onClick={() => onSave(editableEvent)} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90"><Save className="w-4 h-4" /> {isCreating ? 'Agendar' : 'Salvar'}</button>
-
                         <button onClick={onClose} className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform"><X className="w-6 h-6" /></button>
                         <button onClick={() => onSave(editableEvent)} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform">{isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />}</button>
                     </div>
