@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CalendarEvent } from '../types';
-import { PLATAFORMA_OPTIONS, STATUS_OPTIONS } from '../constants';
+import { PLATAFORMA_OPTIONS, STATUS_OPTIONS, FORMATO_OPTIONS } from '../constants';
+import { toSafeHref } from '../utils/url';
+import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
@@ -24,8 +26,6 @@ const getPlatformIcon = (platform: string) => {
         default: return <Globe className="w-4 h-4" />;
     }
 };
-
-const FORMATO_OPTIONS = ['Post', 'Reel', 'Criativo', 'Tráfego', 'Story', 'Vídeo', 'Carrossel', 'Outro'];
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDelete, onClose }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
@@ -101,7 +101,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                         <div>
                             <label className={labelStyle}>Data</label>
                             <div className="relative">
-                                <input type="date" value={editableEvent.date.toISOString().split('T')[0]} onChange={(e) => { const [y, m, d] = e.target.value.split('-').map(Number); handleChange('date', new Date(y, m - 1, d)); }} className={`${inputStyle} [color-scheme:dark]`} />
+                                <input type="date" value={toDateInputValue(editableEvent.date)} onChange={(e) => { const parsed = fromDateInputValue(e.target.value); if (parsed) handleChange('date', parsed); }} className={`${inputStyle} [color-scheme:dark]`} />
                                 <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                             </div>
                         </div>
@@ -149,8 +149,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                     <input type="text" value={editableEvent.url || ''} onChange={(e) => handleChange('url', e.target.value)} placeholder="Pasta do Drive..." className={inputStyle} />
                                     <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
-                                {editableEvent.url && (
-                                    <a href={editableEvent.url.startsWith('http') ? editableEvent.url : `https://${editableEvent.url}`} target="_blank" rel="noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Material Bruto">
+                                {toSafeHref(editableEvent.url) && (
+                                    <a href={toSafeHref(editableEvent.url)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Material Bruto">
                                         <ExternalLink className="w-5 h-5" />
                                     </a>
                                 )}
@@ -165,8 +165,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                                     <input type="text" value={editableEvent.finalUrl || ''} onChange={(e) => handleChange('finalUrl', e.target.value)} placeholder="Link aprovado/final..." className={inputStyle} />
                                     <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
-                                {editableEvent.finalUrl && (
-                                    <a href={editableEvent.finalUrl.startsWith('http') ? editableEvent.finalUrl : `https://${editableEvent.finalUrl}`} target="_blank" rel="noreferrer" className="px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Conteúdo Final">
+                                {toSafeHref(editableEvent.finalUrl) && (
+                                    <a href={toSafeHref(editableEvent.finalUrl)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Conteúdo Final">
                                         <ExternalLink className="w-5 h-5" />
                                     </a>
                                 )}

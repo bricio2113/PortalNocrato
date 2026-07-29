@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
+import { DELETE_USER_ENDPOINT } from '../constants';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
@@ -74,14 +75,36 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     const handleDeleteUser = async (userId: string) => {
         if (!window.confirm("ATENÇÃO: Deseja remover este usuário?")) return;
         try {
+            // O ID token identifica quem esta pedindo a exclusao. A funcao
+            // deleteUser precisa verifica-lo com admin.auth().verifyIdToken()
+            // e conferir se o chamador e mesmo da agencia - sem isso o
+            // endpoint continua aberto a qualquer um.
+            const idToken = await auth.currentUser?.getIdToken();
+            if (!idToken) {
+                showNotification('Sessão expirada. Faça login novamente.');
+                return;
+            }
+
             await db.collection('usuarios').doc(userId).delete();
             setUsers(prev => prev.filter(u => u.id !== userId));
-            showNotification('Usuário removido.');
-            fetch('https://us-central1-agencia-nocrato.cloudfunctions.net/deleteUser', {
+
+            const response = await fetch(DELETE_USER_ENDPOINT, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
                 body: JSON.stringify({ uid: userId })
-            }).catch(() => { });
+            });
+
+            if (!response.ok) {
+                // O documento ja saiu do Firestore, mas a conta continua no
+                // Auth: o usuario ainda consegue logar. Precisa ser visivel.
+                showNotification('Documento removido, mas a conta de login permaneceu. Verifique no Firebase.');
+                return;
+            }
+
+            showNotification('Usuário removido.');
         } catch (error) {
             showNotification('Erro ao excluir.');
         }

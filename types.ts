@@ -6,11 +6,17 @@ export enum View {
 
 export type EventStatus = 'Pendente' | 'Em andamento' | 'Concluído' | 'Agendado' | 'Postado' | 'Cancelado' | 'Editado';
 
+// Formatos oferecidos pelo EventDetailModal (FORMATO_OPTIONS em constants.ts).
+// O union anterior era 'POST' | 'STORY' | ... em caixa alta e nunca bateu com
+// o que a interface grava; getTypeStyles normaliza com toUpperCase(), entao
+// documentos antigos em caixa alta continuam sendo exibidos corretamente.
+export type EventType = 'Post' | 'Reel' | 'Criativo' | 'Tráfego' | 'Story' | 'Vídeo' | 'Carrossel' | 'Outro';
+
 export interface CalendarEvent {
   id: string;
   title: string;
   date: Date;
-  type: 'POST' | 'STORY' | 'REELS' | 'VIDEO' | 'OUTRO';
+  type: EventType;
   status: EventStatus;
   plataforma: string;
   proprietario?: string | null;

@@ -1,1 +1,116 @@
-��^��ޮȨ
+rules_version = '2';
+
+// Regras de seguranca do Portal do Cliente - Agencia Nocrato.
+//
+// Modelo de dados:
+//   usuarios/{uid}                    { email, role: 'agencia'|'cliente', empresaId }
+//   empresas/{empresaId}              { nome }
+//     events/{id} | kanban_tasks/{id} | tasks/{id} | drive_links/{id}
+//
+// Principio: o cliente so enxerga e escreve dentro da propria empresa;
+// a agencia enxerga tudo; ninguem promove a si mesmo a 'agencia'.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Espelha a checagem de emailVerified feita em App.tsx.
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Bootstrap da agencia por e-mail. Precisa ficar igual a lista
+    // AGENCY_EMAILS em constants.ts - sem isso o primeiro admin nao
+    // conseguiria criar o proprio documento com role 'agencia'.
+    function isAgencyEmail() {
+      return isSignedIn() && request.auth.token.email in [
+        'briciomarketing@gmail.com',
+        'briciomarketing@mail.com'
+      ];
+    }
+
+    function myUserDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    // Confiar no campo 'role' so e seguro porque as regras de
+    // usuarios/{userId} impedem que o proprio usuario o altere.
+    function isAgency() {
+      return isAgencyEmail()
+        || (isVerified() && hasUserDoc() && myUserDoc().role == 'agencia');
+    }
+
+    function belongsTo(empresaId) {
+      return isVerified() && hasUserDoc() && myUserDoc().empresaId == empresaId;
+    }
+
+    // ---------------------------------------------------------------
+    // usuarios/
+    // ---------------------------------------------------------------
+
+    match /usuarios/{userId} {
+
+      // O usuario le o proprio documento; a agencia le todos (dashboard).
+      allow read: if (isSignedIn() && request.auth.uid == userId)
+                  || isAgency();
+
+      // Auto-cadastro: apenas o proprio uid, sempre como cliente sem vinculo.
+      // Impede que alguem nasca 'agencia' ou ja vinculado a uma empresa.
+      allow create: if isAgency()
+                    || (isSignedIn()
+                        && request.auth.uid == userId
+                        && request.resource.data.role == 'cliente'
+                        && request.resource.data.empresaId == null);
+
+      // O usuario pode mexer no proprio documento, mas role e empresaId
+      // ficam congelados - so a agencia os altera. Esta e a regra que
+      // fecha a escalacao de privilegio.
+      allow update: if isAgency()
+                    || (isSignedIn()
+                        && request.auth.uid == userId
+                        && request.resource.data.role == resource.data.role
+                        && request.resource.data.empresaId == resource.data.empresaId);
+
+      allow delete: if isAgency();
+    }
+
+    // ---------------------------------------------------------------
+    // empresas/ e subcolecoes
+    // ---------------------------------------------------------------
+
+    match /empresas/{empresaId} {
+
+      // Cliente le a propria empresa; agencia le todas.
+      allow read: if isAgency() || belongsTo(empresaId);
+
+      // Criar, renomear e excluir empresa e privilegio da agencia.
+      allow write: if isAgency();
+
+      // events, kanban_tasks, tasks, drive_links: o cliente da empresa
+      // opera livremente dentro do proprio escopo.
+      match /{subcollection}/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Negacao explicita para qualquer caminho nao previsto acima.
+    // ---------------------------------------------------------------
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

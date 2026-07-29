@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
+import { toSafeHref } from '../utils/url';
 
 // Ícones Lucide
 import {
@@ -28,6 +29,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
   // --- ESTADOS ---
   const [links, setLinks] = useState<DriveLink[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [formError, setFormError] = useState('');
 
   // Estado do Formulário
   const [formData, setFormData] = useState({
@@ -70,11 +72,13 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
     e.preventDefault();
     if (!formData.title.trim() || !formData.url.trim()) return;
 
-    // Garante que o link tenha https://
-    let formattedUrl = formData.url.trim();
-    if (!formattedUrl.startsWith('http')) {
-      formattedUrl = `https://${formattedUrl}`;
+    // Normaliza e recusa esquemas perigosos antes de gravar.
+    const formattedUrl = toSafeHref(formData.url);
+    if (!formattedUrl) {
+      setFormError('Link inválido. Use um endereço http:// ou https://.');
+      return;
     }
+    setFormError('');
 
     try {
       const collectionRef = db.collection('empresas').doc(empresaId).collection('drive_links');
@@ -170,6 +174,9 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                     />
                     <LinkIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-600" />
                   </div>
+                  {formError && (
+                      <p className="text-red-400 text-xs mt-1.5">{formError}</p>
+                  )}
                 </div>
 
                 <div>
@@ -226,16 +233,22 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                           <span className="text-xs text-zinc-500 uppercase tracking-wider font-medium">{link.category}</span>
                         </div>
 
-                        {/* Botão Acessar */}
-                        <a
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-4 flex items-center justify-center gap-2 w-full py-2 border border-white/10 hover:bg-[#FABE01] hover:border-[#FABE01] text-zinc-300 hover:text-black text-sm font-bold rounded-sm transition-all group/btn"
-                        >
-                          Acessar Drive
-                          <ExternalLink className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
-                        </a>
+                        {/* Botão Acessar - revalida o link vindo do banco */}
+                        {toSafeHref(link.url) ? (
+                            <a
+                                href={toSafeHref(link.url)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 flex items-center justify-center gap-2 w-full py-2 border border-white/10 hover:bg-[#FABE01] hover:border-[#FABE01] text-zinc-300 hover:text-black text-sm font-bold rounded-sm transition-all group/btn"
+                            >
+                              Acessar Drive
+                              <ExternalLink className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
+                            </a>
+                        ) : (
+                            <span className="mt-4 flex items-center justify-center w-full py-2 border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-bold rounded-sm">
+                              Link inválido
+                            </span>
+                        )}
                       </div>
                   ))}
 

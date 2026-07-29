@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
 import { View } from './types';
+import { AGENCY_EMAILS } from './constants';
 
 // Componentes
 import Sidebar from './components/Sidebar';
@@ -46,8 +47,7 @@ const App: React.FC = () => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
             if (currentUser) {
                 await currentUser.reload();
-                const agencyEmails = ['briciomarketing@gmail.com', 'briciomarketing@mail.com'];
-                const isAdmin = agencyEmails.includes(currentUser.email || '');
+                const isAdmin = AGENCY_EMAILS.includes(currentUser.email || '');
 
                 if (!currentUser.emailVerified && !isAdmin) {
                     setUser(currentUser);
