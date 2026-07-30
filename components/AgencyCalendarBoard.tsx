@@ -13,7 +13,10 @@ import { resolveDriveCover, describeCoverFailure, hasDriveApiKey } from '../util
 interface AgencyCalendarBoardProps {
     userEmail?: string | null;
     userName?: string | null;
-    onBack: () => void;
+    /** Ausente no modo embutido: como aba do painel nao existe "voltar". */
+    onBack?: () => void;
+    /** Renderiza dentro do painel, sem barra de voltar nem tela cheia. */
+    embedded?: boolean;
 }
 
 /**
@@ -24,7 +27,7 @@ interface AgencyCalendarBoardProps {
  * cliente nao faz sentido para ele. A previa do feed em si e reaproveitavel
  * (FeedPreview), e o modal do calendario ja atende os dois papeis.
  */
-const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, userName, onBack }) => {
+const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, userName, onBack, embedded = false }) => {
     const [empresas, setEmpresas] = useState<SwitcherEmpresa[]>([]);
     const [isLoadingEmpresas, setIsLoadingEmpresas] = useState(true);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -151,18 +154,20 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
     );
 
     return (
-        <div className="min-h-screen bg-[#111111] text-zinc-100 flex flex-col">
+        <div className={embedded ? 'flex flex-col' : 'min-h-screen bg-[#111111] text-zinc-100 flex flex-col'}>
 
             {/* BARRA SUPERIOR */}
-            <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5">
-                <div className="px-4 sm:px-8 py-3 flex items-center justify-between gap-4">
-                    <button
-                        onClick={onBack}
-                        className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm shrink-0"
-                    >
-                        <ArrowLeft className="w-4 h-4 mr-2" />
-                        Voltar ao Painel
-                    </button>
+            <div className={embedded ? 'border-b border-white/5 mb-2' : 'sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5'}>
+                <div className={`flex items-center justify-between gap-4 ${embedded ? 'py-1' : 'px-4 sm:px-8 py-3'}`}>
+                    {onBack && !embedded ? (
+                        <button
+                            onClick={onBack}
+                            className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm shrink-0"
+                        >
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Voltar ao Painel
+                        </button>
+                    ) : <span />}
 
                     <div className="flex items-center gap-4">
                     {/* Resolver capas: le a pasta do Drive de cada post e grava a
@@ -228,7 +233,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
 
             {/* CORPO: CALENDARIO + FEED */}
             {selectedId && selectedEmpresa ? (
-                <div className="flex-1 px-4 sm:px-8 py-6">
+                <div className={embedded ? 'flex-1 py-6' : 'flex-1 px-4 sm:px-8 py-6'}>
                     <div className="flex flex-col xl:flex-row gap-6 items-start max-w-[1800px] mx-auto">
                         <div className="flex-1 min-w-0 w-full">
                             {/* key força remontagem ao trocar de cliente: sem isso o

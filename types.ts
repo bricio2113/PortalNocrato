@@ -104,6 +104,34 @@ export interface PostComment {
   createdAt: Date;
 }
 
+/**
+ * Relatorio mensal de um cliente. Vive em empresas/{id}/relatorios/{aaaa-mm}.
+ *
+ * O id e o proprio periodo (ex.: "2026-07") de proposito: garante um relatorio
+ * por mes sem precisar de consulta para checar duplicidade, e ordena
+ * alfabeticamente na ordem cronologica.
+ */
+export interface MonthlyReport {
+  /** "aaaa-mm" */
+  id: string;
+  ano: number;
+  mes: number;
+  /** Leitura do mes: o que aconteceu e o que isso significa. */
+  resumo: string;
+  /** Destaques em linhas curtas, uma por item. */
+  destaques?: string | null;
+  /** Link para material complementar (apresentacao, planilha). */
+  linkUrl?: string | null;
+  /** Numeros consolidados do mes, preenchidos pela agencia. */
+  alcance?: number | null;
+  interacoes?: number | null;
+  seguidores?: number | null;
+  publicados?: number | null;
+  criadoPor?: string | null;
+  criadoEm?: Date | null;
+  atualizadoEm?: Date | null;
+}
+
 export interface WeeklyTask {
   id: string;
   text: string;

@@ -4,10 +4,11 @@ import { DELETE_USER_ENDPOINT } from '../constants';
 import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import { UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
+import AgencyCalendarBoard from './AgencyCalendarBoard';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, Link as LinkIcon, ClipboardList, MessageSquareWarning, LayoutGrid
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, UserPlus
 } from 'lucide-react';
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -27,15 +28,23 @@ interface EmpresaData {
     nome: string;
 }
 
+type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+
 interface AgencyDashboardProps {
     handleLogout: () => void;
-    onViewClient: (clientId: string) => void;
-    onViewClientTasks: (clientId: string) => void;
-    /** Abre a tela de calendarios com troca rapida de cliente. */
-    onOpenCalendarBoard?: () => void;
+    /**
+     * Abre o espaco de trabalho de um cliente.
+     *
+     * Substitui onViewClient + onViewClientTasks: dois caminhos separados
+     * obrigavam voltar ao painel so para sair do calendario e entrar na
+     * producao do MESMO cliente.
+     */
+    onOpenClient: (empresaId: string, nome: string, section?: ClientSection) => void;
     /** Abre a tela de perfil do proprio usuario da agencia. */
     onOpenProfile?: () => void;
     profile?: UserProfile | null;
+    userEmail?: string | null;
+    userName?: string | null;
 }
 
 // As classes precisam existir literalmente no fonte: o Tailwind varre o codigo
@@ -92,12 +101,117 @@ const EmptyState: React.FC<{
     </div>
 );
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks, onOpenCalendarBoard, onOpenProfile, profile }) => {
+
+/**
+ * Card de cliente com informacao macro.
+ *
+ * Antes existiam DOIS cards identicos para o mesmo cliente - um na Visao Geral e
+ * um na aba Clientes -, ambos com os mesmos dois botoes e nenhum dado. O card
+ * agora carrega o estado do cliente, e a superficie inteira e clicavel: abrir o
+ * cliente e a acao principal, e os atalhos de secao sao secundarios.
+ */
+const ClientCard: React.FC<{
+    empresa: EmpresaData;
+    stats?: PendingCounts;
+    usuarios: number;
+    onOpen: (section?: ClientSection) => void;
+    onDelete?: () => void;
+}> = ({ empresa, stats, usuarios, onOpen, onDelete }) => {
+    const ajustes = stats?.aguardandoAgencia || 0;
+    const aguardando = stats?.aguardandoCliente || 0;
+
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpen()}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+            className={`group text-left bg-[#1A1A1A] border rounded-sm p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
+                ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-white/5 hover:border-[#FABE01]/40'
+            }`}
+        >
+            <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 shrink-0 rounded-sm bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <h3 className="text-white font-bold leading-tight truncate group-hover:text-[#FABE01] transition-colors">
+                        {empresa.nome}
+                    </h3>
+                    <p className="text-xs text-zinc-600 truncate mt-0.5">
+                        {usuarios === 0 ? 'Nenhum usuário vinculado' : `${usuarios} usuário(s)`}
+                    </p>
+                </div>
+                {onDelete && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                        aria-label={`Excluir ${empresa.nome}`}
+                        className="text-zinc-700 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
+
+            {/* Numeros do cliente: e o que responde "como esta esse cliente?"
+                sem precisar entrar nele. */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+                <div>
+                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">No mês</p>
+                    <p className="text-xl font-bold text-white">{stats ? stats.noMes : '—'}</p>
+                </div>
+                <div>
+                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Publicados</p>
+                    <p className="text-xl font-bold text-white">{stats ? stats.publicados : '—'}</p>
+                </div>
+                <div>
+                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Total</p>
+                    <p className="text-xl font-bold text-white">{stats ? stats.total : '—'}</p>
+                </div>
+            </div>
+
+            {(ajustes > 0 || aguardando > 0) && (
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                    {ajustes > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-sm">
+                            <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s) pedido(s)
+                        </span>
+                    )}
+                    {aguardando > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-zinc-400 px-2 py-1 rounded-sm">
+                            {aguardando} aguardando o cliente
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* Atalhos de secao: levam direto ao lugar, sem passar pela visao
+                geral do cliente. stopPropagation para nao disparar o card. */}
+            <div className="flex flex-wrap gap-1.5 pt-3 border-t border-white/5">
+                {([
+                    ['calendar', 'Calendário', Calendar],
+                    ['production', 'Produção', ClipboardList],
+                    ['reports', 'Relatórios', FileBarChart]
+                ] as const).map(([section, label, Icon]) => (
+                    <button
+                        key={section}
+                        onClick={(e) => { e.stopPropagation(); onOpen(section); }}
+                        className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-white hover:bg-white/5 px-2 py-1.5 rounded-sm transition-colors"
+                    >
+                        <Icon className="w-3 h-3" /> {label}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenClient, onOpenProfile, profile, userEmail, userName }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
-    const [activeTab, setActiveTab] = useState<'overview' | 'clients' | 'team'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team'>('overview');
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
@@ -302,6 +416,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     // destaque na Visao Geral em vez de ficar escondida na tabela.
     const unlinkedUsers = users.filter(u => u.role !== 'agencia' && !u.empresaId);
 
+    // Separar por papel elimina a coluna "Vínculo" com "Global" repetido em toda
+    // linha de agencia, que era ruido puro.
+    const equipe = users.filter(u => u.role === 'agencia');
+    const clientes = users.filter(u => u.role !== 'agencia');
+    const equipeFiltrada = filteredUsers.filter(u => u.role === 'agencia');
+    const clientesFiltrados = filteredUsers.filter(u => u.role !== 'agencia');
+
     return (
         <div className="min-h-screen bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black flex flex-col">
             <header className="bg-[#111111] border-b border-white/5 sticky top-0 z-30 backdrop-blur-md bg-opacity-90">
@@ -312,15 +433,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                         <div><h1 className="text-lg font-bold text-white leading-none">Painel Administrativo</h1><p className="text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
                     </div>
                     <div className="flex items-center gap-4 sm:gap-6">
-                        {onOpenCalendarBoard && (
-                            <button
-                                onClick={onOpenCalendarBoard}
-                                className="flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-3 sm:px-4 py-2 rounded-sm uppercase tracking-wide transition-colors"
-                            >
-                                <LayoutGrid className="w-4 h-4" />
-                                <span className="hidden sm:inline">Calendários</span>
-                            </button>
-                        )}
                         {onOpenProfile ? (
                             <button onClick={onOpenProfile} className="flex items-center gap-3 group" title={auth.currentUser?.email || undefined}>
                                 {isSafeImageSrc(profile?.fotoUrl) ? (
@@ -347,7 +459,12 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                 {notification && <div className="fixed top-24 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-sm shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-8 mb-8 border-b border-white/5 pb-2 sm:pb-0 overflow-x-auto">
-                    {[{ id: 'overview', label: 'Visão Geral', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes (Empresas)', icon: Briefcase }, { id: 'team', label: 'Equipe & Permissões', icon: Users }].map(tab => (
+                    {[
+                        { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+                        { id: 'editorial', label: 'Calendário Editorial', icon: Calendar },
+                        { id: 'clients', label: 'Clientes (Empresas)', icon: Briefcase },
+                        { id: 'team', label: 'Equipe & Permissões', icon: Users }
+                    ].map(tab => (
                         // O termo de busca e compartilhado pelas abas; sem limpar na
                         // troca, o usuario mudava de aba e via uma lista vazia por
                         // causa de um filtro digitado em outro contexto.
@@ -397,7 +514,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                     {empresasComAjuste.map(empresa => (
                                                         <button
                                                             key={empresa.id}
-                                                            onClick={() => onViewClient(empresa.id)}
+                                                            onClick={() => onOpenClient(empresa.id, empresa.nome, 'calendar')}
                                                             className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-sm transition-colors"
                                                         >
                                                             {empresa.nome}
@@ -440,52 +557,12 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                     </div>
                                 )}
 
-                                <div>
-                                    <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-widest mb-4">Acesso rápido aos clientes</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {empresas.length === 0 ? (
-                                            <EmptyState
-                                                icon={Building2}
-                                                title="Nenhuma empresa cadastrada ainda"
-                                                description="Vincule um usuário a uma empresa na aba Equipe & Permissões para que o portal dele comece a funcionar."
-                                                action={{ label: 'Ir para Equipe', onClick: () => { setActiveTab('team'); setSearchTerm(''); } }}
-                                            />
-                                        ) : (
-                                            empresas.slice(0, 6).map(empresa => (
-                                                <div key={empresa.id} className="bg-[#1A1A1A] border border-white/5 p-4 rounded-sm hover:border-[#FABE01]/30 transition-colors">
-                                                    <div className="flex items-center gap-3 mb-4 min-w-0">
-                                                        <div className="bg-[#FABE01]/10 p-2 rounded-sm text-[#FABE01] shrink-0"><Building2 className="w-4 h-4" /></div>
-                                                        <h3 className="text-white font-bold text-sm truncate flex-1">{empresa.nome}</h3>
-                                                        {(pendingByEmpresa[empresa.id]?.aguardandoAgencia || 0) > 0 && (
-                                                            <span
-                                                                className="shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px] font-bold"
-                                                                title="Ajustes pedidos pelo cliente"
-                                                            >
-                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => onViewClient(empresa.id)} className="flex-1 py-2 bg-white/5 hover:bg-[#FABE01] hover:text-black text-white text-xs font-bold rounded-sm transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wide">
-                                                            <Calendar className="w-3.5 h-3.5" /> Calendário
-                                                        </button>
-                                                        <button onClick={() => onViewClientTasks(empresa.id)} className="flex-1 py-2 border border-white/5 hover:bg-white/5 text-zinc-400 hover:text-white text-xs font-bold rounded-sm transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wide">
-                                                            <ClipboardList className="w-3.5 h-3.5" /> Produção
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                    {empresas.length > 6 && (
-                                        <button
-                                            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-                                            className="mt-4 text-sm text-[#FABE01] hover:underline font-bold inline-flex items-center gap-1.5"
-                                        >
-                                            Ver todas as {empresas.length} empresas <ArrowRight className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'editorial' && (
+                            <div className="animate-in fade-in">
+                                <AgencyCalendarBoard embedded userEmail={userEmail} userName={userName} />
                             </div>
                         )}
 
@@ -516,114 +593,207 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                         )
                                     )}
                                     {filteredEmpresas.map(empresa => (
-                                        <div key={empresa.id} className="bg-[#1A1A1A] border border-white/5 p-6 rounded-sm hover:border-[#FABE01]/50 group relative flex flex-col justify-between min-h-[160px]">
-                                            <div>
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className="bg-[#FABE01]/10 p-2 rounded-sm text-[#FABE01]"><Building2 className="w-5 h-5" /></div>
-                                                    <button onClick={() => handleDeleteEmpresa(empresa.id)} className="text-zinc-600 hover:text-red-500 p-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
-                                                </div>
-                                                <h3 className="text-lg font-bold text-white mb-1 leading-tight">{empresa.nome}</h3>
-                                                <p className="text-xs text-zinc-500 font-mono mb-4 truncate">ID: {empresa.id}</p>
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                <button onClick={() => onViewClient(empresa.id)} className="w-full py-2.5 bg-white/5 hover:bg-[#FABE01] hover:text-black text-white text-sm font-bold rounded-sm transition-colors flex items-center justify-center gap-2 uppercase tracking-wide">
-                                                    <Calendar className="w-4 h-4" /> Acessar Calendário
-                                                </button>
-                                                <button onClick={() => onViewClientTasks(empresa.id)} className="w-full py-2.5 border border-white/5 hover:bg-white/5 text-zinc-400 hover:text-white text-sm font-bold rounded-sm transition-colors flex items-center justify-center gap-2 uppercase tracking-wide">
-                                                    <ClipboardList className="w-4 h-4" /> Ver Produção (Tasks)
-                                                </button>
-                                            </div>
-                                        </div>
+                                        <ClientCard
+                                            key={empresa.id}
+                                            empresa={empresa}
+                                            stats={pendingByEmpresa[empresa.id]}
+                                            usuarios={users.filter(u => u.empresaId === empresa.id).length}
+                                            onOpen={(section) => onOpenClient(empresa.id, empresa.nome, section)}
+                                            onDelete={() => handleDeleteEmpresa(empresa.id)}
+                                        />
                                     ))}
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'team' && (
-                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="relative w-full max-w-md"><Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" /><input type="text" placeholder="Buscar usuário..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] outline-none" /></div>
-                                <div className="bg-[#1A1A1A] border border-white/5 rounded-sm overflow-hidden shadow-2xl">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-sm min-w-[800px]">
-                                            <thead className="bg-black/40 border-b border-white/5">
-                                                <tr>
-                                                    <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Usuário</th>
-                                                    <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Permissão</th>
-                                                    <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs">Vínculo</th>
-                                                    <th className="px-6 py-4 font-bold text-zinc-500 uppercase tracking-wider text-xs text-right">Ações</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-white/5">
-                                                {filteredUsers.length === 0 && (
-                                                    <tr>
-                                                        <td colSpan={4} className="px-6 py-12 text-center">
-                                                            <p className="text-zinc-300 font-bold mb-1">Nenhum usuário encontrado</p>
-                                                            <p className="text-zinc-500 text-sm">
-                                                                {searchTerm
-                                                                    ? <>Nada corresponde a “{searchTerm}”. <button onClick={() => setSearchTerm('')} className="text-[#FABE01] hover:underline font-bold">Limpar busca</button></>
-                                                                    : 'Os usuários aparecem aqui depois de criarem conta no portal.'}
-                                                            </p>
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                                {filteredUsers.map(user => (
-                                                    <tr key={user.id} className="hover:bg-white/[0.02]">
-                                                        <td className="px-6 py-4">
-                                                            {/* Nome na frente, e-mail abaixo: o e-mail segue necessario
-                                                                para identificar a conta sem ambiguidade, mas deixa de
-                                                                ser a identidade principal. */}
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                {isSafeImageSrc(user.fotoUrl) ? (
-                                                                    <img src={user.fotoUrl!} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                                                                ) : (
-                                                                    <div className="w-8 h-8 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-[10px]">
-                                                                        {getInitials(user)}
+                            <div className="space-y-6 animate-in fade-in">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <div className="relative w-full sm:max-w-md">
+                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar por nome ou e-mail..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2.5 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
+                                        />
+                                        {searchTerm && (
+                                            <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-zinc-500 sm:ml-auto shrink-0">
+                                        <span className="text-white font-bold">{equipe.length}</span> na equipe ·{' '}
+                                        <span className="text-white font-bold">{clientes.length}</span> cliente(s)
+                                    </p>
+                                </div>
+
+                                {/* Cartoes em vez de tabela.
+                                    A tabela tinha 800px de largura minima, entao rolava
+                                    lateralmente em qualquer tela media, e empilhava
+                                    e-mail, dois selects e dois icones na mesma linha.
+                                    Separar por papel tambem elimina a coluna "Vínculo"
+                                    vazia com "Global" repetido em toda linha de agencia. */}
+                                {filteredUsers.length === 0 ? (
+                                    <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-sm">
+                                        <Users className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+                                        <p className="text-zinc-300 font-bold mb-1">Nenhum usuário encontrado</p>
+                                        <p className="text-zinc-500 text-sm">
+                                            {searchTerm
+                                                ? <>Nada corresponde a “{searchTerm}”. <button onClick={() => setSearchTerm('')} className="text-[#FABE01] hover:underline font-bold">Limpar busca</button></>
+                                                : 'Os usuários aparecem aqui depois de criarem conta no portal.'}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-8">
+                                        {([
+                                            ['Equipe da agência', equipeFiltrada, 'Acesso a todos os clientes.'],
+                                            ['Clientes', clientesFiltrados, 'Cada um vê apenas a própria empresa.']
+                                        ] as const).map(([titulo, lista, legenda]) => lista.length > 0 && (
+                                            <section key={titulo}>
+                                                <div className="flex items-baseline gap-3 mb-3">
+                                                    <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-widest">{titulo}</h3>
+                                                    <span className="text-xs text-zinc-600">{lista.length}</span>
+                                                </div>
+                                                <p className="text-xs text-zinc-600 mb-4">{legenda}</p>
+
+                                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                                                    {lista.map(user => {
+                                                        const isMe = user.id === auth.currentUser?.uid;
+                                                        const semVinculo = user.role !== 'agencia' && !user.empresaId;
+                                                        return (
+                                                            <div
+                                                                key={user.id}
+                                                                className={`bg-[#1A1A1A] border rounded-sm p-4 group transition-colors ${
+                                                                    semVinculo ? 'border-[#FABE01]/25' : 'border-white/5 hover:border-white/15'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-start gap-3">
+                                                                    {isSafeImageSrc(user.fotoUrl) ? (
+                                                                        <img src={user.fotoUrl!} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                                                                    ) : (
+                                                                        <div className="w-10 h-10 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-xs">
+                                                                            {getInitials(user)}
+                                                                        </div>
+                                                                    )}
+
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <p className="font-bold text-white truncate">{getDisplayName(user)}</p>
+                                                                            {isMe && (
+                                                                                <span className="text-[9px] font-bold uppercase tracking-wider bg-[#FABE01]/15 text-[#FABE01] px-1.5 py-0.5 rounded-sm">
+                                                                                    Você
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+
+                                                                        {semVinculo && (
+                                                                            <p className="text-[11px] text-[#FABE01] mt-2 leading-relaxed">
+                                                                                Sem empresa: entra no portal e vê apenas um aviso.
+                                                                            </p>
+                                                                        )}
+
+                                                                        {/* Controles ficam embaixo, com rotulo. Antes eram
+                                                                            dois selects sem rotulo no meio da linha, e nada
+                                                                            dizia o que cada um fazia. */}
+                                                                        <div className="flex flex-wrap items-end gap-3 mt-3">
+                                                                            <div>
+                                                                                <label className="block text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-1">Permissão</label>
+                                                                                {isMe ? (
+                                                                                    <p className="text-xs text-[#FABE01] font-bold py-1.5">Administrador</p>
+                                                                                ) : (
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        <select
+                                                                                            value={pendingRoleChanges[user.id] ?? user.role}
+                                                                                            onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
+                                                                                            className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-sm px-2 py-1.5 outline-none focus:border-[#FABE01]"
+                                                                                        >
+                                                                                            <option value="cliente">Cliente</option>
+                                                                                            <option value="agencia">Agência</option>
+                                                                                        </select>
+                                                                                        {pendingRoleChanges[user.id] && (
+                                                                                            <button onClick={() => handleSaveRole(user.id)} aria-label="Salvar permissão" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                                <Save className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {user.role !== 'agencia' && (
+                                                                                <div>
+                                                                                    <label className="block text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-1">Empresa</label>
+                                                                                    {creatingCompanyForUser === user.id ? (
+                                                                                        <div className="flex items-center gap-1.5">
+                                                                                            <input
+                                                                                                value={newCompanyIdInput}
+                                                                                                onChange={e => setNewCompanyIdInput(e.target.value)}
+                                                                                                placeholder="Nome da empresa"
+                                                                                                autoFocus
+                                                                                                className="bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-1.5 rounded-sm w-36 outline-none"
+                                                                                            />
+                                                                                            <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                                <Save className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                            <button onClick={() => setCreatingCompanyForUser(null)} aria-label="Cancelar" className="p-1.5 text-zinc-500 hover:text-white">
+                                                                                                <X className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <div className="flex items-center gap-1.5">
+                                                                                            <select
+                                                                                                value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
+                                                                                                onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
+                                                                                                className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-sm px-2 py-1.5 max-w-[150px] outline-none focus:border-[#FABE01]"
+                                                                                            >
+                                                                                                <option value="null">— sem empresa —</option>
+                                                                                                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                                                                <option value="create_new">+ Nova empresa</option>
+                                                                                            </select>
+                                                                                            {pendingEmpresaChanges[user.id] !== undefined && (
+                                                                                                <button onClick={() => handleSaveEmpresa(user.id)} aria-label="Salvar vínculo" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                                    <Save className="w-3.5 h-3.5" />
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+
+                                                                            <div className="flex items-center gap-1 ml-auto">
+                                                                                <button
+                                                                                    onClick={() => handlePasswordReset(user.email)}
+                                                                                    title="Enviar link de redefinição de senha"
+                                                                                    aria-label="Enviar redefinição de senha"
+                                                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-sm transition-colors"
+                                                                                >
+                                                                                    <Mail className="w-4 h-4" />
+                                                                                </button>
+                                                                                {!isMe && (
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteUser(user.id)}
+                                                                                        title="Remover usuário"
+                                                                                        aria-label="Remover usuário"
+                                                                                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/5 rounded-sm transition-colors"
+                                                                                    >
+                                                                                        <Trash2 className="w-4 h-4" />
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
                                                                     </div>
-                                                                )}
-                                                                <div className="min-w-0">
-                                                                    <p className="font-medium text-zinc-200 truncate">{getDisplayName(user)}</p>
-                                                                    <p className="text-xs text-zinc-500 truncate">{user.email}</p>
                                                                 </div>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            {user.id === auth.currentUser?.uid ? <span className="text-[#FABE01] text-xs">ADMIN</span> :
-                                                                <div className="flex items-center gap-2">
-                                                                    <select value={pendingRoleChanges[user.id] ?? user.role} onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))} className="bg-[#0a0a0a] border border-zinc-700 text-zinc-300 text-xs rounded-sm p-1.5 outline-none">
-                                                                        <option value="cliente">Cliente</option>
-                                                                        <option value="agencia">Agência</option>
-                                                                    </select>
-                                                                    {pendingRoleChanges[user.id] && <button onClick={() => handleSaveRole(user.id)} className="text-[#FABE01]"><Save className="w-4 h-4" /></button>}
-                                                                </div>}
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            {user.role === 'agencia' ? <span className="text-zinc-500 text-xs italic">Global</span> : creatingCompanyForUser === user.id ?
-                                                                <div className="flex gap-2">
-                                                                    <input value={newCompanyIdInput} onChange={e => setNewCompanyIdInput(e.target.value)} className="bg-[#0a0a0a] border border-[#FABE01] text-white text-xs p-1 w-24 outline-none" />
-                                                                    <button onClick={() => handleCreateAndAssignCompany(user.id)} className="text-[#FABE01]"><Save className="w-4 h-4" /></button>
-                                                                    <button onClick={() => setCreatingCompanyForUser(null)} className="text-red-400"><X className="w-4 h-4" /></button>
-                                                                </div> :
-                                                                <div className="flex items-center gap-2">
-                                                                    <select value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'} onChange={(e) => handleEmpresaSelection(user.id, e.target.value)} className="bg-[#0a0a0a] border border-zinc-700 text-zinc-300 text-xs rounded-sm p-1.5 max-w-[140px] outline-none">
-                                                                        <option value="null">--</option>
-                                                                        {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                        <option value="create_new" className="text-[#FABE01]">+ Nova</option>
-                                                                    </select>
-                                                                    {pendingEmpresaChanges[user.id] !== undefined && <button onClick={() => handleSaveEmpresa(user.id)} className="text-[#FABE01]"><Save className="w-4 h-4" /></button>}
-                                                                </div>}
-                                                        </td>
-                                                        <td className="px-6 py-4 text-right">
-                                                            <div className="flex justify-end gap-2">
-                                                                <button onClick={() => handlePasswordReset(user.email)} className="p-2 text-zinc-400 hover:text-white" title="Senha"><Mail className="w-4 h-4" /></button>
-                                                                {user.id !== auth.currentUser?.uid && <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-zinc-400 hover:text-red-400" title="Excluir"><Trash2 className="w-4 h-4" /></button>}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </section>
+                                        ))}
                                     </div>
-                                </div>
+                                )}
                             </div>
                         )}
                     </>

@@ -120,6 +120,13 @@ export interface PendingCounts {
     aguardandoCliente: number;
     /** Posts em que o cliente pediu ajuste e a agencia ainda nao resolveu. */
     aguardandoAgencia: number;
+    /** Total de publicacoes da empresa. */
+    total: number;
+    /** Publicacoes no mes corrente. */
+    noMes: number;
+    publicados: number;
+    /** Sem capa manual nem resolvida: a previa do feed fica vazia. */
+    semCapa: number;
 }
 
 /**
@@ -136,15 +143,31 @@ export function subscribePendingCounts(
 ): () => void {
     return empresaRef(empresaId).collection('events').onSnapshot(
         snapshot => {
+            const agora = new Date();
             let aguardandoCliente = 0;
             let aguardandoAgencia = 0;
+            let noMes = 0;
+            let publicados = 0;
+            let semCapa = 0;
+
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
                 const event = { status: data.status, approval: data.approval };
                 if (needsClientAction(event)) aguardandoCliente++;
                 if (needsAgencyAction(event)) aguardandoAgencia++;
+                if (data.status === 'Postado') publicados++;
+                if (!data.previewUrl && !data.coverUrl) semCapa++;
+
+                const date = (data.date as firebase.firestore.Timestamp | undefined)?.toDate();
+                if (date && date.getMonth() === agora.getMonth() && date.getFullYear() === agora.getFullYear()) {
+                    noMes++;
+                }
             });
-            onData({ aguardandoCliente, aguardandoAgencia });
+
+            onData({
+                aguardandoCliente, aguardandoAgencia,
+                total: snapshot.size, noMes, publicados, semCapa
+            });
         },
         error => console.error('Erro ao contar pendências:', error)
     );

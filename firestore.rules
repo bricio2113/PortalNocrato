@@ -7,6 +7,7 @@ rules_version = '2';
 //   empresas/{empresaId}              { nome }
 //     events/{id} | kanban_tasks/{id} | tasks/{id} | drive_links/{id}
 //     _meta/seed                      { events: bool, tasks: bool }
+//     relatorios/{aaaa-mm}            { resumo, destaques, alcance, ... }
 //
 // _meta/seed registra que os dados de exemplo ja foram inseridos, para nao
 // reaparecerem depois que o cliente apaga tudo. Fica em subcolecao porque o
@@ -160,6 +161,14 @@ service cloud.firestore {
       // conceder, o acesso passa. Um `match /{subcollection}/{docId}` generico
       // aqui tambem casaria events/ e post_comments/ e devolveria a escrita
       // total ao cliente, anulando as restricoes acima em silencio.
+
+      // Escrita e privilegio da agencia: o relatorio e entregue ao cliente,
+      // nao editado por ele.
+      match /relatorios/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow write: if isAgency();
+      }
+
       match /kanban_tasks/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
