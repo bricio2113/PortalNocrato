@@ -30,6 +30,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
   const [links, setLinks] = useState<DriveLink[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [formError, setFormError] = useState('');
+  const [listError, setListError] = useState('');
 
   // Estado do Formulário
   const [formData, setFormData] = useState({
@@ -100,17 +101,22 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
 
     } catch (error) {
       console.error("Erro ao salvar link: ", error);
+      // Sem isto a falha era invisivel: o formulario continuava preenchido e o
+      // usuario nao sabia se tinha salvo ou nao.
+      setFormError('Não foi possível salvar. Verifique sua conexão e tente novamente.');
     }
   };
 
   // --- EXCLUIR LINK ---
   const handleDelete = async (id: string) => {
     if (!window.confirm("Deseja remover este link?")) return;
+    setListError('');
     try {
       await db.collection('empresas').doc(empresaId).collection('drive_links').doc(id).delete();
       setLinks(prev => prev.filter(link => link.id !== id));
     } catch (error) {
       console.error("Erro ao excluir", error);
+      setListError('Não foi possível remover o link. Tente novamente.');
     }
   };
 
@@ -210,6 +216,11 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {listError && (
+                      <p className="col-span-full text-red-400 text-sm border border-red-500/20 bg-red-500/5 rounded-sm px-4 py-3">
+                        {listError}
+                      </p>
+                  )}
                   {links.map(link => (
                       <div key={link.id} className="group bg-[#1A1A1A] border border-white/5 p-5 rounded-sm hover:border-[#FABE01]/30 transition-all flex flex-col justify-between min-h-[140px]">
 
@@ -253,10 +264,14 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                   ))}
 
                   {links.length === 0 && (
-                      <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-sm">
-                        <Folder className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
-                        <p className="text-zinc-500 font-medium">Nenhum arquivo adicionado ainda.</p>
-                        <p className="text-zinc-600 text-sm">Use o formulário ao lado para salvar links.</p>
+                      <div className="col-span-full py-14 px-6 text-center border border-dashed border-white/10 rounded-sm">
+                        <Folder className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+                        <p className="text-zinc-300 font-bold mb-1">Nenhum arquivo salvo ainda</p>
+                        {/* "ao lado" so era verdade no desktop: abaixo de lg o formulario
+                            empilha acima da lista, e a instrucao apontava para o nada. */}
+                        <p className="text-zinc-500 text-sm max-w-sm mx-auto leading-relaxed">
+                          Salve aqui pastas do Drive, contratos e relatórios para encontrar tudo em um só lugar — o formulário está <span className="lg:hidden">acima</span><span className="hidden lg:inline">ao lado</span>.
+                        </p>
                       </div>
                   )}
                 </div>

@@ -27,6 +27,93 @@ const LoadingSpinner: React.FC = () => (
     </div>
 );
 
+// PortalLayout e ProductionLayout vivem FORA do App de proposito.
+//
+// Quando eram declarados no corpo do App, cada render criava uma funcao nova,
+// ou seja um tipo de componente novo. O React nao reconcilia tipos diferentes:
+// desmontava e remontava toda a subarvore. Na pratica, abrir o menu mobile
+// refazia o fetch do calendario no Firestore e zerava o scroll e o mes
+// selecionado. Mantendo a identidade estavel, o estado sobrevive aos renders.
+
+interface PortalLayoutProps {
+    targetEmpresaId: string;
+    userRole: string;
+    userEmail?: string | null;
+    currentView: View;
+    setCurrentView: (view: View) => void;
+    isSidebarOpen: boolean;
+    setIsSidebarOpen: (open: boolean) => void;
+    handleLogout: () => void;
+    onBackToDashboard?: () => void;
+}
+
+const PortalLayout: React.FC<PortalLayoutProps> = ({
+    targetEmpresaId, userRole, userEmail, currentView, setCurrentView,
+    isSidebarOpen, setIsSidebarOpen, handleLogout, onBackToDashboard
+}) => {
+    const renderPortalContent = () => {
+        switch (currentView) {
+            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} />;
+            case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
+            case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
+            default: return <CalendarView empresaId={targetEmpresaId} />;
+        }
+    };
+
+    return (
+        <div className="relative min-h-screen md:flex bg-[#111111] text-zinc-100">
+            <Sidebar
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+                isOpen={isSidebarOpen}
+                onClose={() => setIsSidebarOpen(false)}
+                handleLogout={handleLogout}
+                userRole={userRole}
+                userEmail={userEmail}
+                empresaNome={targetEmpresaId}
+                onBackToDashboard={onBackToDashboard}
+                theme="dark"
+                toggleTheme={() => {}}
+            />
+
+            <main className="flex-1 h-screen overflow-y-auto bg-[#111111]">
+                <header className="md:hidden sticky top-0 left-0 right-0 bg-[#111111]/90 backdrop-blur-md border-b border-white/10 p-4 flex items-center justify-between z-40">
+                    <div className="flex items-center gap-3"><img src={favicon} alt="Nocrato" className="h-8 w-auto brightness-0 invert" /><span className="text-lg font-bold text-white">Nocrato</span></div>
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="p-2 text-white"
+                        aria-label="Abrir menu de navegação"
+                    >
+                        <Menu className="w-6 h-6" />
+                    </button>
+                </header>
+                <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
+                    {renderPortalContent()}
+                </div>
+            </main>
+        </div>
+    );
+};
+
+const ProductionLayout: React.FC<{ targetEmpresaId: string; onBack: () => void }> = ({ targetEmpresaId, onBack }) => (
+    <div className="min-h-screen bg-[#111111] text-zinc-100 overflow-y-auto">
+        <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5 px-4 py-4 sm:px-8">
+            <div className="max-w-7xl mx-auto flex items-center">
+                <button
+                    onClick={onBack}
+                    className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm"
+                >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Voltar ao Dashboard
+                </button>
+            </div>
+        </div>
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+            <ClientProductionView empresaId={targetEmpresaId} />
+        </div>
+    </div>
+);
+
 const App: React.FC = () => {
     const [currentView, setCurrentView] = useState<View>(View.CALENDAR);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -95,61 +182,7 @@ const App: React.FC = () => {
         try { await auth.signOut(); setAgencyViewingClientId(null); setAgencyViewingTasksId(null); } catch (error) { console.error(error); }
     };
 
-    const renderPortalContent = (targetEmpresaId: string) => {
-        switch (currentView) {
-            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} />;
-            case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
-            case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
-            default: return <CalendarView empresaId={targetEmpresaId} />;
-        }
-    };
-
-    // Layout do Portal (Com Sidebar)
-    const PortalLayout = ({ targetEmpresaId, userRole }: { targetEmpresaId: string, userRole: string }) => (
-        <div className="relative min-h-screen md:flex bg-[#111111] text-zinc-100">
-            <Sidebar
-                currentView={currentView}
-                setCurrentView={setCurrentView}
-                isOpen={isSidebarOpen}
-                onClose={() => setIsSidebarOpen(false)}
-                handleLogout={handleLogout}
-                userRole={userRole}
-                onBackToDashboard={userRole === 'agencia' ? () => { setAgencyViewingClientId(null); setAgencyViewingTasksId(null); } : undefined}
-                theme="dark"
-                toggleTheme={() => {}}
-            />
-
-            <main className="flex-1 h-screen overflow-y-auto bg-[#111111]">
-                <header className="md:hidden sticky top-0 left-0 right-0 bg-[#111111]/90 backdrop-blur-md border-b border-white/10 p-4 flex items-center justify-between z-40">
-                    <div className="flex items-center gap-3"><img src={favicon} alt="Nocrato" className="h-8 w-auto brightness-0 invert" /><span className="text-lg font-bold text-white">Nocrato</span></div>
-                    <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-white"><Menu className="w-6 h-6" /></button>
-                </header>
-                <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
-                    {renderPortalContent(targetEmpresaId)}
-                </div>
-            </main>
-        </div>
-    );
-
-    // Layout da Produção/Tasks (Sem Sidebar, Fullscreen com botão voltar)
-    const ProductionLayout = ({ targetEmpresaId }: { targetEmpresaId: string }) => (
-        <div className="min-h-screen bg-[#111111] text-zinc-100 overflow-y-auto">
-            <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5 px-4 py-4 sm:px-8">
-                <div className="max-w-7xl mx-auto flex items-center">
-                    <button
-                        onClick={() => setAgencyViewingTasksId(null)}
-                        className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm"
-                    >
-                        <ArrowLeft className="w-4 h-4 mr-2" />
-                        Voltar ao Dashboard
-                    </button>
-                </div>
-            </div>
-            <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-                <ClientProductionView empresaId={targetEmpresaId} />
-            </div>
-        </div>
-    );
+    const backToDashboard = () => { setAgencyViewingClientId(null); setAgencyViewingTasksId(null); };
 
     // --- RENDERIZAÇÃO FINAL ---
 
@@ -167,11 +200,23 @@ const App: React.FC = () => {
     if (role === 'agencia') {
         // 1. Prioridade: Se clicou em "Ver Produção", mostra a ProductionLayout
         if (agencyViewingTasksId) {
-            return <ProductionLayout targetEmpresaId={agencyViewingTasksId} />;
+            return <ProductionLayout targetEmpresaId={agencyViewingTasksId} onBack={backToDashboard} />;
         }
         // 2. Se clicou em "Acessar Calendário", mostra o PortalLayout
         if (agencyViewingClientId) {
-            return <PortalLayout targetEmpresaId={agencyViewingClientId} userRole="agencia" />;
+            return (
+                <PortalLayout
+                    targetEmpresaId={agencyViewingClientId}
+                    userRole="agencia"
+                    userEmail={user.email}
+                    currentView={currentView}
+                    setCurrentView={setCurrentView}
+                    isSidebarOpen={isSidebarOpen}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                    handleLogout={handleLogout}
+                    onBackToDashboard={backToDashboard}
+                />
+            );
         }
         // 3. Caso contrário, mostra o Dashboard Principal
         // AQUI ESTAVA O ERRO: Precisamos passar a função setAgencyViewingTasksId
@@ -184,7 +229,18 @@ const App: React.FC = () => {
 
     // ROTAS DO CLIENTE
     if (empresaId) {
-        return <PortalLayout targetEmpresaId={empresaId} userRole="cliente" />;
+        return (
+            <PortalLayout
+                targetEmpresaId={empresaId}
+                userRole="cliente"
+                userEmail={user.email}
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+                isSidebarOpen={isSidebarOpen}
+                setIsSidebarOpen={setIsSidebarOpen}
+                handleLogout={handleLogout}
+            />
+        );
     } else {
         return (
             <div className="min-h-screen bg-[#111111] flex flex-col items-center justify-center p-4 text-center">

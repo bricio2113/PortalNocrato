@@ -6,7 +6,7 @@ import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
-    Youtube, Twitter, Globe, Check
+    Youtube, Twitter, Globe, Check, Loader2, AlertTriangle
 } from 'lucide-react';
 
 interface EventDetailModalProps {
@@ -14,6 +14,10 @@ interface EventDetailModalProps {
     onSave: (event: CalendarEvent) => void;
     onDelete: (eventId: string) => void;
     onClose: () => void;
+    /** Trava os botoes enquanto a gravacao esta em curso. */
+    isSaving?: boolean;
+    /** Erro vindo do save/delete; mantem o modal aberto para nao perder o texto. */
+    errorMessage?: string;
 }
 
 const getPlatformIcon = (platform: string) => {
@@ -27,13 +31,48 @@ const getPlatformIcon = (platform: string) => {
     }
 };
 
-const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDelete, onClose }) => {
+const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDelete, onClose, isSaving = false, errorMessage }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showDiscardWarning, setShowDiscardWarning] = useState(false);
     const isCreating = !event.id;
     const titleRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => { setEditableEvent(event); }, [event]);
+    useEffect(() => { setEditableEvent(event); setShowDiscardWarning(false); }, [event]);
+
+    // Ha edicao pendente? Comparar o objeto serializado cobre todos os campos
+    // sem precisar manter uma lista manual que envelhece a cada campo novo.
+    const hasUnsavedChanges = JSON.stringify(editableEvent) !== JSON.stringify(event);
+
+    // Fechar descartando texto digitado e a perda de trabalho mais facil de
+    // acontecer aqui: a legenda costuma ser longa e o clique no fundo do modal
+    // e involuntario. Com alteracao pendente, confirmamos antes.
+    const requestClose = () => {
+        if (hasUnsavedChanges) {
+            setShowDiscardWarning(true);
+            return;
+        }
+        onClose();
+    };
+
+    // Esc fecha o modal - era impossivel sair pelo teclado.
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            if (isDeleting) { setIsDeleting(false); return; }
+            if (showDiscardWarning) { setShowDiscardWarning(false); return; }
+            requestClose();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isDeleting, showDiscardWarning, hasUnsavedChanges]);
+
+    // Sem isto a pagina atras do modal continuava rolando junto no celular.
+    useEffect(() => {
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = previous; };
+    }, []);
 
     const adjustHeight = (element: HTMLTextAreaElement) => {
         element.style.height = 'auto';
@@ -58,19 +97,44 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
     const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none";
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
+        <div
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
+        >
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
             <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
-                
+
                 {isDeleting && (
                     <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
                         <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
+                        {/* Antes dizia "Esta ação pode ser desfeita" - o oposto do que
+                            acontece. A exclusao apaga o evento, o espelho e o card do
+                            Kanban, sem retorno. */}
                         <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
-                            Esta ação pode ser desfeita.
+                            Esta ação <strong className="text-white">não pode</strong> ser desfeita. O agendamento e o card correspondente na produção serão removidos.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                            <button onClick={handleCancelDelete} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Cancelar</button>
-                            <button onClick={handleConfirmDelete} className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Sim, Excluir</button>
+                            <button onClick={handleCancelDelete} disabled={isSaving} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors disabled:opacity-50">Cancelar</button>
+                            <button onClick={handleConfirmDelete} disabled={isSaving} className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {isSaving ? 'Excluindo...' : 'Sim, Excluir'}
+                            </button>
+                        </div>
+                        {errorMessage && <p className="text-red-400 text-sm mt-4 max-w-xs">{errorMessage}</p>}
+                    </div>
+                )}
+
+                {showDiscardWarning && (
+                    <div className="absolute inset-0 z-20 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
+                        <h3 className="text-xl font-bold text-white mb-2">Descartar alterações?</h3>
+                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
+                            Você editou esta publicação e ainda não salvou. Se sair agora, as alterações são perdidas.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                            <button onClick={() => setShowDiscardWarning(false)} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Continuar editando</button>
+                            <button onClick={onClose} className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Descartar</button>
                         </div>
                     </div>
                 )}
@@ -92,7 +156,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                             />
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm shrink-0"><X className="w-6 h-6" /></button>
+                    <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
                 {/* Body */}
@@ -186,24 +250,44 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onSave, onDe
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 sm:p-6 border-t border-white/5 bg-[#111111] flex justify-between items-center gap-3 shrink-0 pb-8 sm:pb-6">
-                    <div className="flex-1 sm:flex-none">
-                        {!isCreating && (
-                            <>
-                                <button onClick={handleDeleteClick} className="hidden sm:flex text-zinc-500 hover:text-red-500 py-2 text-sm font-medium items-center gap-2 transition-colors">
-                                    <Trash2 className="w-4 h-4" /> Excluir
-                                </button>
-                                <button onClick={handleDeleteClick} className="flex sm:hidden w-12 h-12 bg-red-500/10 text-red-500 rounded-full items-center justify-center border border-red-500/20 active:scale-95 transition-transform">
-                                    <Trash2 className="w-6 h-6" />
-                                </button>
-                            </>
-                        )}
-                    </div>
-                    <div className="flex gap-3 sm:gap-4">
-                        <button onClick={onClose} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm transition-colors">Cancelar</button>
-                        <button onClick={() => onSave(editableEvent)} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90"><Save className="w-4 h-4" /> {isCreating ? 'Agendar' : 'Salvar'}</button>
-                        <button onClick={onClose} className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform"><X className="w-6 h-6" /></button>
-                        <button onClick={() => onSave(editableEvent)} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform">{isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />}</button>
+                <div className="border-t border-white/5 bg-[#111111] shrink-0">
+                    {/* O erro precisa aparecer junto do botao que falhou, nao num
+                        alert() que o usuario fecha antes de ler. */}
+                    {errorMessage && !isDeleting && (
+                        <div className="px-4 sm:px-6 pt-4 flex items-start gap-2 text-red-400 text-sm">
+                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                            <span>{errorMessage}</span>
+                        </div>
+                    )}
+                    <div className="p-4 sm:p-6 flex justify-between items-center gap-3 pb-8 sm:pb-6">
+                        <div className="flex-1 sm:flex-none">
+                            {!isCreating && (
+                                <>
+                                    <button onClick={handleDeleteClick} disabled={isSaving} className="hidden sm:flex text-zinc-500 hover:text-red-500 py-2 text-sm font-medium items-center gap-2 transition-colors disabled:opacity-50">
+                                        <Trash2 className="w-4 h-4" /> Excluir
+                                    </button>
+                                    <button onClick={handleDeleteClick} disabled={isSaving} aria-label="Excluir" className="flex sm:hidden w-12 h-12 bg-red-500/10 text-red-500 rounded-full items-center justify-center border border-red-500/20 active:scale-95 transition-transform disabled:opacity-50">
+                                        <Trash2 className="w-6 h-6" />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex gap-3 sm:gap-4 items-center">
+                            {/* Indicador de alteracao pendente: sem ele nada distingue
+                                "ja salvei" de "esqueci de salvar". */}
+                            {hasUnsavedChanges && !isSaving && (
+                                <span className="hidden sm:inline text-xs text-[#FABE01] font-medium">Alterações não salvas</span>
+                            )}
+                            <button onClick={requestClose} disabled={isSaving} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm transition-colors disabled:opacity-50">Cancelar</button>
+                            <button onClick={() => onSave(editableEvent)} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                {isSaving ? 'Salvando...' : (isCreating ? 'Agendar' : 'Salvar')}
+                            </button>
+                            <button onClick={requestClose} disabled={isSaving} aria-label="Cancelar" className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform disabled:opacity-50"><X className="w-6 h-6" /></button>
+                            <button onClick={() => onSave(editableEvent)} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
+                                {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />)}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

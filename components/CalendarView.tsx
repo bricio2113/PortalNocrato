@@ -3,20 +3,29 @@ import { CalendarEvent } from '../types';
 import { INITIAL_EVENTS } from '../constants';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
+import { shouldSeed, markSeeded } from '../utils/seed';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
 
 interface CalendarViewProps {
     empresaId: string;
 }
+
+// A grade mensal precisa de 1200px para caber sete colunas legiveis, o que no
+// celular vira rolagem horizontal - ruim como primeira impressao. Em telas
+// pequenas a lista abre por padrao; o usuario ainda pode trocar para a grade.
+const prefersListView = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
 const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [loadError, setLoadError] = useState('');
+    const [saveError, setSaveError] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (prefersListView() ? 'list' : 'grid'));
 
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1);
@@ -44,16 +53,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
     const calendarDays = useMemo(() => generateCalendarGrid(), [currentDate]);
 
-    const salvarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => {
+    // Copia de leitura em `Agenciaapk`. Usa set+merge, nao update: o update
+    // falhava para todo evento criado antes desta colecao existir, porque
+    // update() exige documento presente.
+    //
+    // Este espelho e uma segunda fonte de verdade do mesmo post e nao tem
+    // nenhum leitor no app; ver nota no relatorio sobre remove-lo.
+    const espelharPost = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => {
         try {
-            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).set({ titulo, conteudo, data_agendada });
-        } catch (error) { console.error(error); }
-    };
-
-    const atualizarPostPermanentemente = async (id: string, titulo: string, conteudo: string, data_agendada: Date) => {
-        try {
-            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id).update({ titulo, conteudo, data_agendada });
-        } catch (error) { console.error(error); }
+            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(id)
+                .set({ titulo, conteudo, data_agendada }, { merge: true });
+        } catch (error) { console.error('Falha ao espelhar post:', error); }
     };
 
     useEffect(() => {
@@ -62,18 +72,27 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
             setIsLoading(true);
             try {
                 const eventsCollection = db.collection('empresas').doc(empresaId).collection('events');
-                const querySnapshot = await eventsCollection.get();
-                let eventsData: CalendarEvent[] = [];
-                if (querySnapshot.empty) {
-                    const seedingPromises = INITIAL_EVENTS.map(event => eventsCollection.add(event));
-                    await Promise.all(seedingPromises);
-                    const newSnapshot = await eventsCollection.get();
-                    eventsData = newSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent));
-                } else {
-                    eventsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, date: (doc.data().date as firebase.firestore.Timestamp).toDate() } as CalendarEvent));
+                let querySnapshot = await eventsCollection.get();
+
+                // Semeia apenas na primeira vez. Se o cliente esvaziou o mes de
+                // proposito, respeitamos - o empty state assume a orientacao.
+                if (querySnapshot.empty && await shouldSeed(empresaId, 'events')) {
+                    await Promise.all(INITIAL_EVENTS.map(event => eventsCollection.add(event)));
+                    await markSeeded(empresaId, 'events');
+                    querySnapshot = await eventsCollection.get();
                 }
+
+                const eventsData = querySnapshot.docs.map(doc => ({
+                    ...doc.data(),
+                    id: doc.id,
+                    date: (doc.data().date as firebase.firestore.Timestamp).toDate()
+                } as CalendarEvent));
+
                 setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
-            } catch (error) { console.error(error); } finally { setIsLoading(false); }
+            } catch (error) {
+                console.error(error);
+                setLoadError('Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.');
+            } finally { setIsLoading(false); }
         };
         fetchData();
     }, [empresaId]);
@@ -86,12 +105,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
         setSelectedEvent({ id: '', date: date, title: '', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
     };
 
+    // Erros aqui eram apenas logados no console e o modal fechava de qualquer
+    // forma - o usuario via a tela fechar e presumia que gravou. Agora a falha
+    // mantem o modal aberto com a mensagem, para nao perder o que foi digitado.
     const handleSaveEvent = async (eventData: CalendarEvent) => {
+        if (isSaving) return; // evita duplicar o evento com dois cliques
+        setIsSaving(true);
+        setSaveError('');
+
         if (eventData.id) {
             try {
                 const { id, ...data } = eventData;
                 await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data);
-                await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date);
+                await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
                 setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e));
 
                 // Sincroniza titulo e status com o card do Kanban.
@@ -117,13 +143,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                         status: eventData.status
                     })));
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                setSaveError('Não foi possível salvar as alterações. Confira sua conexão e tente de novo.');
+                setIsSaving(false);
+                return;
+            }
         } else {
             try {
                 const { id, ...data } = eventData;
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data);
-                await salvarPostPermanentemente(docRef.id, eventData.title, eventData.copy || '', eventData.date);
-                setEvents(prev => [...prev, { ...eventData, id: docRef.id }]);
+                await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
+                setEvents(prev => [...prev, { ...eventData, id: docRef.id }].sort((a, b) => a.date.getTime() - b.date.getTime()));
 
                 // Cria o Card no Kanban com o status exato do modal
                 await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
@@ -132,12 +163,22 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     createdAt: new Date(),
                     eventId: docRef.id
                 });
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                setSaveError('Não foi possível criar o agendamento. Confira sua conexão e tente de novo.');
+                setIsSaving(false);
+                return;
+            }
         }
+
+        setIsSaving(false);
         setSelectedEvent(null);
     };
 
     const handleDeleteEvent = async (eventId: string) => {
+        if (isSaving) return;
+        setIsSaving(true);
+        setSaveError('');
         try {
             const empresaRef = db.collection('empresas').doc(empresaId);
 
@@ -151,7 +192,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
             setEvents(prev => prev.filter(e => e.id !== eventId));
             setSelectedEvent(null);
-        } catch (e) { alert('Erro ao excluir.'); }
+        } catch (e) {
+            console.error(e);
+            // alert() nativo travava a pagina e nao combinava com o resto da UI.
+            setSaveError('Não foi possível excluir. Tente novamente.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -224,6 +271,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                 {isLoading ? (
                     <div className="h-96 flex flex-col items-center justify-center gap-4">
                         <Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" />
+                        <p className="text-zinc-500 text-sm">Carregando agendamentos...</p>
+                    </div>
+                ) : loadError ? (
+                    <div className="h-96 flex flex-col items-center justify-center gap-4 px-6 text-center">
+                        <AlertTriangle className="w-10 h-10 text-red-400" />
+                        <p className="text-zinc-300 font-medium max-w-md">{loadError}</p>
                     </div>
                 ) : (
                     <>
@@ -268,7 +321,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                         {viewMode === 'list' && (
                             <div className="p-4 sm:p-6 min-h-[400px]">
                                 {getEventsForMonth().length === 0 ? (
-                                    <div className="text-center py-12 text-zinc-500"><p>Nenhum agendamento para este mês.</p></div>
+                                    // Empty state que aponta a proxima acao, em vez de so informar
+                                    // que nao ha nada.
+                                    <div className="text-center py-14 px-6 border border-dashed border-white/10 rounded-sm">
+                                        <CalendarIcon className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+                                        <p className="text-zinc-300 font-bold mb-1">
+                                            Nada agendado em {currentDate.toLocaleString('pt-BR', { month: 'long' })}
+                                        </p>
+                                        <p className="text-zinc-500 text-sm max-w-sm mx-auto leading-relaxed">
+                                            Crie a primeira publicação do mês ou use as setas acima para navegar até outro período.
+                                        </p>
+                                        <button
+                                            onClick={handleAddNewEventClick}
+                                            className="mt-6 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-sm uppercase tracking-wide transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" /> Criar publicação
+                                        </button>
+                                    </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {calendarDays.filter(d => d !== null).map(date => {
@@ -312,7 +381,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     </>
                 )}
             </div>
-            {selectedEvent && <EventDetailModal event={selectedEvent} onSave={handleSaveEvent} onDelete={handleDeleteEvent} onClose={() => setSelectedEvent(null)} />}
+            {selectedEvent && (
+                <EventDetailModal
+                    event={selectedEvent}
+                    onSave={handleSaveEvent}
+                    onDelete={handleDeleteEvent}
+                    onClose={() => { setSelectedEvent(null); setSaveError(''); }}
+                    isSaving={isSaving}
+                    errorMessage={saveError}
+                />
+            )}
         </div>
     );
 };

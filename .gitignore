@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Skills instaladas localmente (npx skills add) - nao versionar.
+# O symlink em .claude/skills aponta para .agents/, entao versiona-lo criaria
+# um link quebrado em qualquer outro clone.
+.agents/
+.claude/skills/
+skills-lock.json
+
 # Editor directories and files
 .claude/settings.local.json
 .vscode/*
