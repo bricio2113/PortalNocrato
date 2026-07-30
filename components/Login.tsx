@@ -32,10 +32,22 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         setIsLoading(true);
         setError(null);
         try {
-            await auth.signInWithEmailAndPassword(email, password);
+            // trim(): e-mail copiado de conversa ou e-mail costuma vir com espaco
+            // na ponta, e o Firebase recusa como invalid-email sem explicar.
+            await auth.signInWithEmailAndPassword(email.trim(), password);
         } catch (err: any) {
             if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
                 setError('E-mail ou senha inválidos.');
+            } else if (err.code === 'auth/invalid-email') {
+                setError('Confira o endereço de e-mail digitado.');
+            } else if (err.code === 'auth/too-many-requests') {
+                // Sem tratar este codigo, o bloqueio por tentativas caia no erro
+                // genarico e o usuario ficava tentando de novo sem entender.
+                setError('Muitas tentativas. Aguarde alguns minutos ou use "Esqueceu?" para redefinir a senha.');
+            } else if (err.code === 'auth/network-request-failed') {
+                setError('Sem conexão com o servidor. Verifique sua internet.');
+            } else if (err.code === 'auth/user-disabled') {
+                setError('Esta conta foi desativada. Fale com a agência.');
             } else {
                 setError('Ocorreu um erro ao fazer login.');
             }
@@ -52,17 +64,34 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         setResetMessage('');
         setResetError('');
         try {
-            await auth.sendPasswordResetEmail(resetEmail);
-            setResetMessage('Link enviado para seu e-mail.');
+            await auth.sendPasswordResetEmail(resetEmail.trim());
         } catch (err: any) {
-            if (err.code === 'auth/user-not-found') {
-                setResetError('E-mail não encontrado.');
-            } else {
-                setResetError('Erro ao enviar link.');
+            // Erros que nao revelam nada sobre a existencia da conta continuam
+            // sendo mostrados; os outros caem na mensagem neutra abaixo.
+            if (err.code === 'auth/invalid-email') {
+                setResetError('Confira o endereço de e-mail digitado.');
+                setIsSendingReset(false);
+                return;
             }
-        } finally {
-            setIsSendingReset(false);
+            if (err.code === 'auth/too-many-requests') {
+                setResetError('Muitas tentativas. Aguarde alguns minutos.');
+                setIsSendingReset(false);
+                return;
+            }
+            if (err.code === 'auth/network-request-failed') {
+                setResetError('Sem conexão com o servidor. Verifique sua internet.');
+                setIsSendingReset(false);
+                return;
+            }
+            // auth/user-not-found cai aqui de proposito: responder "E-mail nao
+            // encontrado" transformava esta tela em um verificador de contas
+            // cadastradas para qualquer visitante (enumeracao de usuarios).
+            console.error(err);
         }
+
+        // Resposta identica exista a conta ou nao.
+        setResetMessage('Se este e-mail tiver uma conta, o link de redefinição chegará em instantes. Confira também o spam.');
+        setIsSendingReset(false);
     };
 
     const switchToReset = () => { setIsResettingPassword(true); setError(null); };
@@ -97,8 +126,10 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                 performance
                             </span>
                         </h1>
+                        {/* Falava "sua clínica" - sobra de outro projeto, visivel para
+                            todo cliente da agencia na tela de entrada. */}
                         <p className="text-zinc-300 text-lg leading-relaxed font-medium">
-                            Acesse seu painel exclusivo e acompanhe a evolução da sua clínica em tempo real.
+                            Acesse seu painel exclusivo e acompanhe o calendário, as entregas e os materiais da sua marca em tempo real.
                         </p>
                     </div>
 
@@ -156,6 +187,9 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         value={resetEmail}
                                         onChange={(e) => setResetEmail(e.target.value)}
                                         required
+                                        autoComplete="email"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
                                         className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
@@ -187,6 +221,9 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         required
+                                        autoComplete="email"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
                                         className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
@@ -208,10 +245,11 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
+                                        autoComplete="current-password"
                                         className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="••••••••"
                                     />
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-zinc-500 hover:text-white transition-colors">
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-3 top-3.5 text-zinc-500 hover:text-white transition-colors">
                                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                     </button>
                                 </div>

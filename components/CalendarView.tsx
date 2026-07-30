@@ -4,6 +4,7 @@ import { INITIAL_EVENTS } from '../constants';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { shouldSeed, markSeeded } from '../utils/seed';
+import { getTypeStyles } from '../utils/eventStyles';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
@@ -135,12 +136,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                         title: eventData.title || 'Nova Publicação',
                         status: eventData.status,
                         createdAt: new Date(),
-                        eventId: eventData.id
+                        eventId: eventData.id,
+                        type: eventData.type,
+                        plataforma: eventData.plataforma
                     });
                 } else {
+                    // type e plataforma tambem viajam para o card: sem eles o
+                    // quadro de producao nao tem como colorir nem filtrar por
+                    // formato, e o card fica dessincronizado se o formato muda.
                     await Promise.all(tasksSnapshot.docs.map(doc => doc.ref.update({
                         title: eventData.title || 'Nova Publicação',
-                        status: eventData.status
+                        status: eventData.status,
+                        type: eventData.type,
+                        plataforma: eventData.plataforma
                     })));
                 }
             } catch (e) {
@@ -161,7 +169,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     title: eventData.title || 'Nova Publicação',
                     status: eventData.status,
                     createdAt: new Date(),
-                    eventId: docRef.id
+                    eventId: docRef.id,
+                    type: eventData.type,
+                    plataforma: eventData.plataforma
                 });
             } catch (e) {
                 console.error(e);
@@ -212,24 +222,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
     const getEventsForMonth = () => {
         return events.filter(e => e.date.getMonth() === currentDate.getMonth() && e.date.getFullYear() === currentDate.getFullYear());
-    };
-
-    // SISTEMA DE TAGS POR COR BASEADO NO TIPO
-    const getTypeStyles = (type: string) => {
-        const t = (type || '').toUpperCase();
-        if (t.includes('REEL') || t.includes('VÍDEO')) {
-            return { bg: 'bg-blue-500/10', border: 'border-blue-500', text: 'text-blue-300', label: 'bg-blue-500 text-black' };
-        }
-        if (t.includes('POST') || t.includes('CARROSSEL') || t.includes('ESTÁTICO')) {
-            return { bg: 'bg-emerald-500/10', border: 'border-emerald-500', text: 'text-emerald-300', label: 'bg-emerald-500 text-black' };
-        }
-        if (t.includes('STORY') || t.includes('CRIATIVO')) {
-            return { bg: 'bg-[#FABE01]/10', border: 'border-[#FABE01]', text: 'text-[#FABE01]', label: 'bg-[#FABE01] text-black' };
-        }
-        if (t.includes('TRÁFEGO')) {
-            return { bg: 'bg-red-500/10', border: 'border-red-500', text: 'text-red-300', label: 'bg-red-500 text-white' };
-        }
-        return { bg: 'bg-purple-500/10', border: 'border-purple-500', text: 'text-purple-300', label: 'bg-purple-500 text-white' };
     };
 
     return (

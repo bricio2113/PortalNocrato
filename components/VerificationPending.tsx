@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import firebase from 'firebase/compat/app';
 // Ícones Lucide
-import { Mail, RefreshCw, LogOut, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mail, RefreshCw, LogOut, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 // Logo (Opcional, mas dá um toque de marca)
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -14,6 +14,50 @@ interface VerificationPendingProps {
 const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleLogout: onLogout }) => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [isSending, setIsSending] = useState(false);
+    const [isChecking, setIsChecking] = useState(false);
+
+    // Confirmar o e-mail acontece FORA do app: o usuario sai para o webmail,
+    // clica no link e volta. Antes, ao voltar, a tela continuava igual e a unica
+    // saida era o "Atualize a pagina" no rodape - quem nao lesse ficava preso.
+    //
+    // user.reload() atualiza emailVerified no objeto do Firebase, mas nao dispara
+    // onAuthStateChanged nem troca a referencia, entao o App nao re-renderiza
+    // sozinho. Por isso, ao confirmar, recarregamos a pagina de proposito: e o
+    // que faz o App reavaliar a rota.
+    const checkVerification = useCallback(async (options?: { silent?: boolean }) => {
+        const silent = options?.silent ?? false;
+        if (!silent) { setIsChecking(true); setMessage(null); }
+        try {
+            await user.reload();
+            if (user.emailVerified) {
+                window.location.reload();
+                return true;
+            }
+            if (!silent) {
+                setMessage({ type: 'error', text: 'Ainda não recebemos a confirmação. Abra o link do e-mail e tente de novo.' });
+            }
+        } catch (error) {
+            console.error(error);
+            if (!silent) {
+                setMessage({ type: 'error', text: 'Não foi possível verificar agora. Confira sua conexão.' });
+            }
+        } finally {
+            if (!silent) setIsChecking(false);
+        }
+        return false;
+    }, [user]);
+
+    // Voltar para a aba e o sinal mais confiavel de que o usuario acabou de
+    // clicar no link. Checagem silenciosa: se ainda nao confirmou, nada muda.
+    useEffect(() => {
+        const onFocus = () => { checkVerification({ silent: true }); };
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onFocus);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onFocus);
+        };
+    }, [checkVerification]);
 
     const handleResend = async () => {
         setIsSending(true);
@@ -79,12 +123,26 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
                     </div>
                 )}
 
-                {/* Ações */}
+                {/* Ações. A acao principal passa a ser "Já confirmei": quem chega
+                    nesta tela pela segunda vez ja clicou no link e quer entrar,
+                    nao reenviar o e-mail de novo. */}
                 <div className="space-y-3">
                     <button
-                        onClick={handleResend}
-                        disabled={isSending}
+                        onClick={() => checkVerification()}
+                        disabled={isChecking || isSending}
                         className="w-full flex justify-center items-center gap-2 py-3 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {isChecking ? (
+                            <> <Loader2 className="w-4 h-4 animate-spin" /> Verificando... </>
+                        ) : (
+                            <> <CheckCircle2 className="w-4 h-4" /> Já confirmei, entrar </>
+                        )}
+                    </button>
+
+                    <button
+                        onClick={handleResend}
+                        disabled={isSending || isChecking}
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-[#FABE01]/30 hover:bg-[#FABE01]/5 text-[#FABE01] font-bold text-sm rounded-sm transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isSending ? (
                             <> <RefreshCw className="w-4 h-4 animate-spin" /> Enviando... </>
@@ -103,9 +161,10 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
                 </div>
             </div>
 
-            {/* Rodapé */}
-            <p className="mt-8 text-xs text-zinc-600">
-                Já confirmou? <button onClick={() => window.location.reload()} className="text-[#FABE01] hover:underline font-bold">Atualize a página</button>
+            {/* Rodapé: o "Atualize a página" deixou de ser a saída principal e
+                virou apenas a explicação do que acontece automaticamente. */}
+            <p className="mt-8 text-xs text-zinc-600 text-center max-w-sm">
+                Assim que você confirmar pelo e-mail e voltar para esta aba, o acesso é liberado automaticamente.
             </p>
         </div>
     );
