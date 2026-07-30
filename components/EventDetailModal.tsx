@@ -451,6 +451,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         </div>
                     </div>
 
+                    {/* Imagem dedicada da previa.
+                        Sem este campo o previewUrl era inalcancavel: a previa e o
+                        grid do feed dependiam de o link do Drive responder como
+                        thumbnail, o que falha em arquivo restrito. Aqui a agencia
+                        aponta uma imagem direta quando o Drive nao colabora. */}
+                    {!isClient && (
+                        <div>
+                            <label className={labelStyle}>Imagem da prévia (opcional)</label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={editableEvent.previewUrl || ''}
+                                    onChange={(e) => handleChange('previewUrl', e.target.value)}
+                                    placeholder="Link direto de imagem (.jpg, .png)..."
+                                    className={inputStyle}
+                                />
+                                <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                            </div>
+                            <p className="text-zinc-600 text-xs mt-1.5 leading-relaxed">
+                                Tem prioridade sobre os links acima na prévia e na grade do feed. Use quando o arquivo do Drive não aparecer.
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex flex-col flex-1 min-h-[150px]">
                         <label className={labelStyle}>Legenda / Copy</label>
                         <textarea

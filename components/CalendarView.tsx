@@ -3,6 +3,7 @@ import { CalendarEvent } from '../types';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
+import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
@@ -113,6 +114,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
 
         return unsubscribe;
     }, [empresaId]);
+
+    // Atalho local: o estagio combina status e aprovacao, e e consultado em dois
+    // lugares da renderizacao.
+    const stageOf = (event: CalendarEvent) => getClientStage(event);
 
     const handleAddNewEventClick = () => {
         setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
@@ -313,7 +318,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                     <div className="mt-0.5 shrink-0">{event.plataforma === 'Instagram' ? <Instagram className="w-3 h-3 opacity-70" /> : <FileText className="w-3 h-3 opacity-70" />}</div>
                                                                     <div className="flex flex-col gap-1 w-full">
                                                                         <span className="leading-tight break-words whitespace-normal text-[11px]">{event.title || '(Sem título)'}</span>
-                                                                        <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                        <div className="flex items-center gap-1 flex-wrap">
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                            {/* Estagio direto no card: sem isso o contador do menu
+                                                                                dizia "3 pendentes" e o usuario tinha que abrir post
+                                                                                por post para descobrir quais. */}
+                                                                            {stageOf(event) !== 'em_producao' && (
+                                                                                <span
+                                                                                    className={`w-2 h-2 rounded-full shrink-0 ${CLIENT_STAGES[stageOf(event)].dot}`}
+                                                                                    title={CLIENT_STAGES[stageOf(event)].label}
+                                                                                />
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -367,9 +383,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
                                                                     </div>
                                                                     <div className="flex-1">
-                                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                                                             <h4 className="text-white font-medium text-sm">{event.title || '(Sem título)'}</h4>
                                                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider border ${CLIENT_STAGES[stageOf(event)].bg} ${CLIENT_STAGES[stageOf(event)].text} ${CLIENT_STAGES[stageOf(event)].border}`}>
+                                                                                {CLIENT_STAGES[stageOf(event)].label}
+                                                                            </span>
                                                                         </div>
                                                                         <div className="flex items-center gap-2 text-xs text-zinc-500">
                                                                             {event.proprietario && <span>{event.proprietario}</span>}
