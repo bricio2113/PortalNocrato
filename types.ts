@@ -68,8 +68,19 @@ export interface CalendarEvent {
   approvalByName?: string | null;
   approvalAt?: Date | null;
 
-  /** Imagem/video de previa. Se vazio, caimos no `url` do material bruto. */
+  /**
+   * Imagem de previa definida a mao pela agencia. Tem prioridade sobre tudo:
+   * e o conserto de quando a resolucao automatica escolhe o arquivo errado.
+   */
   previewUrl?: string;
+
+  /**
+   * Capa resolvida automaticamente a partir da pasta do Drive (utils/driveCover).
+   * Separada de previewUrl de proposito: reresolver nao pode sobrescrever a
+   * escolha manual de ninguem.
+   */
+  coverUrl?: string | null;
+  coverResolvedAt?: Date | null;
 
   metrics?: EventMetrics;
 }

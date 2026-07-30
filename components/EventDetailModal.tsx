@@ -86,7 +86,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
     // Previa: o campo dedicado tem prioridade; sem ele, tentamos o material
     // bruto, que na pratica e o link do Drive.
-    const preview = getMediaPreview(editableEvent.previewUrl || editableEvent.finalUrl || editableEvent.url);
+    const preview = getMediaPreview(
+        editableEvent.previewUrl || editableEvent.coverUrl || editableEvent.finalUrl || editableEvent.url
+    );
     const hasMetrics = METRIC_FIELDS.some(({ key }) => {
         const v = editableEvent.metrics?.[key];
         return v !== null && v !== undefined;

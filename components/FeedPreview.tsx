@@ -17,6 +17,11 @@ interface FeedPreviewProps {
 
 const PAGE_SIZE = 9;
 
+// Ordem de precedencia da imagem do tile: escolha manual, depois capa resolvida
+// pelo Drive, depois os links do material como ultimo recurso.
+const coverSourceOf = (event: CalendarEvent) =>
+    event.previewUrl || event.coverUrl || event.finalUrl || event.url;
+
 // Formatos que NAO aparecem na grade do perfil.
 //
 // Story expira em 24h e nunca entra no grid. Trafego e anuncio: roda no feed
@@ -103,7 +108,7 @@ const FeedPreview: React.FC<FeedPreviewProps> = ({ events, empresaNome, onSelect
                 ) : (
                     <div className="grid grid-cols-3 gap-1">
                         {pagePosts.map(event => {
-                            const preview = getMediaPreview(event.previewUrl || event.finalUrl || event.url);
+                            const preview = getMediaPreview(coverSourceOf(event));
                             const styles = getTypeStyles(event.type);
                             const stage = getClientStage(event);
                             const stageStyle = CLIENT_STAGES[stage];

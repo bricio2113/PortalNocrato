@@ -102,6 +102,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                             id: doc.id,
                             date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
                             approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                            coverResolvedAt: (data.coverResolvedAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
                             ...(data.metrics
                                 ? {
                                     metrics: {
