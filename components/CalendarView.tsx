@@ -94,15 +94,28 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                 await atualizarPostPermanentemente(eventData.id, eventData.title, eventData.copy || '', eventData.date);
                 setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e));
 
-                // Sincroniza exatamente o mesmo status com as Tasks do Kanban
+                // Sincroniza titulo e status com o card do Kanban.
+                //
+                // O vinculo e SEMPRE por eventId. Casar por titulo corromperia
+                // posts homonimos ("Story institucional" etc.), que sao a regra
+                // numa agencia, nao a excecao.
                 const tasksRef = db.collection('empresas').doc(empresaId).collection('kanban_tasks');
-                let tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
+                const tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
+
                 if (tasksSnapshot.empty) {
-                    tasksSnapshot = await tasksRef.where('title', '==', eventData.title).get();
-                }
-                if (!tasksSnapshot.empty) {
-                    const updatePromises = tasksSnapshot.docs.map(doc => doc.ref.update({ status: eventData.status }));
-                    await Promise.all(updatePromises);
+                    // Evento anterior ao Kanban: cria o card que faltava em vez
+                    // de sequestrar o de outro post.
+                    await tasksRef.add({
+                        title: eventData.title || 'Nova Publicação',
+                        status: eventData.status,
+                        createdAt: new Date(),
+                        eventId: eventData.id
+                    });
+                } else {
+                    await Promise.all(tasksSnapshot.docs.map(doc => doc.ref.update({
+                        title: eventData.title || 'Nova Publicação',
+                        status: eventData.status
+                    })));
                 }
             } catch (e) { console.error(e); }
         } else {
@@ -126,8 +139,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
 
     const handleDeleteEvent = async (eventId: string) => {
         try {
-            await db.collection('empresas').doc(empresaId).collection('events').doc(eventId).delete();
-            await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete();
+            const empresaRef = db.collection('empresas').doc(empresaId);
+
+            await empresaRef.collection('events').doc(eventId).delete();
+            await empresaRef.collection('Agenciaapk').doc(eventId).delete();
+
+            // Sem isto o card continua no quadro apontando para um evento que
+            // nao existe mais, e clicar nele so mostra "evento nao encontrado".
+            const orphanTasks = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
+            await Promise.all(orphanTasks.docs.map(doc => doc.ref.delete()));
+
             setEvents(prev => prev.filter(e => e.id !== eventId));
             setSelectedEvent(null);
         } catch (e) { alert('Erro ao excluir.'); }
