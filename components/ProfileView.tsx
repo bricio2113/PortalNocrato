@@ -3,7 +3,7 @@ import { db } from '../utils/firebase';
 import { UserProfile } from '../types';
 import {
     fileToAvatarDataUrl, isSafeImageSrc, getInitials, getDisplayName,
-    ACCEPTED_IMAGE_TYPES
+    isProfileComplete, ACCEPTED_IMAGE_TYPES
 } from '../utils/avatar';
 import {
     UserCircle, Camera, Trash2, Save, Loader2, Check,
@@ -74,8 +74,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
         setError('');
         setSaved(false);
 
-        if (!nome.trim()) {
-            setError('Informe pelo menos o nome.');
+        // Mesma exigencia do passo obrigatorio de entrada. Sem alinhar as duas,
+        // salvar aqui sem sobrenome prenderia o usuario no modal obrigatorio no
+        // proximo carregamento.
+        if (!isProfileComplete({ nome, sobrenome })) {
+            setError('Informe nome e sobrenome (ao menos duas letras em cada).');
             return;
         }
 
@@ -115,7 +118,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
             <div className="max-w-2xl pb-20">
                 {/* Perfil incompleto e o estado inicial de todo mundo que se
                     cadastrou antes destes campos existirem. */}
-                {!profile.nome && (
+                {!isProfileComplete(profile) && (
                     <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-sm p-4 mb-6 flex items-start gap-3">
                         <AlertTriangle className="w-4 h-4 text-[#FABE01] shrink-0 mt-0.5" />
                         <p className="text-sm text-zinc-300 leading-relaxed">

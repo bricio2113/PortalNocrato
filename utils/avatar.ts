@@ -142,6 +142,18 @@ export function getInitials(parts: NameParts): string {
     return local.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Perfil tem nome e sobrenome utilizaveis?
+ *
+ * Dois caracteres em cada e o minimo para nao aceitar "a" ou espaco: nao e
+ * validacao de nome de verdade (nao existe), so barra o preenchimento vazio de
+ * quem quer pular o passo.
+ */
+export function isProfileComplete(parts: NameParts): boolean {
+    return (parts.nome || '').trim().length >= 2
+        && (parts.sobrenome || '').trim().length >= 2;
+}
+
 /** Divide um displayName do Auth em nome e sobrenome. */
 export function splitFullName(full?: string | null): { nome: string; sobrenome: string } {
     const clean = (full || '').trim().replace(/\s+/g, ' ');

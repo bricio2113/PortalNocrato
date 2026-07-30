@@ -25,7 +25,11 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     // depois de enviar o formulario e esperar o retorno.
     const passwordTooShort = password.length > 0 && password.length < 6;
     const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
-    const canSubmit = nome.trim() !== '' && email.trim() !== '' && password.length >= 6 && password === confirmPassword;
+    // Sobrenome tambem e obrigatorio porque o portal exige perfil completo para
+    // entrar: pedir so o nome aqui jogaria o usuario no modal obrigatorio um
+    // segundo depois de criar a conta.
+    const canSubmit = nome.trim().length >= 2 && sobrenome.trim().length >= 2
+        && email.trim() !== '' && password.length >= 6 && password === confirmPassword;
 
     // --- LÓGICA DE CADASTRO ---
     const handleSignup = async (e: React.FormEvent) => {
@@ -170,6 +174,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     type="text"
                                     value={sobrenome}
                                     onChange={(e) => setSobrenome(e.target.value)}
+                                    required
                                     autoComplete="family-name"
                                     placeholder="Seu sobrenome"
                                     className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 px-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"

@@ -18,7 +18,8 @@ import VerificationPending from './components/VerificationPending';
 import ClientProductionView from './components/ClientProductionView';
 import AgencyCalendarBoard from './components/AgencyCalendarBoard';
 import ProfileView from './components/ProfileView';
-import { splitFullName, getDisplayName } from './utils/avatar';
+import CompleteProfileModal from './components/CompleteProfileModal';
+import { splitFullName, getDisplayName, isProfileComplete } from './utils/avatar';
 
 // Ícones e Assets
 import { Menu, Loader2, ArrowLeft } from 'lucide-react';
@@ -264,6 +265,25 @@ const App: React.FC = () => {
 
     if (!user.emailVerified) {
         return <VerificationPending user={user} handleLogout={handleLogout} />;
+    }
+
+    // PASSO OBRIGATORIO: nome e sobrenome.
+    //
+    // Fica depois do gate de verificacao de proposito - um obstaculo por vez -,
+    // e antes de qualquer rota, para valer tanto para o cliente quanto para a
+    // agencia. Contas criadas antes destes campos existirem caem aqui no
+    // proximo login.
+    //
+    // A condicao exige `profile` carregado: sem isso a tela piscaria no
+    // intervalo entre autenticar e ler o documento do usuario.
+    if (profile && !isProfileComplete(profile)) {
+        return (
+            <CompleteProfileModal
+                profile={profile}
+                onSaved={handleProfileSaved}
+                handleLogout={handleLogout}
+            />
+        );
     }
 
     // ROTAS DA AGÊNCIA
