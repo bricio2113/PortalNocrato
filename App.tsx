@@ -3,6 +3,7 @@ import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
 import { View } from './types';
 import { AGENCY_EMAILS } from './constants';
+import { subscribePendingCounts, PendingCounts } from './utils/posts';
 
 // Componentes
 import Sidebar from './components/Sidebar';
@@ -53,6 +54,18 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 }) => {
     const role: 'agencia' | 'cliente' = userRole === 'agencia' ? 'agencia' : 'cliente';
 
+    // Contador de pendencia no menu. Para o cliente conta o que espera decisao
+    // dele; para a agencia, os ajustes que o cliente pediu e ninguem resolveu.
+    // Cada lado ve a propria fila.
+    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0 });
+
+    useEffect(() => {
+        if (!targetEmpresaId) return;
+        return subscribePendingCounts(targetEmpresaId, setPending);
+    }, [targetEmpresaId]);
+
+    const pendingCount = role === 'cliente' ? pending.aguardandoCliente : pending.aguardandoAgencia;
+
     const renderPortalContent = () => {
         switch (currentView) {
             case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} />;
@@ -73,6 +86,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
                 userRole={userRole}
                 userEmail={userEmail}
                 empresaNome={targetEmpresaId}
+                pendingCount={pendingCount}
                 onBackToDashboard={onBackToDashboard}
                 theme="dark"
                 toggleTheme={() => {}}

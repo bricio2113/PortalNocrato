@@ -1,9 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent } from '../types';
-import { INITIAL_EVENTS } from '../constants';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
-import { shouldSeed, markSeeded } from '../utils/seed';
 import { getTypeStyles } from '../utils/eventStyles';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
@@ -69,35 +67,51 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         } catch (error) { console.error('Falha ao espelhar post:', error); }
     };
 
+    // Tempo real em vez de leitura unica.
+    //
+    // Com .get() a agencia e o cliente trabalhavam sobre fotografias diferentes
+    // do mesmo calendario: quem tinha a aba aberta nao via a publicacao nova, e
+    // dois editores sobrescreviam um ao outro sem aviso.
+    //
+    // O seed de posts de exemplo foi REMOVIDO daqui de proposito. Duas razoes:
+    // as novas regras nao deixam o cliente criar evento, entao para ele o seed
+    // so produziria erro de permissao; e semear post ficticio no calendario de
+    // um cliente pagante passa descuido - ou pior, ele acredita que esta
+    // realmente agendado. O empty state ja orienta a proxima acao.
     useEffect(() => {
         if (!empresaId) return;
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                const eventsCollection = db.collection('empresas').doc(empresaId).collection('events');
-                let querySnapshot = await eventsCollection.get();
+        setIsLoading(true);
+        setLoadError('');
 
-                // Semeia apenas na primeira vez. Se o cliente esvaziou o mes de
-                // proposito, respeitamos - o empty state assume a orientacao.
-                if (querySnapshot.empty && await shouldSeed(empresaId, 'events')) {
-                    await Promise.all(INITIAL_EVENTS.map(event => eventsCollection.add(event)));
-                    await markSeeded(empresaId, 'events');
-                    querySnapshot = await eventsCollection.get();
+        const unsubscribe = db.collection('empresas').doc(empresaId).collection('events')
+            .onSnapshot(
+                snapshot => {
+                    const eventsData = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            ...data,
+                            id: doc.id,
+                            date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
+                            approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                            metrics: data.metrics
+                                ? {
+                                    ...data.metrics,
+                                    atualizadoEm: (data.metrics.atualizadoEm as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                                }
+                                : undefined
+                        } as CalendarEvent;
+                    });
+                    setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
+                    setIsLoading(false);
+                },
+                error => {
+                    console.error(error);
+                    setLoadError('Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.');
+                    setIsLoading(false);
                 }
+            );
 
-                const eventsData = querySnapshot.docs.map(doc => ({
-                    ...doc.data(),
-                    id: doc.id,
-                    date: (doc.data().date as firebase.firestore.Timestamp).toDate()
-                } as CalendarEvent));
-
-                setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
-            } catch (error) {
-                console.error(error);
-                setLoadError('Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.');
-            } finally { setIsLoading(false); }
-        };
-        fetchData();
+        return unsubscribe;
     }, [empresaId]);
 
     const handleAddNewEventClick = () => {
@@ -121,7 +135,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 const { id, ...data } = eventData;
                 await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data);
                 await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
-                setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e));
+                // Sem setEvents: o onSnapshot ja reflete a escrita, inclusive
+                // pelo cache local do Firestore. Duplicar aqui podia inserir
+                // dois itens com o mesmo id por um instante.
 
                 // Sincroniza titulo e status com o card do Kanban.
                 //
@@ -164,7 +180,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 const { id, ...data } = eventData;
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
-                setEvents(prev => [...prev, { ...eventData, id: docRef.id }].sort((a, b) => a.date.getTime() - b.date.getTime()));
 
                 // Cria o Card no Kanban com o status exato do modal
                 await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
@@ -202,7 +217,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             const orphanTasks = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
             await Promise.all(orphanTasks.docs.map(doc => doc.ref.delete()));
 
-            setEvents(prev => prev.filter(e => e.id !== eventId));
             setSelectedEvent(null);
         } catch (e) {
             console.error(e);
@@ -386,10 +400,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                     empresaId={empresaId}
                     userRole={userRole}
                     userEmail={userEmail}
-                    onApprovalChange={(state) => {
-                        // Reflete a decisao na grade sem esperar novo fetch.
-                        setEvents(prev => prev.map(e => e.id === selectedEvent.id ? { ...e, approval: state } : e));
-                    }}
                 />
             )}
         </div>

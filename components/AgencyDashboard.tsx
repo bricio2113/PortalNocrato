@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
 import { DELETE_USER_ENDPOINT } from '../constants';
+import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, Link as LinkIcon, ClipboardList
+    ArrowRight, Shield, Link as LinkIcon, ClipboardList, MessageSquareWarning
 } from 'lucide-react';
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -93,6 +94,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
     const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
 
+    // Pendencia por empresa: quais clientes pediram ajuste e estao esperando.
+    // Uma assinatura por empresa - aceitavel no volume de um portal de agencia,
+    // e o unico jeito de saber sem manter contadores denormalizados.
+    const [pendingByEmpresa, setPendingByEmpresa] = useState<Record<string, PendingCounts>>({});
+
     const fetchData = async () => {
         setIsLoading(true);
         try {
@@ -108,6 +114,21 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     };
 
     useEffect(() => { fetchData(); }, []);
+
+    useEffect(() => {
+        if (empresas.length === 0) return;
+        const unsubscribes = empresas.map(empresa =>
+            subscribePendingCounts(empresa.id, counts =>
+                setPendingByEmpresa(prev => ({ ...prev, [empresa.id]: counts }))
+            )
+        );
+        return () => unsubscribes.forEach(fn => fn());
+    }, [empresas]);
+
+    const empresasComAjuste = empresas.filter(e => (pendingByEmpresa[e.id]?.aguardandoAgencia || 0) > 0);
+    const totalAjustes = empresasComAjuste.reduce(
+        (sum, e) => sum + (pendingByEmpresa[e.id]?.aguardandoAgencia || 0), 0
+    );
 
     const showNotification = (msg: string) => {
         setNotification(msg);
@@ -311,6 +332,41 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                     a tarefa real. O trabalho do dia é entrar no calendário ou na
                                     produção de um cliente, então esses atalhos passam a ficar
                                     aqui, junto do que exige atenção. */}
+                                {/* Ajustes pedidos pelo cliente: e a fila de trabalho
+                                    mais urgente da agencia, porque alguem do outro
+                                    lado esta esperando. Vem antes do resto. */}
+                                {totalAjustes > 0 && (
+                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-sm p-5">
+                                        <div className="flex items-start gap-3">
+                                            <MessageSquareWarning className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-white font-bold text-sm mb-1">
+                                                    {totalAjustes === 1
+                                                        ? '1 publicação com ajuste pedido pelo cliente'
+                                                        : `${totalAjustes} publicações com ajuste pedido pelo cliente`}
+                                                </h3>
+                                                <p className="text-zinc-400 text-sm leading-relaxed mb-4">
+                                                    O cliente revisou e pediu mudanças. O detalhe está na conversa de cada publicação.
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {empresasComAjuste.map(empresa => (
+                                                        <button
+                                                            key={empresa.id}
+                                                            onClick={() => onViewClient(empresa.id)}
+                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-sm transition-colors"
+                                                        >
+                                                            {empresa.nome}
+                                                            <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px]">
+                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {unlinkedUsers.length > 0 && (
                                     <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-sm p-5">
                                         <div className="flex items-start gap-3">
@@ -354,7 +410,15 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                 <div key={empresa.id} className="bg-[#1A1A1A] border border-white/5 p-4 rounded-sm hover:border-[#FABE01]/30 transition-colors">
                                                     <div className="flex items-center gap-3 mb-4 min-w-0">
                                                         <div className="bg-[#FABE01]/10 p-2 rounded-sm text-[#FABE01] shrink-0"><Building2 className="w-4 h-4" /></div>
-                                                        <h3 className="text-white font-bold text-sm truncate">{empresa.nome}</h3>
+                                                        <h3 className="text-white font-bold text-sm truncate flex-1">{empresa.nome}</h3>
+                                                        {(pendingByEmpresa[empresa.id]?.aguardandoAgencia || 0) > 0 && (
+                                                            <span
+                                                                className="shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px] font-bold"
+                                                                title="Ajustes pedidos pelo cliente"
+                                                            >
+                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex gap-2">
                                                         <button onClick={() => onViewClient(empresa.id)} className="flex-1 py-2 bg-white/5 hover:bg-[#FABE01] hover:text-black text-white text-xs font-bold rounded-sm transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wide">

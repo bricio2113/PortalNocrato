@@ -14,35 +14,46 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
 
+  // Tempo real: a agencia marca uma entrega concluida e o cliente ve mudar sem
+  // recarregar. O seed continua aqui - diferente do calendario, sao itens de
+  // checklist genericos e o cliente tem permissao de escrita em tasks.
   useEffect(() => {
     if (!empresaId) return;
+    setIsLoading(true);
+    setLoadError('');
 
-    const fetchTasks = async () => {
-      setIsLoading(true);
-      setLoadError('');
-      try {
-        const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks');
-        let querySnapshot = await tasksCollection.get();
+    let seedChecked = false;
+    const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks');
 
+    const unsubscribe = tasksCollection.onSnapshot(
+      async snapshot => {
         // Semeia so na primeira visita da empresa. Antes bastava a lista ficar
         // vazia para as tarefas de exemplo voltarem - quem concluia e limpava a
         // semana recebia o modelo de novo no proximo acesso.
-        if (querySnapshot.empty && await shouldSeed(empresaId, 'tasks')) {
-          await Promise.all(INITIAL_TASKS.map(task => tasksCollection.add(task)));
-          await markSeeded(empresaId, 'tasks');
-          querySnapshot = await tasksCollection.get();
+        if (snapshot.empty && !seedChecked) {
+          seedChecked = true;
+          if (await shouldSeed(empresaId, 'tasks')) {
+            try {
+              await Promise.all(INITIAL_TASKS.map(task => tasksCollection.add(task)));
+              await markSeeded(empresaId, 'tasks');
+              return; // o proprio onSnapshot dispara de novo com os itens
+            } catch (error) {
+              console.error('Falha ao semear tarefas:', error);
+            }
+          }
         }
-
-        setTasks(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask)));
-      } catch (error) {
+        seedChecked = true;
+        setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask)));
+        setIsLoading(false);
+      },
+      error => {
         console.error(error);
         setLoadError('Não foi possível carregar as tarefas. Verifique sua conexão e recarregue a página.');
-      } finally {
         setIsLoading(false);
       }
-    };
+    );
 
-    fetchTasks();
+    return unsubscribe;
   }, [empresaId]);
 
   // Todas as acoes abaixo falhavam em silencio: o console registrava o erro e a
@@ -53,7 +64,6 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
     setActionError('');
     try {
       await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).update({ completed: !taskToToggle.completed });
-      setTasks(tasks.map(task => task.id === id ? { ...task, completed: !task.completed } : task));
     } catch (error) {
       console.error(error);
       setActionError('Não foi possível atualizar a tarefa.');
@@ -66,8 +76,7 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
     setActionError('');
     try {
       const newTaskData = { text: newTaskText.trim(), completed: false };
-      const docRef = await db.collection('empresas').doc(empresaId).collection('tasks').add(newTaskData);
-      setTasks([...tasks, { id: docRef.id, ...newTaskData }]);
+      await db.collection('empresas').doc(empresaId).collection('tasks').add(newTaskData);
       setNewTaskText('');
     } catch (error) {
       console.error(error);
@@ -80,7 +89,6 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
     setActionError('');
     try {
       await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).delete();
-      setTasks(tasks.filter(task => task.id !== id));
     } catch (error) {
       console.error(error);
       setActionError('Não foi possível remover a tarefa.');

@@ -20,6 +20,8 @@ interface SidebarProps {
     userEmail?: string | null;
     /** Nome/ID da empresa que esta sendo visualizada, quando conhecido. */
     empresaNome?: string | null;
+    /** Publicacoes aguardando acao de quem esta logado. */
+    pendingCount?: number;
     onBackToDashboard?: () => void;
     theme: 'light' | 'dark';
     toggleTheme: () => void;
@@ -40,7 +42,9 @@ const NavItem: React.FC<{
     label: string;
     isActive: boolean;
     onClick: () => void;
-}> = ({ icon, label, isActive, onClick }) => {
+    /** Quantidade pendente. Zero ou ausente nao desenha o selo. */
+    badge?: number;
+}> = ({ icon, label, isActive, onClick, badge }) => {
     return (
         <button
             onClick={onClick}
@@ -58,13 +62,24 @@ const NavItem: React.FC<{
             <span className={`mr-3 transition-transform group-hover:scale-110 ${isActive ? 'text-[#FABE01]' : 'text-zinc-500 group-hover:text-white'}`}>
         {icon}
       </span>
-            {label}
+            <span className="flex-1 text-left">{label}</span>
+
+            {/* Selo de pendencia: e o unico sinal de que existe algo esperando o
+                usuario. Sem ele o portal nao tem motivo para ser aberto. */}
+            {badge !== undefined && badge > 0 && (
+                <span
+                    className="ml-2 shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-[#FABE01] text-black text-[10px] font-bold"
+                    aria-label={`${badge} item(ns) aguardando você`}
+                >
+                    {badge > 9 ? '9+' : badge}
+                </span>
+            )}
         </button>
     );
 };
 
 // --- COMPONENTE SIDEBAR ---
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, empresaNome, onBackToDashboard, theme, toggleTheme }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, empresaNome, pendingCount = 0, onBackToDashboard, theme, toggleTheme }) => {
 
     const navItems = [
         {
@@ -156,6 +171,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
                                 label={item.label}
                                 isActive={currentView === item.view}
                                 onClick={() => handleNavItemClick(item.view)}
+                                badge={item.view === View.CALENDAR ? pendingCount : undefined}
                             />
                         ))}
                     </nav>

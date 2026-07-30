@@ -11,6 +11,7 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { db } from './firebase';
 import { ApprovalState, EventMetrics, PostComment } from '../types';
+import { needsClientAction, needsAgencyAction } from './eventState';
 
 const empresaRef = (empresaId: string) => db.collection('empresas').doc(empresaId);
 
@@ -103,6 +104,43 @@ export function subscribeComments(
                 onError?.(error);
             }
         );
+}
+
+// --- CONTADORES DE PENDENCIA (notificacao in-app) ---
+
+export interface PendingCounts {
+    /** Posts esperando decisao do cliente. */
+    aguardandoCliente: number;
+    /** Posts em que o cliente pediu ajuste e a agencia ainda nao resolveu. */
+    aguardandoAgencia: number;
+}
+
+/**
+ * Assina os contadores de pendencia de uma empresa.
+ *
+ * Le a colecao inteira de events porque a decisao de "esta pendente" combina
+ * status e approval, e o Firestore nao consulta logica composta assim sem
+ * indice dedicado. Para o volume de um portal de agencia (dezenas de posts por
+ * empresa) sai mais barato do que manter contadores denormalizados em sincronia.
+ */
+export function subscribePendingCounts(
+    empresaId: string,
+    onData: (counts: PendingCounts) => void
+): () => void {
+    return empresaRef(empresaId).collection('events').onSnapshot(
+        snapshot => {
+            let aguardandoCliente = 0;
+            let aguardandoAgencia = 0;
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const event = { status: data.status, approval: data.approval };
+                if (needsClientAction(event)) aguardandoCliente++;
+                if (needsAgencyAction(event)) aguardandoAgencia++;
+            });
+            onData({ aguardandoCliente, aguardandoAgencia });
+        },
+        error => console.error('Erro ao contar pendências:', error)
+    );
 }
 
 /** Quantos comentarios existem por eventId, para o selo no card. */
