@@ -19,6 +19,12 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // Validacao ao vivo: antes o usuario so descobria senha curta ou divergente
+    // depois de enviar o formulario e esperar o retorno.
+    const passwordTooShort = password.length > 0 && password.length < 6;
+    const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
+    const canSubmit = email.trim() !== '' && password.length >= 6 && password === confirmPassword;
+
     // --- LÓGICA DE CADASTRO ---
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,7 +44,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
 
         try {
             // Cria usuário no Firebase
-            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            const userCredential = await auth.createUserWithEmailAndPassword(email.trim(), password);
 
             // Envia e-mail de verificação
             await userCredential.user?.sendEmailVerification();
@@ -52,9 +58,15 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         } catch (err: any) {
             console.error(err);
             if (err.code === 'auth/email-already-in-use') {
-                setError('Este e-mail já está cadastrado.');
+                setError('Este e-mail já está cadastrado. Use "Faça Login" e, se preciso, "Esqueceu?" para redefinir a senha.');
             } else if (err.code === 'auth/invalid-email') {
-                setError('E-mail inválido.');
+                setError('Confira o endereço de e-mail digitado.');
+            } else if (err.code === 'auth/weak-password') {
+                setError('Senha muito fraca. Use ao menos 6 caracteres, misturando letras e números.');
+            } else if (err.code === 'auth/network-request-failed') {
+                setError('Sem conexão com o servidor. Verifique sua internet e tente novamente.');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Muitas tentativas. Aguarde alguns minutos antes de tentar de novo.');
             } else {
                 setError('Ocorreu um erro ao criar a conta. Tente novamente.');
             }
@@ -134,6 +146,9 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
+                                    autoComplete="email"
+                                    autoCapitalize="none"
+                                    spellCheck={false}
                                     className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="seu@empresa.com"
                                 />
@@ -150,17 +165,23 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
+                                    autoComplete="new-password"
+                                    aria-invalid={passwordTooShort}
                                     className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="No mínimo 6 caracteres"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
+                                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                                     className="absolute right-3 top-3.5 text-zinc-500 hover:text-white transition-colors"
                                 >
                                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                 </button>
                             </div>
+                            {passwordTooShort && (
+                                <p className="text-amber-400 text-xs ml-1">Faltam {6 - password.length} caractere(s) para o mínimo de 6.</p>
+                            )}
                         </div>
 
                         {/* Campo Confirmar Senha */}
@@ -173,17 +194,22 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     required
+                                    autoComplete="new-password"
+                                    aria-invalid={passwordsMismatch}
                                     className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="Repita a senha"
                                 />
                             </div>
+                            {passwordsMismatch && (
+                                <p className="text-red-400 text-xs ml-1">As senhas não coincidem.</p>
+                            )}
                         </div>
 
                         {/* Botão de Ação */}
                         <div className="pt-4">
                             <button
                                 type="submit"
-                                disabled={isLoading}
+                                disabled={isLoading || !canSubmit}
                                 className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3.5 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isLoading ? (

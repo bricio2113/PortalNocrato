@@ -16,10 +16,23 @@ interface SidebarProps {
     onClose: () => void;
     handleLogout: () => void;
     userRole: string | null;
+    /** E-mail da conta logada. Sem ele o rodape mostra um placeholder neutro. */
+    userEmail?: string | null;
+    /** Nome/ID da empresa que esta sendo visualizada, quando conhecido. */
+    empresaNome?: string | null;
     onBackToDashboard?: () => void;
     theme: 'light' | 'dark';
     toggleTheme: () => void;
 }
+
+// Iniciais a partir do e-mail: "maria.silva@x.com" -> "MS", "bricio@x.com" -> "BR".
+const getInitials = (email?: string | null): string => {
+    if (!email) return '--';
+    const localPart = email.split('@')[0];
+    const parts = localPart.split(/[._-]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return localPart.slice(0, 2).toUpperCase();
+};
 
 // --- ITEM DE NAVEGAÇÃO ---
 const NavItem: React.FC<{
@@ -51,7 +64,7 @@ const NavItem: React.FC<{
 };
 
 // --- COMPONENTE SIDEBAR ---
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, onBackToDashboard, theme, toggleTheme }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, empresaNome, onBackToDashboard, theme, toggleTheme }) => {
 
     const navItems = [
         {
@@ -172,15 +185,26 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
                     </div>
                 </div>
 
-                {/* USER PROFILE MINI */}
+                {/* USER PROFILE MINI - identidade real da sessao.
+                    Antes isto era "Cliente Nocrato / Plano Premium" fixo no codigo:
+                    todo cliente via o mesmo nome e um plano que nao existe. */}
                 <div className="p-4 border-t border-white/5 bg-black/20">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs">
-                            NC
+                        <div
+                            className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs"
+                            aria-hidden="true"
+                        >
+                            {getInitials(userEmail)}
                         </div>
                         <div className="flex flex-col overflow-hidden">
-                            <span className="text-sm font-medium text-white truncate">Cliente Nocrato</span>
-                            <span className="text-[10px] text-zinc-500 truncate">Plano Premium</span>
+                            <span className="text-sm font-medium text-white truncate" title={userEmail || undefined}>
+                                {userEmail || 'Sessão ativa'}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 truncate uppercase tracking-wider">
+                                {userRole === 'agencia'
+                                    ? (empresaNome ? `Agência · vendo ${empresaNome}` : 'Agência')
+                                    : (empresaNome || 'Cliente')}
+                            </span>
                         </div>
                     </div>
                 </div>

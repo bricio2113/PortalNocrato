@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { WeeklyTask } from '../types';
 import { INITIAL_TASKS } from '../constants';
 import { db } from '../utils/firebase';
-import { CheckCircle2, Circle, Trash2, Plus, Target, Loader2 } from 'lucide-react';
+import { shouldSeed, markSeeded } from '../utils/seed';
+import { CheckCircle2, Circle, Trash2, Plus, Target, Loader2, AlertTriangle } from 'lucide-react';
 
 interface WeeklyUpdatesViewProps { empresaId: string; }
 
@@ -10,12 +11,81 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
   const [tasks, setTasks] = useState<WeeklyTask[]>([]);
   const [newTaskText, setNewTaskText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
 
-  useEffect(() => { if (!empresaId) return; const fetchTasks = async () => { setIsLoading(true); try { const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks'); const querySnapshot = await tasksCollection.get(); if (querySnapshot.empty) { const seedingPromises = INITIAL_TASKS.map(task => tasksCollection.add(task)); await Promise.all(seedingPromises); const newSnapshot = await tasksCollection.get(); setTasks(newSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask))); } else { setTasks(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask))); } } catch (error) { console.error(error); } finally { setIsLoading(false); } }; fetchTasks(); }, [empresaId]);
+  useEffect(() => {
+    if (!empresaId) return;
 
-  const handleToggleTask = async (id: string) => { const taskToToggle = tasks.find(task => task.id === id); if (!taskToToggle) return; try { await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).update({ completed: !taskToToggle.completed }); setTasks(tasks.map(task => task.id === id ? { ...task, completed: !task.completed } : task)); } catch (error) { console.error(error); } };
-  const handleAddTask = async (e: React.FormEvent) => { e.preventDefault(); if (!newTaskText.trim()) return; try { const newTaskData = { text: newTaskText.trim(), completed: false }; const docRef = await db.collection('empresas').doc(empresaId).collection('tasks').add(newTaskData); setTasks([...tasks, { id: docRef.id, ...newTaskData }]); setNewTaskText(''); } catch (error) { console.error(error); } };
-  const handleDeleteTask = async (id: string, e: React.MouseEvent) => { e.stopPropagation(); try { await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).delete(); setTasks(tasks.filter(task => task.id !== id)); } catch (error) { console.error(error); } };
+    const fetchTasks = async () => {
+      setIsLoading(true);
+      setLoadError('');
+      try {
+        const tasksCollection = db.collection('empresas').doc(empresaId).collection('tasks');
+        let querySnapshot = await tasksCollection.get();
+
+        // Semeia so na primeira visita da empresa. Antes bastava a lista ficar
+        // vazia para as tarefas de exemplo voltarem - quem concluia e limpava a
+        // semana recebia o modelo de novo no proximo acesso.
+        if (querySnapshot.empty && await shouldSeed(empresaId, 'tasks')) {
+          await Promise.all(INITIAL_TASKS.map(task => tasksCollection.add(task)));
+          await markSeeded(empresaId, 'tasks');
+          querySnapshot = await tasksCollection.get();
+        }
+
+        setTasks(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WeeklyTask)));
+      } catch (error) {
+        console.error(error);
+        setLoadError('Não foi possível carregar as tarefas. Verifique sua conexão e recarregue a página.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTasks();
+  }, [empresaId]);
+
+  // Todas as acoes abaixo falhavam em silencio: o console registrava o erro e a
+  // interface seguia como se nada tivesse acontecido.
+  const handleToggleTask = async (id: string) => {
+    const taskToToggle = tasks.find(task => task.id === id);
+    if (!taskToToggle) return;
+    setActionError('');
+    try {
+      await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).update({ completed: !taskToToggle.completed });
+      setTasks(tasks.map(task => task.id === id ? { ...task, completed: !task.completed } : task));
+    } catch (error) {
+      console.error(error);
+      setActionError('Não foi possível atualizar a tarefa.');
+    }
+  };
+
+  const handleAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskText.trim()) return;
+    setActionError('');
+    try {
+      const newTaskData = { text: newTaskText.trim(), completed: false };
+      const docRef = await db.collection('empresas').doc(empresaId).collection('tasks').add(newTaskData);
+      setTasks([...tasks, { id: docRef.id, ...newTaskData }]);
+      setNewTaskText('');
+    } catch (error) {
+      console.error(error);
+      setActionError('Não foi possível adicionar a tarefa. O texto continua no campo.');
+    }
+  };
+
+  const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionError('');
+    try {
+      await db.collection('empresas').doc(empresaId).collection('tasks').doc(id).delete();
+      setTasks(tasks.filter(task => task.id !== id));
+    } catch (error) {
+      console.error(error);
+      setActionError('Não foi possível remover a tarefa.');
+    }
+  };
 
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;
@@ -74,19 +144,49 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
                   Adicionar
                 </button>
               </form>
+              {actionError && (
+                  <p className="text-red-400 text-xs mt-3 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {actionError}
+                  </p>
+              )}
             </div>
 
             <div className="divide-y divide-white/5">
               {isLoading ? (
                   <div className="p-12 text-center flex flex-col items-center justify-center gap-3"><Loader2 className="w-8 h-8 text-[#FABE01] animate-spin" /><p className="text-zinc-500 text-sm">Sincronizando tarefas...</p></div>
+              ) : loadError ? (
+                  <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+                    <AlertTriangle className="w-8 h-8 text-red-400" />
+                    <p className="text-zinc-300 text-sm max-w-sm">{loadError}</p>
+                  </div>
               ) : tasks.length === 0 ? (
-                  <div className="p-12 text-center text-zinc-500"><p>Nenhuma tarefa definida.</p></div>
+                  // Empty state orientado: antes era so "Nenhuma tarefa definida",
+                  // que informa o vazio sem dizer o que fazer com ele.
+                  <div className="p-12 text-center">
+                    <Target className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+                    <p className="text-zinc-300 font-bold mb-1">A semana está limpa</p>
+                    <p className="text-zinc-500 text-sm max-w-sm mx-auto leading-relaxed">
+                      Use o campo acima para registrar a primeira prioridade da semana. Cada item marcado alimenta a barra de progresso.
+                    </p>
+                  </div>
               ) : (
                   tasks.map(task => (
                       <div
                           key={task.id}
                           onClick={() => handleToggleTask(task.id)}
-                          className={`group flex items-start sm:items-center p-4 sm:p-5 cursor-pointer transition-all duration-200 ${task.completed ? 'bg-black/20' : 'hover:bg-white/[0.02]'}`}
+                          // Era uma div clicavel sem acesso por teclado: quem navega
+                          // por Tab nao conseguia concluir uma tarefa.
+                          role="checkbox"
+                          aria-checked={task.completed}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleToggleTask(task.id);
+                            }
+                          }}
+                          className={`group flex items-start sm:items-center p-4 sm:p-5 cursor-pointer transition-all duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#FABE01] ${task.completed ? 'bg-black/20' : 'hover:bg-white/[0.02]'}`}
                       >
                         <div className={`mr-4 mt-0.5 sm:mt-0 transition-colors shrink-0 ${task.completed ? 'text-[#FABE01]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
                           {task.completed ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}

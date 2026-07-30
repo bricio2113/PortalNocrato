@@ -6,6 +6,11 @@ rules_version = '2';
 //   usuarios/{uid}                    { email, role: 'agencia'|'cliente', empresaId }
 //   empresas/{empresaId}              { nome }
 //     events/{id} | kanban_tasks/{id} | tasks/{id} | drive_links/{id}
+//     _meta/seed                      { events: bool, tasks: bool }
+//
+// _meta/seed registra que os dados de exemplo ja foram inseridos, para nao
+// reaparecerem depois que o cliente apaga tudo. Fica em subcolecao porque o
+// documento da empresa e restrito a agencia, e quem semeia e o proprio cliente.
 //
 // Principio: o cliente so enxerga e escreve dentro da propria empresa;
 // a agencia enxerga tudo; ninguem promove a si mesmo a 'agencia'.
