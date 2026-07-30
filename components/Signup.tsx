@@ -12,6 +12,8 @@ interface SignupProps {
 
 const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     // --- ESTADOS ---
+    const [nome, setNome] = useState('');
+    const [sobrenome, setSobrenome] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -23,7 +25,11 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     // depois de enviar o formulario e esperar o retorno.
     const passwordTooShort = password.length > 0 && password.length < 6;
     const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
-    const canSubmit = email.trim() !== '' && password.length >= 6 && password === confirmPassword;
+    // Sobrenome tambem e obrigatorio porque o portal exige perfil completo para
+    // entrar: pedir so o nome aqui jogaria o usuario no modal obrigatorio um
+    // segundo depois de criar a conta.
+    const canSubmit = nome.trim().length >= 2 && sobrenome.trim().length >= 2
+        && email.trim() !== '' && password.length >= 6 && password === confirmPassword;
 
     // --- LÓGICA DE CADASTRO ---
     const handleSignup = async (e: React.FormEvent) => {
@@ -45,6 +51,14 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         try {
             // Cria usuário no Firebase
             const userCredential = await auth.createUserWithEmailAndPassword(email.trim(), password);
+
+            // displayName e o unico transporte do nome ate o App.tsx, que e quem
+            // cria o documento em usuarios/{uid} depois do onAuthStateChanged.
+            // Sem isto o cadastro perderia o nome digitado aqui.
+            const fullName = [nome.trim(), sobrenome.trim()].filter(Boolean).join(' ');
+            if (fullName) {
+                await userCredential.user?.updateProfile({ displayName: fullName });
+            }
 
             // Envia e-mail de verificação
             await userCredential.user?.sendEmailVerification();
@@ -135,6 +149,38 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                     )}
 
                     <form onSubmit={handleSignup} className="space-y-5">
+
+                        {/* Nome e sobrenome: passam a ser a identidade do usuario no
+                            portal, em vez do e-mail. */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Nome</label>
+                                <div className="relative group">
+                                    <User className="absolute left-3 top-3.5 h-5 w-5 text-zinc-500 group-focus-within:text-[#FABE01] transition-colors" />
+                                    <input
+                                        type="text"
+                                        value={nome}
+                                        onChange={(e) => setNome(e.target.value)}
+                                        required
+                                        autoComplete="given-name"
+                                        placeholder="Seu nome"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Sobrenome</label>
+                                <input
+                                    type="text"
+                                    value={sobrenome}
+                                    onChange={(e) => setSobrenome(e.target.value)}
+                                    required
+                                    autoComplete="family-name"
+                                    placeholder="Seu sobrenome"
+                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 px-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                />
+                            </div>
+                        </div>
 
                         {/* Campo Email */}
                         <div className="space-y-2">

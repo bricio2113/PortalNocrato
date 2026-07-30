@@ -1,16 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent } from '../types';
-import { INITIAL_EVENTS } from '../constants';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
-import { shouldSeed, markSeeded } from '../utils/seed';
 import { getTypeStyles } from '../utils/eventStyles';
+import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
 
 interface CalendarViewProps {
     empresaId: string;
+    userRole?: 'agencia' | 'cliente';
+    userEmail?: string | null;
+    userName?: string | null;
 }
 
 // A grade mensal precisa de 1200px para caber sete colunas legiveis, o que no
@@ -18,7 +20,7 @@ interface CalendarViewProps {
 // pequenas a lista abre por padrao; o usuario ainda pode trocar para a grade.
 const prefersListView = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
-const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -67,36 +69,56 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
         } catch (error) { console.error('Falha ao espelhar post:', error); }
     };
 
+    // Tempo real em vez de leitura unica.
+    //
+    // Com .get() a agencia e o cliente trabalhavam sobre fotografias diferentes
+    // do mesmo calendario: quem tinha a aba aberta nao via a publicacao nova, e
+    // dois editores sobrescreviam um ao outro sem aviso.
+    //
+    // O seed de posts de exemplo foi REMOVIDO daqui de proposito. Duas razoes:
+    // as novas regras nao deixam o cliente criar evento, entao para ele o seed
+    // so produziria erro de permissao; e semear post ficticio no calendario de
+    // um cliente pagante passa descuido - ou pior, ele acredita que esta
+    // realmente agendado. O empty state ja orienta a proxima acao.
     useEffect(() => {
         if (!empresaId) return;
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                const eventsCollection = db.collection('empresas').doc(empresaId).collection('events');
-                let querySnapshot = await eventsCollection.get();
+        setIsLoading(true);
+        setLoadError('');
 
-                // Semeia apenas na primeira vez. Se o cliente esvaziou o mes de
-                // proposito, respeitamos - o empty state assume a orientacao.
-                if (querySnapshot.empty && await shouldSeed(empresaId, 'events')) {
-                    await Promise.all(INITIAL_EVENTS.map(event => eventsCollection.add(event)));
-                    await markSeeded(empresaId, 'events');
-                    querySnapshot = await eventsCollection.get();
+        const unsubscribe = db.collection('empresas').doc(empresaId).collection('events')
+            .onSnapshot(
+                snapshot => {
+                    const eventsData = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            ...data,
+                            id: doc.id,
+                            date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
+                            approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                            metrics: data.metrics
+                                ? {
+                                    ...data.metrics,
+                                    atualizadoEm: (data.metrics.atualizadoEm as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                                }
+                                : undefined
+                        } as CalendarEvent;
+                    });
+                    setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
+                    setIsLoading(false);
+                },
+                error => {
+                    console.error(error);
+                    setLoadError('Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.');
+                    setIsLoading(false);
                 }
+            );
 
-                const eventsData = querySnapshot.docs.map(doc => ({
-                    ...doc.data(),
-                    id: doc.id,
-                    date: (doc.data().date as firebase.firestore.Timestamp).toDate()
-                } as CalendarEvent));
-
-                setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
-            } catch (error) {
-                console.error(error);
-                setLoadError('Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.');
-            } finally { setIsLoading(false); }
-        };
-        fetchData();
+        return unsubscribe;
     }, [empresaId]);
+
+    // Atalho local: o estagio combina status e aprovacao, e e consultado em dois
+    // lugares da renderizacao.
+    const stageOf = (event: CalendarEvent) => getClientStage(event);
 
     const handleAddNewEventClick = () => {
         setSelectedEvent({ id: '', date: new Date(), title: 'Nova Publicação', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
@@ -119,7 +141,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                 const { id, ...data } = eventData;
                 await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data);
                 await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
-                setEvents(prev => prev.map(e => e.id === eventData.id ? eventData : e));
+                // Sem setEvents: o onSnapshot ja reflete a escrita, inclusive
+                // pelo cache local do Firestore. Duplicar aqui podia inserir
+                // dois itens com o mesmo id por um instante.
 
                 // Sincroniza titulo e status com o card do Kanban.
                 //
@@ -162,7 +186,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                 const { id, ...data } = eventData;
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
-                setEvents(prev => [...prev, { ...eventData, id: docRef.id }].sort((a, b) => a.date.getTime() - b.date.getTime()));
 
                 // Cria o Card no Kanban com o status exato do modal
                 await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
@@ -200,7 +223,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
             const orphanTasks = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
             await Promise.all(orphanTasks.docs.map(doc => doc.ref.delete()));
 
-            setEvents(prev => prev.filter(e => e.id !== eventId));
             setSelectedEvent(null);
         } catch (e) {
             console.error(e);
@@ -297,7 +319,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                                                     <div className="mt-0.5 shrink-0">{event.plataforma === 'Instagram' ? <Instagram className="w-3 h-3 opacity-70" /> : <FileText className="w-3 h-3 opacity-70" />}</div>
                                                                     <div className="flex flex-col gap-1 w-full">
                                                                         <span className="leading-tight break-words whitespace-normal text-[11px]">{event.title || '(Sem título)'}</span>
-                                                                        <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                        <div className="flex items-center gap-1 flex-wrap">
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                            {/* Estagio direto no card: sem isso o contador do menu
+                                                                                dizia "3 pendentes" e o usuario tinha que abrir post
+                                                                                por post para descobrir quais. */}
+                                                                            {stageOf(event) !== 'em_producao' && (
+                                                                                <span
+                                                                                    className={`w-2 h-2 rounded-full shrink-0 ${CLIENT_STAGES[stageOf(event)].dot}`}
+                                                                                    title={CLIENT_STAGES[stageOf(event)].label}
+                                                                                />
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -351,9 +384,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                                                                         {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
                                                                     </div>
                                                                     <div className="flex-1">
-                                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                                                             <h4 className="text-white font-medium text-sm">{event.title || '(Sem título)'}</h4>
                                                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider border ${CLIENT_STAGES[stageOf(event)].bg} ${CLIENT_STAGES[stageOf(event)].text} ${CLIENT_STAGES[stageOf(event)].border}`}>
+                                                                                {CLIENT_STAGES[stageOf(event)].label}
+                                                                            </span>
                                                                         </div>
                                                                         <div className="flex items-center gap-2 text-xs text-zinc-500">
                                                                             {event.proprietario && <span>{event.proprietario}</span>}
@@ -381,6 +417,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     onClose={() => { setSelectedEvent(null); setSaveError(''); }}
                     isSaving={isSaving}
                     errorMessage={saveError}
+                    empresaId={empresaId}
+                    userRole={userRole}
+                    userEmail={userEmail}
                 />
             )}
         </div>

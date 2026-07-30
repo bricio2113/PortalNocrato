@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../utils/firebase';
+import { db, auth } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import {
@@ -36,9 +36,11 @@ const COLUMNS: ColumnDef[] = [
 
 interface ClientProductionViewProps {
     empresaId: string;
+    userEmail?: string | null;
+    userName?: string | null;
 }
 
-const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }) => {
+const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, userEmail, userName }) => {
     const [tasks, setTasks] = useState<KanbanTask[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
@@ -61,24 +63,29 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
 
     useEffect(() => {
         if (!empresaId) return;
-        const fetchTasks = async () => {
-            setIsLoading(true);
-            try {
-                const snapshot = await db.collection('empresas').doc(empresaId).collection('kanban_tasks').orderBy('createdAt', 'desc').get();
-                const tasksData = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    createdAt: doc.data().createdAt?.toDate() || new Date()
-                } as KanbanTask));
-                setTasks(tasksData);
-            } catch (error) {
-                console.error("Erro ao buscar tarefas Kanban:", error);
-                setBoardError('Não foi possível carregar o quadro. Verifique sua conexão e recarregue a página.');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchTasks();
+        // Tempo real: com dois membros da equipe no mesmo quadro, um movia o
+        // card e o outro so descobria recarregando.
+        setIsLoading(true);
+
+        const unsubscribe = db.collection('empresas').doc(empresaId).collection('kanban_tasks')
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(
+                snapshot => {
+                    setTasks(snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        createdAt: doc.data().createdAt?.toDate() || new Date()
+                    } as KanbanTask)));
+                    setIsLoading(false);
+                },
+                error => {
+                    console.error("Erro ao buscar tarefas Kanban:", error);
+                    setBoardError('Não foi possível carregar o quadro. Verifique sua conexão e recarregue a página.');
+                    setIsLoading(false);
+                }
+            );
+
+        return unsubscribe;
     }, [empresaId]);
 
     // Mensagem efemera para acoes que nao tem onde aparecer no card.
@@ -123,8 +130,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
             createdAt: new Date()
         };
         try {
-            const docRef = await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add(newTask);
-            setTasks([{ id: docRef.id, ...newTask } as KanbanTask, ...tasks]);
+            await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add(newTask);
             setAddingToColumn(null);
             setNewTaskTitle('');
         } catch (error) {
@@ -138,7 +144,6 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
         if (!window.confirm("Excluir este card?")) return;
         try {
             await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(taskId).delete();
-            setTasks(tasks.filter(t => t.id !== taskId));
         } catch (error) {
             console.error("Erro ao excluir:", error);
             showNotice('Não foi possível excluir o card.');
@@ -545,6 +550,12 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
                     onClose={() => { setSelectedEvent(null); setModalError(''); }}
                     isSaving={isSaving}
                     errorMessage={modalError}
+                    empresaId={empresaId}
+                    userRole="agencia"
+                    // Cai para o e-mail da sessao quando o pai nao passa: o quadro
+                    // tambem e aberto de contextos que nao carregam o perfil.
+                    userEmail={userEmail || auth.currentUser?.email}
+                    userName={userName}
                 />
             )}
         </div>

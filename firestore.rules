@@ -61,6 +61,19 @@ service cloud.firestore {
       return isVerified() && hasUserDoc() && myUserDoc().empresaId == empresaId;
     }
 
+    // O cliente pode gravar a decisao dele numa publicacao, e mais nada.
+    //
+    // diff().affectedKeys() lista os campos que a escrita mexeu; exigimos que
+    // esse conjunto caiba dentro dos tres campos de aprovacao. Assim o cliente
+    // aprova sem conseguir, na mesma requisicao, mudar data, legenda, status
+    // ou as metricas do post.
+    function onlyApprovalChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['approval', 'approvalBy', 'approvalAt', 'approvalByName'])
+             && request.resource.data.approval in ['aguardando', 'aprovado', 'ajuste_solicitado']
+             && request.resource.data.approvalBy == request.auth.token.email;
+    }
+
     // ---------------------------------------------------------------
     // usuarios/
     // ---------------------------------------------------------------
@@ -79,14 +92,22 @@ service cloud.firestore {
                         && request.resource.data.role == 'cliente'
                         && request.resource.data.empresaId == null);
 
-      // O usuario pode mexer no proprio documento, mas role e empresaId
-      // ficam congelados - so a agencia os altera. Esta e a regra que
-      // fecha a escalacao de privilegio.
+      // O usuario pode mexer no proprio documento - nome, sobrenome, foto -,
+      // mas role e empresaId ficam congelados: so a agencia os altera. Esta e
+      // a regra que fecha a escalacao de privilegio.
+      //
+      // A foto e gravada como data URI dentro do documento. O teto de 200 KB
+      // aplicado no cliente (utils/avatar.ts) e repetido aqui, porque validacao
+      // que so existe no front nao e validacao: sem isto alguem poderia gravar
+      // 1 MiB por documento chamando o SDK direto.
       allow update: if isAgency()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
-                        && request.resource.data.empresaId == resource.data.empresaId);
+                        && request.resource.data.empresaId == resource.data.empresaId
+                        && (!('fotoUrl' in request.resource.data)
+                            || request.resource.data.fotoUrl == null
+                            || request.resource.data.fotoUrl.size() <= 300000));
 
       allow delete: if isAgency();
     }
@@ -103,9 +124,56 @@ service cloud.firestore {
       // Criar, renomear e excluir empresa e privilegio da agencia.
       allow write: if isAgency();
 
-      // events, kanban_tasks, tasks, drive_links: o cliente da empresa
-      // opera livremente dentro do proprio escopo.
-      match /{subcollection}/{docId} {
+      // events: o cliente le tudo, mas nao apaga nem cria publicacao. O papel
+      // dele e aprovar ou pedir ajuste - a producao e da agencia. Antes tinha
+      // escrita total e podia excluir o calendario inteiro.
+      //
+      // Na atualizacao o cliente so pode tocar nos campos de aprovacao e nas
+      // metricas nao: titulo, data, status, links e legenda ficam congelados.
+      match /events/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow create, delete: if isAgency();
+
+        allow update: if isAgency()
+                      || (belongsTo(empresaId) && onlyApprovalChanged());
+      }
+
+      // post_comments: os dois lados comentam. Cada um apaga o proprio
+      // comentario; a agencia apaga qualquer um (moderacao).
+      match /post_comments/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+
+        // authorEmail e authorRole precisam refletir quem esta escrevendo,
+        // senao o cliente poderia publicar um comentario assinado como agencia.
+        allow create: if (isAgency() || belongsTo(empresaId))
+                      && request.resource.data.authorEmail == request.auth.token.email
+                      && request.resource.data.authorRole == (isAgency() ? 'agencia' : 'cliente');
+
+        allow update: if false; // comentario nao se edita: o historico e a prova
+        allow delete: if isAgency()
+                      || (belongsTo(empresaId) && resource.data.authorEmail == request.auth.token.email);
+      }
+
+      // ATENCAO: as colecoes abaixo sao listadas uma por uma, sem wildcard.
+      //
+      // As regras do Firestore sao permissivas por uniao: se QUALQUER match
+      // conceder, o acesso passa. Um `match /{subcollection}/{docId}` generico
+      // aqui tambem casaria events/ e post_comments/ e devolveria a escrita
+      // total ao cliente, anulando as restricoes acima em silencio.
+      match /kanban_tasks/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+      match /tasks/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+      match /drive_links/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+      match /_meta/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+      // Espelho de leitura escrito pelo CalendarView.
+      match /Agenciaapk/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
     }

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
 import { DELETE_USER_ENDPOINT } from '../constants';
+import { subscribePendingCounts, PendingCounts } from '../utils/posts';
+import { UserProfile } from '../types';
+import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, Link as LinkIcon, ClipboardList
+    ArrowRight, Shield, Link as LinkIcon, ClipboardList, MessageSquareWarning, LayoutGrid
 } from 'lucide-react';
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -14,6 +17,9 @@ interface UserData {
     email: string;
     role: string;
     empresaId: string | null;
+    nome?: string | null;
+    sobrenome?: string | null;
+    fotoUrl?: string | null;
 }
 
 interface EmpresaData {
@@ -25,6 +31,11 @@ interface AgencyDashboardProps {
     handleLogout: () => void;
     onViewClient: (clientId: string) => void;
     onViewClientTasks: (clientId: string) => void;
+    /** Abre a tela de calendarios com troca rapida de cliente. */
+    onOpenCalendarBoard?: () => void;
+    /** Abre a tela de perfil do proprio usuario da agencia. */
+    onOpenProfile?: () => void;
+    profile?: UserProfile | null;
 }
 
 // As classes precisam existir literalmente no fonte: o Tailwind varre o codigo
@@ -81,7 +92,7 @@ const EmptyState: React.FC<{
     </div>
 );
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks, onOpenCalendarBoard, onOpenProfile, profile }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +103,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
     const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
     const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
+
+    // Pendencia por empresa: quais clientes pediram ajuste e estao esperando.
+    // Uma assinatura por empresa - aceitavel no volume de um portal de agencia,
+    // e o unico jeito de saber sem manter contadores denormalizados.
+    const [pendingByEmpresa, setPendingByEmpresa] = useState<Record<string, PendingCounts>>({});
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -108,6 +124,21 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
     };
 
     useEffect(() => { fetchData(); }, []);
+
+    useEffect(() => {
+        if (empresas.length === 0) return;
+        const unsubscribes = empresas.map(empresa =>
+            subscribePendingCounts(empresa.id, counts =>
+                setPendingByEmpresa(prev => ({ ...prev, [empresa.id]: counts }))
+            )
+        );
+        return () => unsubscribes.forEach(fn => fn());
+    }, [empresas]);
+
+    const empresasComAjuste = empresas.filter(e => (pendingByEmpresa[e.id]?.aguardandoAgencia || 0) > 0);
+    const totalAjustes = empresasComAjuste.reduce(
+        (sum, e) => sum + (pendingByEmpresa[e.id]?.aguardandoAgencia || 0), 0
+    );
 
     const showNotification = (msg: string) => {
         setNotification(msg);
@@ -256,7 +287,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
         } catch (e) { showNotification('Erro ao enviar email'); }
     };
 
-    const filteredUsers = users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Busca por nome OU e-mail: quem digita "maria" espera achar a Maria, e nem
+    // sempre o e-mail dela contem o nome.
+    const filteredUsers = users.filter(u => {
+        const term = searchTerm.toLowerCase();
+        if (!term) return true;
+        return u.email.toLowerCase().includes(term)
+            || getDisplayName(u).toLowerCase().includes(term);
+    });
     const filteredEmpresas = empresas.filter(e => e.nome.toLowerCase().includes(searchTerm.toLowerCase()));
 
     // Cliente sem empresa nao consegue usar o portal - so ve o aviso de conta
@@ -273,7 +311,35 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                         <div className="h-8 w-px bg-white/10 hidden sm:block" />
                         <div><h1 className="text-lg font-bold text-white leading-none">Painel Administrativo</h1><p className="text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
                     </div>
-                    <div className="flex items-center gap-6"><div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div><button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
+                    <div className="flex items-center gap-4 sm:gap-6">
+                        {onOpenCalendarBoard && (
+                            <button
+                                onClick={onOpenCalendarBoard}
+                                className="flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-3 sm:px-4 py-2 rounded-sm uppercase tracking-wide transition-colors"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                                <span className="hidden sm:inline">Calendários</span>
+                            </button>
+                        )}
+                        {onOpenProfile ? (
+                            <button onClick={onOpenProfile} className="flex items-center gap-3 group" title={auth.currentUser?.email || undefined}>
+                                {isSafeImageSrc(profile?.fotoUrl) ? (
+                                    <img src={profile!.fotoUrl!} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                                ) : (
+                                    <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs">
+                                        {getInitials({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
+                                    </div>
+                                )}
+                                <div className="hidden md:block text-left">
+                                    <p className="text-sm font-medium text-white group-hover:text-[#FABE01] transition-colors">
+                                        {getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">Ver meu perfil</p>
+                                </div>
+                            </button>
+                        ) : (
+                            <div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div>
+                        )}<button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
                 </div>
             </header>
 
@@ -311,6 +377,41 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                     a tarefa real. O trabalho do dia é entrar no calendário ou na
                                     produção de um cliente, então esses atalhos passam a ficar
                                     aqui, junto do que exige atenção. */}
+                                {/* Ajustes pedidos pelo cliente: e a fila de trabalho
+                                    mais urgente da agencia, porque alguem do outro
+                                    lado esta esperando. Vem antes do resto. */}
+                                {totalAjustes > 0 && (
+                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-sm p-5">
+                                        <div className="flex items-start gap-3">
+                                            <MessageSquareWarning className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-white font-bold text-sm mb-1">
+                                                    {totalAjustes === 1
+                                                        ? '1 publicação com ajuste pedido pelo cliente'
+                                                        : `${totalAjustes} publicações com ajuste pedido pelo cliente`}
+                                                </h3>
+                                                <p className="text-zinc-400 text-sm leading-relaxed mb-4">
+                                                    O cliente revisou e pediu mudanças. O detalhe está na conversa de cada publicação.
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {empresasComAjuste.map(empresa => (
+                                                        <button
+                                                            key={empresa.id}
+                                                            onClick={() => onViewClient(empresa.id)}
+                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-sm transition-colors"
+                                                        >
+                                                            {empresa.nome}
+                                                            <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px]">
+                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {unlinkedUsers.length > 0 && (
                                     <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-sm p-5">
                                         <div className="flex items-start gap-3">
@@ -325,7 +426,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                     Enquanto não tiverem empresa, essas contas entram e veem apenas um aviso de conta não vinculada.
                                                 </p>
                                                 <p className="text-xs text-zinc-500 font-mono truncate mb-4">
-                                                    {unlinkedUsers.slice(0, 3).map(u => u.email).join(', ')}
+                                                    {unlinkedUsers.slice(0, 3).map(u => getDisplayName(u)).join(', ')}
                                                     {unlinkedUsers.length > 3 && ` +${unlinkedUsers.length - 3}`}
                                                 </p>
                                                 <button
@@ -354,7 +455,15 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                 <div key={empresa.id} className="bg-[#1A1A1A] border border-white/5 p-4 rounded-sm hover:border-[#FABE01]/30 transition-colors">
                                                     <div className="flex items-center gap-3 mb-4 min-w-0">
                                                         <div className="bg-[#FABE01]/10 p-2 rounded-sm text-[#FABE01] shrink-0"><Building2 className="w-4 h-4" /></div>
-                                                        <h3 className="text-white font-bold text-sm truncate">{empresa.nome}</h3>
+                                                        <h3 className="text-white font-bold text-sm truncate flex-1">{empresa.nome}</h3>
+                                                        {(pendingByEmpresa[empresa.id]?.aguardandoAgencia || 0) > 0 && (
+                                                            <span
+                                                                className="shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px] font-bold"
+                                                                title="Ajustes pedidos pelo cliente"
+                                                            >
+                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex gap-2">
                                                         <button onClick={() => onViewClient(empresa.id)} className="flex-1 py-2 bg-white/5 hover:bg-[#FABE01] hover:text-black text-white text-xs font-bold rounded-sm transition-colors flex items-center justify-center gap-1.5 uppercase tracking-wide">
@@ -459,7 +568,24 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                 )}
                                                 {filteredUsers.map(user => (
                                                     <tr key={user.id} className="hover:bg-white/[0.02]">
-                                                        <td className="px-6 py-4 font-medium text-zinc-300">{user.email}</td>
+                                                        <td className="px-6 py-4">
+                                                            {/* Nome na frente, e-mail abaixo: o e-mail segue necessario
+                                                                para identificar a conta sem ambiguidade, mas deixa de
+                                                                ser a identidade principal. */}
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                {isSafeImageSrc(user.fotoUrl) ? (
+                                                                    <img src={user.fotoUrl!} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-[10px]">
+                                                                        {getInitials(user)}
+                                                                    </div>
+                                                                )}
+                                                                <div className="min-w-0">
+                                                                    <p className="font-medium text-zinc-200 truncate">{getDisplayName(user)}</p>
+                                                                    <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                                                                </div>
+                                                            </div>
+                                                        </td>
                                                         <td className="px-6 py-4">
                                                             {user.id === auth.currentUser?.uid ? <span className="text-[#FABE01] text-xs">ADMIN</span> :
                                                                 <div className="flex items-center gap-2">

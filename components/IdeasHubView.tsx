@@ -43,29 +43,31 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
   useEffect(() => {
     if (!empresaId) return;
 
-    const fetchLinks = async () => {
-      setIsLoading(true);
-      try {
-        const collectionRef = db.collection('empresas').doc(empresaId).collection('drive_links');
-        const q = collectionRef.orderBy('createdAt', 'desc');
-        const querySnapshot = await q.get();
+    // Tempo real: arquivo salvo pela agencia aparece na aba do cliente sozinho.
+    setIsLoading(true);
 
-        const linksData = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: (data.createdAt as firebase.firestore.Timestamp).toDate()
-          } as DriveLink;
-        });
-        setLinks(linksData);
-      } catch (error) {
-        console.error("Erro ao buscar links: ", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchLinks();
+    const unsubscribe = db.collection('empresas').doc(empresaId).collection('drive_links')
+      .orderBy('createdAt', 'desc')
+      .onSnapshot(
+        snapshot => {
+          setLinks(snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: (data.createdAt as firebase.firestore.Timestamp | undefined)?.toDate() || new Date()
+            } as DriveLink;
+          }));
+          setIsLoading(false);
+        },
+        error => {
+          console.error("Erro ao buscar links: ", error);
+          setListError('Não foi possível carregar os arquivos. Verifique sua conexão.');
+          setIsLoading(false);
+        }
+      );
+
+    return unsubscribe;
   }, [empresaId]);
 
   // --- SALVAR NOVO LINK ---
@@ -91,10 +93,9 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
         createdAt: new Date()
       };
 
-      const docRef = await collectionRef.add(newLinkObj);
+      await collectionRef.add(newLinkObj);
 
       // Atualiza estado local
-      setLinks([{ id: docRef.id, ...newLinkObj } as DriveLink, ...links]);
 
       // Limpa form
       setFormData({ title: '', url: '', category: 'Outros' });
@@ -113,7 +114,6 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
     setListError('');
     try {
       await db.collection('empresas').doc(empresaId).collection('drive_links').doc(id).delete();
-      setLinks(prev => prev.filter(link => link.id !== id));
     } catch (error) {
       console.error("Erro ao excluir", error);
       setListError('Não foi possível remover o link. Tente novamente.');
