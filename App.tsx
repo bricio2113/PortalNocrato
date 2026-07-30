@@ -51,12 +51,14 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     targetEmpresaId, userRole, userEmail, currentView, setCurrentView,
     isSidebarOpen, setIsSidebarOpen, handleLogout, onBackToDashboard
 }) => {
+    const role: 'agencia' | 'cliente' = userRole === 'agencia' ? 'agencia' : 'cliente';
+
     const renderPortalContent = () => {
         switch (currentView) {
-            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} />;
+            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} />;
             case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
             case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
-            default: return <CalendarView empresaId={targetEmpresaId} />;
+            default: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} />;
         }
     };
 

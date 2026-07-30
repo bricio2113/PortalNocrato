@@ -11,6 +11,8 @@ import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, Fil
 
 interface CalendarViewProps {
     empresaId: string;
+    userRole?: 'agencia' | 'cliente';
+    userEmail?: string | null;
 }
 
 // A grade mensal precisa de 1200px para caber sete colunas legiveis, o que no
@@ -18,7 +20,7 @@ interface CalendarViewProps {
 // pequenas a lista abre por padrao; o usuario ainda pode trocar para a grade.
 const prefersListView = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
-const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -381,6 +383,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId }) => {
                     onClose={() => { setSelectedEvent(null); setSaveError(''); }}
                     isSaving={isSaving}
                     errorMessage={saveError}
+                    empresaId={empresaId}
+                    userRole={userRole}
+                    userEmail={userEmail}
+                    onApprovalChange={(state) => {
+                        // Reflete a decisao na grade sem esperar novo fetch.
+                        setEvents(prev => prev.map(e => e.id === selectedEvent.id ? { ...e, approval: state } : e));
+                    }}
                 />
             )}
         </div>

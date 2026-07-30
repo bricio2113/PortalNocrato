@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../utils/firebase';
+import { db, auth } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import {
@@ -545,6 +545,9 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
                     onClose={() => { setSelectedEvent(null); setModalError(''); }}
                     isSaving={isSaving}
                     errorMessage={modalError}
+                    empresaId={empresaId}
+                    userRole="agencia"
+                    userEmail={auth.currentUser?.email}
                 />
             )}
         </div>
