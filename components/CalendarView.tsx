@@ -4,6 +4,7 @@ import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
 import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
+import { stripUndefined } from '../utils/firestore';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
@@ -90,17 +91,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 snapshot => {
                     const eventsData = snapshot.docs.map(doc => {
                         const data = doc.data();
+                        // Spread condicional em vez de `metrics: ... : undefined`.
+                        //
+                        // A forma antiga CRIAVA a chave com undefined, que viajava
+                        // no spread do update() e derrubava a gravacao inteira com
+                        // "Unsupported field value: undefined" - todo post que
+                        //  nunca teve metrica falhava ao salvar.
                         return {
                             ...data,
                             id: doc.id,
                             date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
                             approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
-                            metrics: data.metrics
+                            ...(data.metrics
                                 ? {
-                                    ...data.metrics,
-                                    atualizadoEm: (data.metrics.atualizadoEm as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                                    metrics: {
+                                        ...data.metrics,
+                                        atualizadoEm: (data.metrics.atualizadoEm as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                                    }
                                 }
-                                : undefined
+                                : {})
                         } as CalendarEvent;
                     });
                     setEvents(eventsData.sort((a, b) => a.date.getTime() - b.date.getTime()));
@@ -139,7 +148,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         if (eventData.id) {
             try {
                 const { id, ...data } = eventData;
-                await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(data);
+                await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(stripUndefined(data));
                 await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
                 // Sem setEvents: o onSnapshot ja reflete a escrita, inclusive
                 // pelo cache local do Firestore. Duplicar aqui podia inserir
@@ -184,7 +193,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         } else {
             try {
                 const { id, ...data } = eventData;
-                const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(data);
+                const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(stripUndefined(data));
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
 
                 // Cria o Card no Kanban com o status exato do modal
