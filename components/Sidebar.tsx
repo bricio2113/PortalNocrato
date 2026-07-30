@@ -1,12 +1,13 @@
 import React from 'react';
-import { View } from '../types';
+import { View, UserProfile } from '../types';
+import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
 // Importação da Logo
 // @ts-ignore
 import favicon from '../assets/favicon.png';
 // Ícones Lucide (Atualizados para Target e DownloadCloud)
 import {
     Calendar, Target, DownloadCloud, ExternalLink,
-    MessageCircle, LogOut, ArrowLeft, X
+    MessageCircle, LogOut, ArrowLeft, X, UserCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -22,19 +23,12 @@ interface SidebarProps {
     empresaNome?: string | null;
     /** Publicacoes aguardando acao de quem esta logado. */
     pendingCount?: number;
+    /** Perfil do usuario logado: nome e foto no rodape. */
+    profile?: UserProfile | null;
     onBackToDashboard?: () => void;
     theme: 'light' | 'dark';
     toggleTheme: () => void;
 }
-
-// Iniciais a partir do e-mail: "maria.silva@x.com" -> "MS", "bricio@x.com" -> "BR".
-const getInitials = (email?: string | null): string => {
-    if (!email) return '--';
-    const localPart = email.split('@')[0];
-    const parts = localPart.split(/[._-]+/).filter(Boolean);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return localPart.slice(0, 2).toUpperCase();
-};
 
 // --- ITEM DE NAVEGAÇÃO ---
 const NavItem: React.FC<{
@@ -79,7 +73,7 @@ const NavItem: React.FC<{
 };
 
 // --- COMPONENTE SIDEBAR ---
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, empresaNome, pendingCount = 0, onBackToDashboard, theme, toggleTheme }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, profile, empresaNome, pendingCount = 0, onBackToDashboard, theme, toggleTheme }) => {
 
     const navItems = [
         {
@@ -98,6 +92,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
             label: 'Arquivos & Materiais',
             // Ícone atualizado para DownloadCloud (Nuvem)
             icon: <DownloadCloud className="w-5 h-5" />
+        },
+        {
+            view: View.PROFILE,
+            label: 'Meu Perfil',
+            icon: <UserCircle className="w-5 h-5" />
         },
     ];
 
@@ -203,27 +202,47 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, 
 
                 {/* USER PROFILE MINI - identidade real da sessao.
                     Antes isto era "Cliente Nocrato / Plano Premium" fixo no codigo:
-                    todo cliente via o mesmo nome e um plano que nao existe. */}
-                <div className="p-4 border-t border-white/5 bg-black/20">
-                    <div className="flex items-center gap-3">
-                        <div
-                            className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs"
-                            aria-hidden="true"
+                    todo cliente via o mesmo nome e um plano que nao existe.
+                    Agora mostra nome e sobrenome; o e-mail vira o title, para
+                    quem precisa conferir a conta sem poluir a linha. */}
+                {(() => {
+                    const parts = { nome: profile?.nome, sobrenome: profile?.sobrenome, email: userEmail };
+                    const hasPhoto = isSafeImageSrc(profile?.fotoUrl);
+                    return (
+                        <button
+                            onClick={() => handleNavItemClick(View.PROFILE)}
+                            className="w-full p-4 border-t border-white/5 bg-black/20 hover:bg-black/40 transition-colors text-left group"
+                            title={userEmail || undefined}
                         >
-                            {getInitials(userEmail)}
-                        </div>
-                        <div className="flex flex-col overflow-hidden">
-                            <span className="text-sm font-medium text-white truncate" title={userEmail || undefined}>
-                                {userEmail || 'Sessão ativa'}
-                            </span>
-                            <span className="text-[10px] text-zinc-500 truncate uppercase tracking-wider">
-                                {userRole === 'agencia'
-                                    ? (empresaNome ? `Agência · vendo ${empresaNome}` : 'Agência')
-                                    : (empresaNome || 'Cliente')}
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                            <div className="flex items-center gap-3">
+                                {hasPhoto ? (
+                                    <img
+                                        src={profile!.fotoUrl!}
+                                        alt=""
+                                        className="w-8 h-8 shrink-0 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div
+                                        className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs"
+                                        aria-hidden="true"
+                                    >
+                                        {getInitials(parts)}
+                                    </div>
+                                )}
+                                <div className="flex flex-col overflow-hidden flex-1">
+                                    <span className="text-sm font-medium text-white truncate group-hover:text-[#FABE01] transition-colors">
+                                        {getDisplayName(parts)}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 truncate uppercase tracking-wider">
+                                        {userRole === 'agencia'
+                                            ? (empresaNome ? `Agência · vendo ${empresaNome}` : 'Agência')
+                                            : (empresaNome || 'Cliente')}
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+                    );
+                })()}
             </aside>
         </>
     );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
-import { View } from './types';
+import { View, UserProfile } from './types';
 import { AGENCY_EMAILS } from './constants';
 import { subscribePendingCounts, PendingCounts } from './utils/posts';
 
@@ -17,6 +17,8 @@ import VerificationPending from './components/VerificationPending';
 // Importação da Nova View de Produção
 import ClientProductionView from './components/ClientProductionView';
 import AgencyCalendarBoard from './components/AgencyCalendarBoard';
+import ProfileView from './components/ProfileView';
+import { splitFullName, getDisplayName } from './utils/avatar';
 
 // Ícones e Assets
 import { Menu, Loader2, ArrowLeft } from 'lucide-react';
@@ -41,6 +43,9 @@ interface PortalLayoutProps {
     targetEmpresaId: string;
     userRole: string;
     userEmail?: string | null;
+    /** Perfil do usuario logado; alimenta avatar, nome e a aba de perfil. */
+    profile: UserProfile | null;
+    onProfileSaved: (patch: Partial<UserProfile>) => void;
     currentView: View;
     setCurrentView: (view: View) => void;
     isSidebarOpen: boolean;
@@ -50,7 +55,7 @@ interface PortalLayoutProps {
 }
 
 const PortalLayout: React.FC<PortalLayoutProps> = ({
-    targetEmpresaId, userRole, userEmail, currentView, setCurrentView,
+    targetEmpresaId, userRole, userEmail, profile, onProfileSaved, currentView, setCurrentView,
     isSidebarOpen, setIsSidebarOpen, handleLogout, onBackToDashboard
 }) => {
     const role: 'agencia' | 'cliente' = userRole === 'agencia' ? 'agencia' : 'cliente';
@@ -67,12 +72,20 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 
     const pendingCount = role === 'cliente' ? pending.aguardandoCliente : pending.aguardandoAgencia;
 
+    // Nome de exibicao resolvido uma vez: vai para a aprovacao e para os
+    // comentarios, que precisam guardar o nome no momento da acao.
+    const userName = getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: userEmail });
+
     const renderPortalContent = () => {
         switch (currentView) {
-            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} />;
+            case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
             case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
             case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
-            default: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} />;
+            case View.PROFILE:
+                return profile
+                    ? <ProfileView profile={profile} onSaved={onProfileSaved} />
+                    : <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
+            default: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
         }
     };
 
@@ -86,6 +99,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
                 handleLogout={handleLogout}
                 userRole={userRole}
                 userEmail={userEmail}
+                profile={profile}
                 empresaNome={targetEmpresaId}
                 pendingCount={pendingCount}
                 onBackToDashboard={onBackToDashboard}
@@ -112,7 +126,12 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     );
 };
 
-const ProductionLayout: React.FC<{ targetEmpresaId: string; onBack: () => void }> = ({ targetEmpresaId, onBack }) => (
+const ProductionLayout: React.FC<{
+    targetEmpresaId: string;
+    onBack: () => void;
+    userEmail?: string | null;
+    userName?: string | null;
+}> = ({ targetEmpresaId, onBack, userEmail, userName }) => (
     <div className="min-h-screen bg-[#111111] text-zinc-100 overflow-y-auto">
         <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5 px-4 py-4 sm:px-8">
             <div className="max-w-7xl mx-auto flex items-center">
@@ -126,7 +145,7 @@ const ProductionLayout: React.FC<{ targetEmpresaId: string; onBack: () => void }
             </div>
         </div>
         <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-            <ClientProductionView empresaId={targetEmpresaId} />
+            <ClientProductionView empresaId={targetEmpresaId} userEmail={userEmail} userName={userName} />
         </div>
     </div>
 );
@@ -138,6 +157,7 @@ const App: React.FC = () => {
     const [user, setUser] = useState<firebase.User | null>(null);
     const [empresaId, setEmpresaId] = useState<string | null>(null);
     const [role, setRole] = useState<string | null>(null);
+    const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isLoadingAuth, setIsLoadingAuth] = useState(true);
     const [authView, setAuthView] = useState<'login' | 'signup'>('login');
 
@@ -149,6 +169,7 @@ const App: React.FC = () => {
 
     // Tela de calendarios com troca de cliente no topo e previa do feed ao lado.
     const [showCalendarBoard, setShowCalendarBoard] = useState(false);
+    const [showProfile, setShowProfile] = useState(false);
 
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -166,8 +187,13 @@ const App: React.FC = () => {
                     setUser(currentUser);
                     setRole('agencia');
                     setEmpresaId(null);
-                    // Garante role no firestore
-                    db.collection('usuarios').doc(currentUser.uid).set({ email: currentUser.email, role: 'agencia', empresaId: null }, { merge: true }).catch(console.error);
+                    const adminRef = db.collection('usuarios').doc(currentUser.uid);
+                    // merge preserva nome, sobrenome e foto que o admin ja tenha
+                    // preenchido - sem ele o login apagaria o perfil dele.
+                    adminRef.set({ email: currentUser.email, role: 'agencia', empresaId: null }, { merge: true })
+                        .then(() => adminRef.get())
+                        .then(doc => setProfile({ id: currentUser.uid, ...doc.data() } as UserProfile))
+                        .catch(console.error);
                 } else {
                     setUser(currentUser);
                     try {
@@ -176,10 +202,24 @@ const App: React.FC = () => {
                             const data = userDoc.data();
                             setEmpresaId(data?.empresaId || null);
                             setRole(data?.role || 'cliente');
+                            setProfile({ id: currentUser.uid, ...data } as UserProfile);
                         } else {
-                            await db.collection('usuarios').doc(currentUser.uid).set({ email: currentUser.email, empresaId: null, role: 'cliente', });
+                            // Primeiro login: o nome vem do displayName gravado no
+                            // Signup. E o unico transporte disponivel, porque o
+                            // documento so nasce aqui, depois do cadastro.
+                            const { nome, sobrenome } = splitFullName(currentUser.displayName);
+                            const novo = {
+                                email: currentUser.email,
+                                empresaId: null,
+                                role: 'cliente',
+                                nome,
+                                sobrenome,
+                                fotoUrl: null
+                            };
+                            await db.collection('usuarios').doc(currentUser.uid).set(novo);
                             setRole('cliente');
                             setEmpresaId(null);
+                            setProfile({ id: currentUser.uid, ...novo } as UserProfile);
                         }
                     } catch (error) {
                         console.error("Erro ao buscar dados do cliente:", error);
@@ -190,6 +230,7 @@ const App: React.FC = () => {
                 setUser(null);
                 setEmpresaId(null);
                 setRole(null);
+                setProfile(null);
                 setAgencyViewingClientId(null);
                 setAgencyViewingTasksId(null);
             }
@@ -202,10 +243,15 @@ const App: React.FC = () => {
         try { await auth.signOut(); setAgencyViewingClientId(null); setAgencyViewingTasksId(null); } catch (error) { console.error(error); }
     };
 
+    const handleProfileSaved = (patch: Partial<UserProfile>) => {
+        setProfile(prev => (prev ? { ...prev, ...patch } : prev));
+    };
+
     const backToDashboard = () => {
         setAgencyViewingClientId(null);
         setAgencyViewingTasksId(null);
         setShowCalendarBoard(false);
+        setShowProfile(false);
     };
 
     // --- RENDERIZAÇÃO FINAL ---
@@ -222,13 +268,49 @@ const App: React.FC = () => {
 
     // ROTAS DA AGÊNCIA
     if (role === 'agencia') {
+        // Perfil da agencia: o painel nao usa PortalLayout, entao a aba de
+        // perfil precisa de rota propria aqui.
+        if (showProfile && profile) {
+            return (
+                <div className="min-h-screen bg-[#111111] text-zinc-100">
+                    <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5 px-4 py-4 sm:px-8">
+                        <div className="max-w-7xl mx-auto">
+                            <button
+                                onClick={() => setShowProfile(false)}
+                                className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm"
+                            >
+                                <ArrowLeft className="w-4 h-4 mr-2" />
+                                Voltar ao Painel
+                            </button>
+                        </div>
+                    </div>
+                    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+                        <ProfileView profile={profile} onSaved={handleProfileSaved} />
+                    </div>
+                </div>
+            );
+        }
+
         // 0. Tela de calendarios (multi-cliente) tem prioridade quando aberta.
         if (showCalendarBoard) {
-            return <AgencyCalendarBoard userEmail={user.email} onBack={backToDashboard} />;
+            return (
+                <AgencyCalendarBoard
+                    userEmail={user.email}
+                    userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
+                    onBack={backToDashboard}
+                />
+            );
         }
         // 1. Prioridade: Se clicou em "Ver Produção", mostra a ProductionLayout
         if (agencyViewingTasksId) {
-            return <ProductionLayout targetEmpresaId={agencyViewingTasksId} onBack={backToDashboard} />;
+            return (
+                <ProductionLayout
+                    targetEmpresaId={agencyViewingTasksId}
+                    onBack={backToDashboard}
+                    userEmail={user.email}
+                    userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
+                />
+            );
         }
         // 2. Se clicou em "Acessar Calendário", mostra o PortalLayout
         if (agencyViewingClientId) {
@@ -237,6 +319,8 @@ const App: React.FC = () => {
                     targetEmpresaId={agencyViewingClientId}
                     userRole="agencia"
                     userEmail={user.email}
+                    profile={profile}
+                    onProfileSaved={handleProfileSaved}
                     currentView={currentView}
                     setCurrentView={setCurrentView}
                     isSidebarOpen={isSidebarOpen}
@@ -253,6 +337,8 @@ const App: React.FC = () => {
             onViewClient={setAgencyViewingClientId}
             onViewClientTasks={setAgencyViewingTasksId}
             onOpenCalendarBoard={() => setShowCalendarBoard(true)}
+            onOpenProfile={() => setShowProfile(true)}
+            profile={profile}
         />;
     }
 
@@ -263,6 +349,8 @@ const App: React.FC = () => {
                 targetEmpresaId={empresaId}
                 userRole="cliente"
                 userEmail={user.email}
+                profile={profile}
+                onProfileSaved={handleProfileSaved}
                 currentView={currentView}
                 setCurrentView={setCurrentView}
                 isSidebarOpen={isSidebarOpen}

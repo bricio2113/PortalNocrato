@@ -25,11 +25,13 @@ export async function setApproval(
     empresaId: string,
     eventId: string,
     state: ApprovalState,
-    by: string | null
+    by: string | null,
+    byName?: string | null
 ): Promise<void> {
     await empresaRef(empresaId).collection('events').doc(eventId).update({
         approval: state,
         approvalBy: by,
+        approvalByName: byName || null,
         approvalAt: new Date()
     });
 }
@@ -53,11 +55,15 @@ export async function addComment(
     eventId: string,
     authorEmail: string,
     authorRole: 'agencia' | 'cliente',
-    text: string
+    text: string,
+    authorName?: string | null
 ): Promise<void> {
     await empresaRef(empresaId).collection('post_comments').add({
         eventId,
         authorEmail,
+        // Copiado no ato: o cliente nao tem permissao de ler usuarios/{uid} da
+        // agencia, entao sem isto a conversa mostraria e-mail cru para ele.
+        authorName: authorName || null,
         authorRole,
         text: text.trim(),
         createdAt: new Date()
@@ -91,6 +97,7 @@ export function subscribeComments(
                         id: doc.id,
                         eventId: data.eventId,
                         authorEmail: data.authorEmail || 'desconhecido',
+                        authorName: data.authorName || null,
                         authorRole: data.authorRole === 'agencia' ? 'agencia' : 'cliente',
                         text: data.text || '',
                         createdAt: (data.createdAt as firebase.firestore.Timestamp | undefined)?.toDate() || new Date()

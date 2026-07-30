@@ -2,6 +2,25 @@ export enum View {
   CALENDAR = 'CALENDAR',
   UPDATES = 'UPDATES',
   IDEAS = 'IDEAS',
+  PROFILE = 'PROFILE',
+}
+
+/**
+ * Documento de usuario em usuarios/{uid}.
+ *
+ * nome, sobrenome e fotoUrl ficam aqui e nao no perfil do Firebase Auth porque
+ * o SDK cliente nao le o perfil Auth de outra pessoa - e o painel da agencia
+ * precisa exibir o nome dos clientes.
+ */
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: 'agencia' | 'cliente' | string;
+  empresaId: string | null;
+  nome?: string | null;
+  sobrenome?: string | null;
+  /** Data URI da foto recortada, ou URL https. Vazio = usar iniciais. */
+  fotoUrl?: string | null;
 }
 
 export type EventStatus = 'Pendente' | 'Em andamento' | 'Concluído' | 'Agendado' | 'Postado' | 'Cancelado' | 'Editado';
@@ -45,6 +64,8 @@ export interface CalendarEvent {
   approval?: ApprovalState;
   /** E-mail de quem aprovou ou pediu ajuste, para o historico. */
   approvalBy?: string | null;
+  /** Nome de quem decidiu, copiado no momento da decisao (ver PostComment). */
+  approvalByName?: string | null;
   approvalAt?: Date | null;
 
   /** Imagem/video de previa. Se vazio, caimos no `url` do material bruto. */
@@ -58,6 +79,15 @@ export interface PostComment {
   id: string;
   eventId: string;
   authorEmail: string;
+  /**
+   * Nome do autor copiado para dentro do comentario.
+   *
+   * Nao e cache por preguica: as regras so deixam alguem ler usuarios/{uid} se
+   * for o proprio documento ou se for da agencia. Logo o cliente NAO consegue
+   * buscar o nome do membro da agencia que comentou. Sem copiar aqui, a conversa
+   * apareceria com e-mail cru para um dos lados.
+   */
+  authorName?: string | null;
   authorRole: 'agencia' | 'cliente';
   text: string;
   createdAt: Date;

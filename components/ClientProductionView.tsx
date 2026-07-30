@@ -36,9 +36,11 @@ const COLUMNS: ColumnDef[] = [
 
 interface ClientProductionViewProps {
     empresaId: string;
+    userEmail?: string | null;
+    userName?: string | null;
 }
 
-const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }) => {
+const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, userEmail, userName }) => {
     const [tasks, setTasks] = useState<KanbanTask[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
@@ -550,7 +552,10 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId }
                     errorMessage={modalError}
                     empresaId={empresaId}
                     userRole="agencia"
-                    userEmail={auth.currentUser?.email}
+                    // Cai para o e-mail da sessao quando o pai nao passa: o quadro
+                    // tambem e aberto de contextos que nao carregam o perfil.
+                    userEmail={userEmail || auth.currentUser?.email}
+                    userName={userName}
                 />
             )}
         </div>

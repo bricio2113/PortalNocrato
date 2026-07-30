@@ -28,6 +28,8 @@ interface EventDetailModalProps {
     empresaId?: string;
     userEmail?: string | null;
     userRole?: 'agencia' | 'cliente';
+    /** Nome de quem esta logado; vai para a aprovacao e para os comentarios. */
+    userName?: string | null;
     /** Chamado apos o cliente aprovar ou pedir ajuste. */
     onApprovalChange?: (state: ApprovalState) => void;
 }
@@ -54,7 +56,7 @@ const getPlatformIcon = (platform: string) => {
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({
     event, onSave, onDelete, onClose, isSaving = false, errorMessage,
-    empresaId, userEmail, userRole = 'agencia', onApprovalChange
+    empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange
 }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -97,7 +99,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         setApprovalBusy(state);
         setApprovalError('');
         try {
-            await setApproval(empresaId, event.id, state, userEmail || null);
+            await setApproval(empresaId, event.id, state, userEmail || null, userName || null);
             setLocalApproval(state);
             onApprovalChange?.(state);
         } catch (err) {
@@ -272,12 +274,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
                                     {localApproval === 'ajuste_solicitado' && (
                                         <p className="text-amber-400 text-xs mt-2 font-medium">
-                                            Ajuste solicitado{event.approvalBy ? ` por ${event.approvalBy}` : ''}. Detalhe o que mudar na conversa abaixo.
+                                            Ajuste solicitado{event.approvalByName || event.approvalBy ? ` por ${event.approvalByName || event.approvalBy}` : ''}. Detalhe o que mudar na conversa abaixo.
                                         </p>
                                     )}
-                                    {localApproval === 'aprovado' && event.approvalBy && (
+                                    {localApproval === 'aprovado' && (event.approvalByName || event.approvalBy) && (
                                         <p className="text-emerald-400/80 text-xs mt-2">
-                                            Aprovado por {event.approvalBy}
+                                            Aprovado por {event.approvalByName || event.approvalBy}
                                             {event.approvalAt ? ` em ${event.approvalAt.toLocaleDateString('pt-BR')}` : ''}.
                                         </p>
                                     )}
@@ -563,6 +565,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 eventId={event.id}
                                 userEmail={userEmail || 'desconhecido'}
                                 userRole={userRole}
+                                authorName={userName}
                             />
                         </div>
                     )}

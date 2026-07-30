@@ -11,6 +11,7 @@ import { ArrowLeft, Loader2, Building2, PanelRightClose, PanelRightOpen } from '
 
 interface AgencyCalendarBoardProps {
     userEmail?: string | null;
+    userName?: string | null;
     onBack: () => void;
 }
 
@@ -22,7 +23,7 @@ interface AgencyCalendarBoardProps {
  * cliente nao faz sentido para ele. A previa do feed em si e reaproveitavel
  * (FeedPreview), e o modal do calendario ja atende os dois papeis.
  */
-const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, onBack }) => {
+const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, userName, onBack }) => {
     const [empresas, setEmpresas] = useState<SwitcherEmpresa[]>([]);
     const [isLoadingEmpresas, setIsLoadingEmpresas] = useState(true);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -149,6 +150,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, on
                                 empresaId={selectedId}
                                 userRole="agencia"
                                 userEmail={userEmail}
+                                userName={userName}
                             />
                         </div>
 

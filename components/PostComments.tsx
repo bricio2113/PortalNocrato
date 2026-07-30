@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PostComment } from '../types';
 import { subscribeComments, addComment, deleteComment } from '../utils/posts';
+import { getInitials, getDisplayName } from '../utils/avatar';
 import { MessageSquare, Send, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 
 interface PostCommentsProps {
@@ -8,14 +9,9 @@ interface PostCommentsProps {
     eventId: string;
     userEmail: string;
     userRole: 'agencia' | 'cliente';
+    /** Nome de quem esta comentando, copiado para dentro do comentario. */
+    authorName?: string | null;
 }
-
-// Iniciais do e-mail, mesma regra da sidebar.
-const initials = (email: string) => {
-    const local = email.split('@')[0];
-    const parts = local.split(/[._-]+/).filter(Boolean);
-    return (parts.length >= 2 ? parts[0][0] + parts[1][0] : local.slice(0, 2)).toUpperCase();
-};
 
 const formatWhen = (date: Date) => {
     const diffMin = Math.round((Date.now() - date.getTime()) / 60000);
@@ -32,7 +28,7 @@ const formatWhen = (date: Date) => {
  * chegava solto, sem dizer de qual post falava, e nao ficava registrado em
  * nenhum lugar consultavel depois.
  */
-const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEmail, userRole }) => {
+const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEmail, userRole, authorName }) => {
     const [comments, setComments] = useState<PostComment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [text, setText] = useState('');
@@ -64,7 +60,7 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
         setIsSending(true);
         setError('');
         try {
-            await addComment(empresaId, eventId, userEmail, userRole, body);
+            await addComment(empresaId, eventId, userEmail, userRole, body, authorName);
             setText('');
         } catch (err) {
             console.error(err);
@@ -114,11 +110,13 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
                                     }`}
                                     aria-hidden="true"
                                 >
-                                    {initials(comment.authorEmail)}
+                                    {getInitials({ nome: comment.authorName, email: comment.authorEmail })}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-xs font-bold text-white truncate">{comment.authorEmail}</span>
+                                        <span className="text-xs font-bold text-white truncate" title={comment.authorEmail}>
+                                            {getDisplayName({ nome: comment.authorName, email: comment.authorEmail })}
+                                        </span>
                                         <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
                                             isAgency ? 'bg-[#FABE01]/15 text-[#FABE01]' : 'bg-white/5 text-zinc-400'
                                         }`}>

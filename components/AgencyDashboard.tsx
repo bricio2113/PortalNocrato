@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase';
 import { DELETE_USER_ENDPOINT } from '../constants';
 import { subscribePendingCounts, PendingCounts } from '../utils/posts';
+import { UserProfile } from '../types';
+import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
@@ -15,6 +17,9 @@ interface UserData {
     email: string;
     role: string;
     empresaId: string | null;
+    nome?: string | null;
+    sobrenome?: string | null;
+    fotoUrl?: string | null;
 }
 
 interface EmpresaData {
@@ -28,6 +33,9 @@ interface AgencyDashboardProps {
     onViewClientTasks: (clientId: string) => void;
     /** Abre a tela de calendarios com troca rapida de cliente. */
     onOpenCalendarBoard?: () => void;
+    /** Abre a tela de perfil do proprio usuario da agencia. */
+    onOpenProfile?: () => void;
+    profile?: UserProfile | null;
 }
 
 // As classes precisam existir literalmente no fonte: o Tailwind varre o codigo
@@ -84,7 +92,7 @@ const EmptyState: React.FC<{
     </div>
 );
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks, onOpenCalendarBoard }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks, onOpenCalendarBoard, onOpenProfile, profile }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -279,7 +287,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
         } catch (e) { showNotification('Erro ao enviar email'); }
     };
 
-    const filteredUsers = users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Busca por nome OU e-mail: quem digita "maria" espera achar a Maria, e nem
+    // sempre o e-mail dela contem o nome.
+    const filteredUsers = users.filter(u => {
+        const term = searchTerm.toLowerCase();
+        if (!term) return true;
+        return u.email.toLowerCase().includes(term)
+            || getDisplayName(u).toLowerCase().includes(term);
+    });
     const filteredEmpresas = empresas.filter(e => e.nome.toLowerCase().includes(searchTerm.toLowerCase()));
 
     // Cliente sem empresa nao consegue usar o portal - so ve o aviso de conta
@@ -306,7 +321,25 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                 <span className="hidden sm:inline">Calendários</span>
                             </button>
                         )}
-                        <div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div><button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
+                        {onOpenProfile ? (
+                            <button onClick={onOpenProfile} className="flex items-center gap-3 group" title={auth.currentUser?.email || undefined}>
+                                {isSafeImageSrc(profile?.fotoUrl) ? (
+                                    <img src={profile!.fotoUrl!} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                                ) : (
+                                    <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs">
+                                        {getInitials({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
+                                    </div>
+                                )}
+                                <div className="hidden md:block text-left">
+                                    <p className="text-sm font-medium text-white group-hover:text-[#FABE01] transition-colors">
+                                        {getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">Ver meu perfil</p>
+                                </div>
+                            </button>
+                        ) : (
+                            <div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div>
+                        )}<button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
                 </div>
             </header>
 
@@ -393,7 +426,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                     Enquanto não tiverem empresa, essas contas entram e veem apenas um aviso de conta não vinculada.
                                                 </p>
                                                 <p className="text-xs text-zinc-500 font-mono truncate mb-4">
-                                                    {unlinkedUsers.slice(0, 3).map(u => u.email).join(', ')}
+                                                    {unlinkedUsers.slice(0, 3).map(u => getDisplayName(u)).join(', ')}
                                                     {unlinkedUsers.length > 3 && ` +${unlinkedUsers.length - 3}`}
                                                 </p>
                                                 <button
@@ -535,7 +568,24 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                                                 )}
                                                 {filteredUsers.map(user => (
                                                     <tr key={user.id} className="hover:bg-white/[0.02]">
-                                                        <td className="px-6 py-4 font-medium text-zinc-300">{user.email}</td>
+                                                        <td className="px-6 py-4">
+                                                            {/* Nome na frente, e-mail abaixo: o e-mail segue necessario
+                                                                para identificar a conta sem ambiguidade, mas deixa de
+                                                                ser a identidade principal. */}
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                {isSafeImageSrc(user.fotoUrl) ? (
+                                                                    <img src={user.fotoUrl!} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-[10px]">
+                                                                        {getInitials(user)}
+                                                                    </div>
+                                                                )}
+                                                                <div className="min-w-0">
+                                                                    <p className="font-medium text-zinc-200 truncate">{getDisplayName(user)}</p>
+                                                                    <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                                                                </div>
+                                                            </div>
+                                                        </td>
                                                         <td className="px-6 py-4">
                                                             {user.id === auth.currentUser?.uid ? <span className="text-[#FABE01] text-xs">ADMIN</span> :
                                                                 <div className="flex items-center gap-2">
