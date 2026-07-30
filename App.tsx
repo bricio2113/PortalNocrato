@@ -16,6 +16,7 @@ import AgencyDashboard from './components/AgencyDashboard';
 import VerificationPending from './components/VerificationPending';
 // Importação da Nova View de Produção
 import ClientProductionView from './components/ClientProductionView';
+import AgencyCalendarBoard from './components/AgencyCalendarBoard';
 
 // Ícones e Assets
 import { Menu, Loader2, ArrowLeft } from 'lucide-react';
@@ -146,6 +147,9 @@ const App: React.FC = () => {
     // NOVO ESTADO: Estado para quando a agência entra na produção do cliente (Trello/Tasks)
     const [agencyViewingTasksId, setAgencyViewingTasksId] = useState<string | null>(null);
 
+    // Tela de calendarios com troca de cliente no topo e previa do feed ao lado.
+    const [showCalendarBoard, setShowCalendarBoard] = useState(false);
+
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
             if (currentUser) {
@@ -198,7 +202,11 @@ const App: React.FC = () => {
         try { await auth.signOut(); setAgencyViewingClientId(null); setAgencyViewingTasksId(null); } catch (error) { console.error(error); }
     };
 
-    const backToDashboard = () => { setAgencyViewingClientId(null); setAgencyViewingTasksId(null); };
+    const backToDashboard = () => {
+        setAgencyViewingClientId(null);
+        setAgencyViewingTasksId(null);
+        setShowCalendarBoard(false);
+    };
 
     // --- RENDERIZAÇÃO FINAL ---
 
@@ -214,6 +222,10 @@ const App: React.FC = () => {
 
     // ROTAS DA AGÊNCIA
     if (role === 'agencia') {
+        // 0. Tela de calendarios (multi-cliente) tem prioridade quando aberta.
+        if (showCalendarBoard) {
+            return <AgencyCalendarBoard userEmail={user.email} onBack={backToDashboard} />;
+        }
         // 1. Prioridade: Se clicou em "Ver Produção", mostra a ProductionLayout
         if (agencyViewingTasksId) {
             return <ProductionLayout targetEmpresaId={agencyViewingTasksId} onBack={backToDashboard} />;
@@ -240,6 +252,7 @@ const App: React.FC = () => {
             handleLogout={handleLogout}
             onViewClient={setAgencyViewingClientId}
             onViewClientTasks={setAgencyViewingTasksId}
+            onOpenCalendarBoard={() => setShowCalendarBoard(true)}
         />;
     }
 

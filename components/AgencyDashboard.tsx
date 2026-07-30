@@ -5,7 +5,7 @@ import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, Link as LinkIcon, ClipboardList, MessageSquareWarning
+    ArrowRight, Shield, Link as LinkIcon, ClipboardList, MessageSquareWarning, LayoutGrid
 } from 'lucide-react';
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -26,6 +26,8 @@ interface AgencyDashboardProps {
     handleLogout: () => void;
     onViewClient: (clientId: string) => void;
     onViewClientTasks: (clientId: string) => void;
+    /** Abre a tela de calendarios com troca rapida de cliente. */
+    onOpenCalendarBoard?: () => void;
 }
 
 // As classes precisam existir literalmente no fonte: o Tailwind varre o codigo
@@ -82,7 +84,7 @@ const EmptyState: React.FC<{
     </div>
 );
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewClient, onViewClientTasks, onOpenCalendarBoard }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -294,7 +296,17 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onViewC
                         <div className="h-8 w-px bg-white/10 hidden sm:block" />
                         <div><h1 className="text-lg font-bold text-white leading-none">Painel Administrativo</h1><p className="text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
                     </div>
-                    <div className="flex items-center gap-6"><div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div><button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
+                    <div className="flex items-center gap-4 sm:gap-6">
+                        {onOpenCalendarBoard && (
+                            <button
+                                onClick={onOpenCalendarBoard}
+                                className="flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-3 sm:px-4 py-2 rounded-sm uppercase tracking-wide transition-colors"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                                <span className="hidden sm:inline">Calendários</span>
+                            </button>
+                        )}
+                        <div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div><button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
                 </div>
             </header>
 
