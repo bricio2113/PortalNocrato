@@ -15,8 +15,7 @@ import Signup from './components/Signup';
 import AgencyDashboard from './components/AgencyDashboard';
 import VerificationPending from './components/VerificationPending';
 // Importação da Nova View de Produção
-import ClientProductionView from './components/ClientProductionView';
-import AgencyCalendarBoard from './components/AgencyCalendarBoard';
+import ClientWorkspace from './components/ClientWorkspace';
 import ProfileView from './components/ProfileView';
 import CompleteProfileModal from './components/CompleteProfileModal';
 import { splitFullName, getDisplayName, isProfileComplete } from './utils/avatar';
@@ -64,7 +63,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     // Contador de pendencia no menu. Para o cliente conta o que espera decisao
     // dele; para a agencia, os ajustes que o cliente pediu e ninguem resolveu.
     // Cada lado ve a propria fila.
-    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0 });
+    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0, semCapa: 0 });
 
     useEffect(() => {
         if (!targetEmpresaId) return;
@@ -127,30 +126,6 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     );
 };
 
-const ProductionLayout: React.FC<{
-    targetEmpresaId: string;
-    onBack: () => void;
-    userEmail?: string | null;
-    userName?: string | null;
-}> = ({ targetEmpresaId, onBack, userEmail, userName }) => (
-    <div className="min-h-screen bg-[#111111] text-zinc-100 overflow-y-auto">
-        <div className="sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5 px-4 py-4 sm:px-8">
-            <div className="max-w-7xl mx-auto flex items-center">
-                <button
-                    onClick={onBack}
-                    className="flex items-center text-zinc-400 hover:text-[#FABE01] transition-colors font-medium text-sm"
-                >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Voltar ao Dashboard
-                </button>
-            </div>
-        </div>
-        <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-            <ClientProductionView empresaId={targetEmpresaId} userEmail={userEmail} userName={userName} />
-        </div>
-    </div>
-);
-
 const App: React.FC = () => {
     const [currentView, setCurrentView] = useState<View>(View.CALENDAR);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -162,14 +137,12 @@ const App: React.FC = () => {
     const [isLoadingAuth, setIsLoadingAuth] = useState(true);
     const [authView, setAuthView] = useState<'login' | 'signup'>('login');
 
-    // Estado para quando a agência entra no portal do cliente (Calendário)
-    const [agencyViewingClientId, setAgencyViewingClientId] = useState<string | null>(null);
-
-    // NOVO ESTADO: Estado para quando a agência entra na produção do cliente (Trello/Tasks)
-    const [agencyViewingTasksId, setAgencyViewingTasksId] = useState<string | null>(null);
-
-    // Tela de calendarios com troca de cliente no topo e previa do feed ao lado.
-    const [showCalendarBoard, setShowCalendarBoard] = useState(false);
+    // Cliente aberto pela agencia. Antes eram DOIS estados - um para calendario,
+    // outro para producao -, o que obrigava voltar ao painel so para trocar de
+    // secao. Agora e um espaco de trabalho com submenu proprio.
+    const [agencyWorkspace, setAgencyWorkspace] = useState<
+        { empresaId: string; nome: string; section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' } | null
+    >(null);
     const [showProfile, setShowProfile] = useState(false);
 
     useEffect(() => {
@@ -232,8 +205,7 @@ const App: React.FC = () => {
                 setEmpresaId(null);
                 setRole(null);
                 setProfile(null);
-                setAgencyViewingClientId(null);
-                setAgencyViewingTasksId(null);
+                setAgencyWorkspace(null);
             }
             setIsLoadingAuth(false);
         });
@@ -241,7 +213,7 @@ const App: React.FC = () => {
     }, []);
 
     const handleLogout = async () => {
-        try { await auth.signOut(); setAgencyViewingClientId(null); setAgencyViewingTasksId(null); } catch (error) { console.error(error); }
+        try { await auth.signOut(); setAgencyWorkspace(null); } catch (error) { console.error(error); }
     };
 
     const handleProfileSaved = (patch: Partial<UserProfile>) => {
@@ -249,9 +221,7 @@ const App: React.FC = () => {
     };
 
     const backToDashboard = () => {
-        setAgencyViewingClientId(null);
-        setAgencyViewingTasksId(null);
-        setShowCalendarBoard(false);
+        setAgencyWorkspace(null);
         setShowProfile(false);
     };
 
@@ -311,54 +281,27 @@ const App: React.FC = () => {
             );
         }
 
-        // 0. Tela de calendarios (multi-cliente) tem prioridade quando aberta.
-        if (showCalendarBoard) {
+        if (agencyWorkspace) {
             return (
-                <AgencyCalendarBoard
+                <ClientWorkspace
+                    key={agencyWorkspace.empresaId}
+                    empresaId={agencyWorkspace.empresaId}
+                    empresaNome={agencyWorkspace.nome}
                     userEmail={user.email}
                     userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
+                    initialSection={agencyWorkspace.section}
                     onBack={backToDashboard}
                 />
             );
         }
-        // 1. Prioridade: Se clicou em "Ver Produção", mostra a ProductionLayout
-        if (agencyViewingTasksId) {
-            return (
-                <ProductionLayout
-                    targetEmpresaId={agencyViewingTasksId}
-                    onBack={backToDashboard}
-                    userEmail={user.email}
-                    userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
-                />
-            );
-        }
-        // 2. Se clicou em "Acessar Calendário", mostra o PortalLayout
-        if (agencyViewingClientId) {
-            return (
-                <PortalLayout
-                    targetEmpresaId={agencyViewingClientId}
-                    userRole="agencia"
-                    userEmail={user.email}
-                    profile={profile}
-                    onProfileSaved={handleProfileSaved}
-                    currentView={currentView}
-                    setCurrentView={setCurrentView}
-                    isSidebarOpen={isSidebarOpen}
-                    setIsSidebarOpen={setIsSidebarOpen}
-                    handleLogout={handleLogout}
-                    onBackToDashboard={backToDashboard}
-                />
-            );
-        }
-        // 3. Caso contrário, mostra o Dashboard Principal
-        // AQUI ESTAVA O ERRO: Precisamos passar a função setAgencyViewingTasksId
+
         return <AgencyDashboard
             handleLogout={handleLogout}
-            onViewClient={setAgencyViewingClientId}
-            onViewClientTasks={setAgencyViewingTasksId}
-            onOpenCalendarBoard={() => setShowCalendarBoard(true)}
+            onOpenClient={(empresaId, nome, section) => setAgencyWorkspace({ empresaId, nome, section })}
             onOpenProfile={() => setShowProfile(true)}
             profile={profile}
+            userEmail={user.email}
+            userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
         />;
     }
 

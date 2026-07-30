@@ -68,8 +68,19 @@ export interface CalendarEvent {
   approvalByName?: string | null;
   approvalAt?: Date | null;
 
-  /** Imagem/video de previa. Se vazio, caimos no `url` do material bruto. */
+  /**
+   * Imagem de previa definida a mao pela agencia. Tem prioridade sobre tudo:
+   * e o conserto de quando a resolucao automatica escolhe o arquivo errado.
+   */
   previewUrl?: string;
+
+  /**
+   * Capa resolvida automaticamente a partir da pasta do Drive (utils/driveCover).
+   * Separada de previewUrl de proposito: reresolver nao pode sobrescrever a
+   * escolha manual de ninguem.
+   */
+  coverUrl?: string | null;
+  coverResolvedAt?: Date | null;
 
   metrics?: EventMetrics;
 }
@@ -91,6 +102,34 @@ export interface PostComment {
   authorRole: 'agencia' | 'cliente';
   text: string;
   createdAt: Date;
+}
+
+/**
+ * Relatorio mensal de um cliente. Vive em empresas/{id}/relatorios/{aaaa-mm}.
+ *
+ * O id e o proprio periodo (ex.: "2026-07") de proposito: garante um relatorio
+ * por mes sem precisar de consulta para checar duplicidade, e ordena
+ * alfabeticamente na ordem cronologica.
+ */
+export interface MonthlyReport {
+  /** "aaaa-mm" */
+  id: string;
+  ano: number;
+  mes: number;
+  /** Leitura do mes: o que aconteceu e o que isso significa. */
+  resumo: string;
+  /** Destaques em linhas curtas, uma por item. */
+  destaques?: string | null;
+  /** Link para material complementar (apresentacao, planilha). */
+  linkUrl?: string | null;
+  /** Numeros consolidados do mes, preenchidos pela agencia. */
+  alcance?: number | null;
+  interacoes?: number | null;
+  seguidores?: number | null;
+  publicados?: number | null;
+  criadoPor?: string | null;
+  criadoEm?: Date | null;
+  atualizadoEm?: Date | null;
 }
 
 export interface WeeklyTask {
