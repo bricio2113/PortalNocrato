@@ -11,6 +11,7 @@ import EventDetailModal from './EventDetailModal';
 import { CalendarEvent } from '../types';
 import { FORMATO_OPTIONS } from '../constants';
 import { getTypeStyles, STATUS_ACCENTS } from '../utils/eventStyles';
+import { stripUndefined } from '../utils/firestore';
 
 interface KanbanTask {
     id: string;
@@ -230,7 +231,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
         setModalError('');
         try {
             const { id, ...data } = eventData;
-            await db.collection('empresas').doc(empresaId).collection('events').doc(id).update(data);
+            await db.collection('empresas').doc(empresaId).collection('events').doc(id).update(stripUndefined(data));
 
             const task = tasks.find(t => t.eventId === id);
             if (task) {
