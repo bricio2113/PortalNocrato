@@ -86,7 +86,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
             </div>
 
             {/* Card Principal */}
-            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-8 text-center animate-in zoom-in-95 duration-500">
+            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-6 sm:p-8 text-center animate-in zoom-in-95 duration-500">
 
                 {/* Ícone de Destaque */}
                 <div className="flex justify-center mb-6">

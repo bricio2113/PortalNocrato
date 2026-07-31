@@ -68,7 +68,7 @@ const StatCard: React.FC<{
     <div className="bg-[#1A1A1A] p-6 rounded-sm border border-white/5 flex items-start justify-between hover:border-[#FABE01]/30 transition-colors group">
         <div className="min-w-0">
             <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-            <h3 className="text-3xl font-bold text-white group-hover:text-[#FABE01] transition-colors">{value}</h3>
+            <h3 className="text-2xl sm:text-3xl font-bold text-white group-hover:text-[#FABE01] transition-colors">{value}</h3>
             {hint && <p className="text-xs text-zinc-600 mt-1.5 leading-snug">{hint}</p>}
         </div>
         <div className={`p-3 shrink-0 rounded-full bg-white/5 ${STAT_ACCENTS[color]} group-hover:bg-[#FABE01]/10 group-hover:text-[#FABE01] transition-colors`}>
@@ -146,7 +146,7 @@ const ClientCard: React.FC<{
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(); }}
                         aria-label={`Excluir ${empresa.nome}`}
-                        className="text-zinc-700 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        className="text-zinc-700 hover:text-red-500 p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
                     >
                         <Trash2 className="w-4 h-4" />
                     </button>
@@ -426,11 +426,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     return (
         <div className="min-h-screen bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black flex flex-col">
             <header className="bg-[#111111] border-b border-white/5 sticky top-0 z-30 backdrop-blur-md bg-opacity-90">
-                <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <img src={favicon} alt="Logo" className="h-10 w-auto brightness-0 invert" />
+                <div className="max-w-7xl mx-auto px-4 h-16 sm:h-20 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                        <img src={favicon} alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert shrink-0" />
                         <div className="h-8 w-px bg-white/10 hidden sm:block" />
-                        <div><h1 className="text-lg font-bold text-white leading-none">Painel Administrativo</h1><p className="text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
+                        <div className="min-w-0"><h1 className="text-base sm:text-lg font-bold text-white leading-none truncate">Painel Administrativo</h1><p className="hidden sm:block text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
                     </div>
                     <div className="flex items-center gap-4 sm:gap-6">
                         {onOpenProfile ? (
@@ -455,7 +455,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 </div>
             </header>
 
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 overflow-x-hidden">
                 {notification && <div className="fixed top-24 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-sm shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-8 mb-8 border-b border-white/5 pb-2 sm:pb-0 overflow-x-auto">

@@ -231,7 +231,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                           </div>
                           <button
                               onClick={() => handleDelete(link.id)}
-                              className="text-zinc-600 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="text-zinc-600 hover:text-red-500 p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                               title="Excluir Arquivo"
                           >
                             <Trash2 className="w-4 h-4" />

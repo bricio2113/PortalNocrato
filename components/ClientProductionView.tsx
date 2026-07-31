@@ -300,7 +300,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
     }
 
     return (
-        <div className="text-zinc-100 font-sans h-[calc(100vh-100px)] flex flex-col relative">
+        <div className="text-zinc-100 font-sans flex flex-col relative min-h-[70vh] lg:h-[calc(100dvh-13rem)]">
             <header className="mb-6 shrink-0">
                 <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
                     <Layout className="w-8 h-8 text-[#FABE01]" />
@@ -431,7 +431,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                         // sempre tiraria o destino do arraste.
                         if (hideEmptyColumns && columnTasks.length === 0) return null;
                         return (
-                            <div key={col.id} className="w-[300px] sm:w-[340px] shrink-0 bg-[#1A1A1A] rounded-md flex flex-col max-h-full border border-white/5" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, col.id)}>
+                            <div key={col.id} className="w-[85vw] max-w-[320px] sm:w-[340px] sm:max-w-none shrink-0 bg-[#1A1A1A] rounded-md flex flex-col max-h-full border border-white/5" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, col.id)}>
                                 <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0 bg-[#111111]/50 rounded-t-md">
                                     <div className="flex items-center gap-2">
                                         <div className={`w-3 h-3 rounded-full ${col.accentColor}`} />
@@ -460,7 +460,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                                                 <p className="text-sm font-medium text-white leading-relaxed break-words flex-1">
                                                     {task.title}
                                                 </p>
-                                                <button onClick={(e) => handleDeleteTask(task.id, e)} className="text-zinc-600 hover:text-red-500 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Excluir card" aria-label={`Excluir card ${task.title}`}>
+                                                <button onClick={(e) => handleDeleteTask(task.id, e)} className="text-zinc-600 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" title="Excluir card" aria-label={`Excluir card ${task.title}`}>
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </div>
@@ -498,7 +498,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                                                 <div className="text-[10px] text-zinc-600 font-mono">
                                                     {task.createdAt.toLocaleDateString('pt-BR')}
                                                 </div>
-                                                <div className="flex items-center gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                     {colIndex > 0 && (
                                                         <button onClick={(e) => moveTask(task.id, COLUMNS[colIndex - 1].id, e)} className="p-1.5 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-sm transition-colors" title="Mover para esquerda">
                                                             <ArrowLeft className="w-3.5 h-3.5" />
