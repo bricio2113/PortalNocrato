@@ -113,7 +113,7 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
 
         <div className="max-w-4xl mx-auto pb-20"> {/* pb-20 para dar espaço no mobile */}
 
-          <div className="bg-[#1A1A1A] border border-white/5 rounded-sm p-6 mb-6 shadow-lg">
+          <div className="bg-[#1A1A1A] border border-white/5 rounded-card p-6 mb-6 shadow-lg">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-3 gap-2">
               <div>
                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest block mb-1">Status Geral</span>
@@ -130,7 +130,7 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
             </div>
           </div>
 
-          <div className="bg-[#1A1A1A] border border-white/5 rounded-sm shadow-2xl overflow-hidden">
+          <div className="bg-[#1A1A1A] border border-white/5 rounded-control shadow-2xl overflow-hidden">
             {/* INPUT DE NOVA TAREFA - Layout Responsivo */}
             <div className="p-4 sm:p-6 border-b border-white/5 bg-[#1A1A1A]">
               <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -140,14 +140,14 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
                       value={newTaskText}
                       onChange={(e) => setNewTaskText(e.target.value)}
                       placeholder="Adicionar nova tarefa..."
-                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm py-3 pl-4 pr-10 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all h-12"
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-control py-3 pl-4 pr-10 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all h-12"
                   />
                   <Plus className="absolute right-3 top-3.5 w-5 h-5 text-zinc-500" />
                 </div>
                 <button
                     type="submit"
                     disabled={!newTaskText.trim()}
-                    className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3 px-6 rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide text-sm h-12 flex items-center justify-center whitespace-nowrap"
+                    className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3 px-6 rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide text-sm h-12 flex items-center justify-center whitespace-nowrap"
                 >
                   Adicionar
                 </button>
@@ -207,7 +207,7 @@ const WeeklyUpdatesView: React.FC<WeeklyUpdatesViewProps> = ({ empresaId }) => {
                         {/* Botão de Excluir: Sempre visível no mobile */}
                         <button
                             onClick={(e) => handleDeleteTask(task.id, e)}
-                            className="ml-4 p-2 text-zinc-600 hover:text-red-500 bg-white/5 sm:bg-transparent rounded-sm sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"
+                            className="ml-4 p-2 text-zinc-600 hover:text-red-500 bg-white/5 sm:bg-transparent rounded-control sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"
                             title="Excluir"
                         >
                           <Trash2 className="w-5 h-5 sm:w-4 sm:h-4" />

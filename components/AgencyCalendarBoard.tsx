@@ -178,7 +178,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
                         <button
                             onClick={handleResolveCovers}
                             disabled={isResolving}
-                            className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide bg-white/5 hover:bg-white/10 text-zinc-300 px-3 py-2 rounded-sm transition-colors disabled:opacity-50"
+                            className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide bg-white/5 hover:bg-white/10 text-zinc-300 px-3 py-2 rounded-control transition-colors disabled:opacity-50"
                             title="Busca a capa na pasta do Drive de cada publicação"
                         >
                             {isResolving
@@ -251,7 +251,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
                             <aside className="w-full xl:w-[380px] shrink-0">
                                 <div className="xl:sticky xl:top-[180px]">
                                     {isLoadingEvents ? (
-                                        <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-10 flex flex-col items-center gap-3">
+                                        <div className="bg-[#1A1A1A] border border-white/10 rounded-card p-10 flex flex-col items-center gap-3">
                                             <Loader2 className="w-6 h-6 text-[#FABE01] animate-spin" />
                                             <p className="text-zinc-500 text-xs">Montando prévia do feed...</p>
                                         </div>

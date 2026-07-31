@@ -160,7 +160,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
         }
     };
 
-    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all";
+    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all";
     const labelStyle = "block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5";
 
     return (
@@ -180,7 +180,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
                 {isAgency && !isFormOpen && (
                     <button
                         onClick={openNew}
-                        className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-sm uppercase tracking-wide transition-colors shrink-0"
+                        className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-control uppercase tracking-wide transition-colors shrink-0"
                     >
                         <Plus className="w-4 h-4" /> Lançar relatório
                     </button>
@@ -188,7 +188,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
             </header>
 
             {isAgency && isFormOpen && (
-                <form onSubmit={handleSubmit} className="bg-[#1A1A1A] border border-[#FABE01]/20 rounded-sm p-4 sm:p-6 mb-8 space-y-5">
+                <form onSubmit={handleSubmit} className="bg-[#1A1A1A] border border-[#FABE01]/20 rounded-card p-4 sm:p-6 mb-8 space-y-5">
                     <div className="flex items-center justify-between">
                         <h2 className="text-white font-bold">
                             {editingId ? `Editando ${formatPeriodo(form.ano, form.mes)}` : 'Novo relatório'}
@@ -297,7 +297,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
                     <button
                         type="submit"
                         disabled={isSaving}
-                        className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-6 py-3 rounded-sm uppercase tracking-wide transition-colors disabled:opacity-50"
+                        className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-6 py-3 rounded-control uppercase tracking-wide transition-colors disabled:opacity-50"
                     >
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         {isSaving ? 'Salvando...' : 'Salvar relatório'}
@@ -316,7 +316,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
                     <p className="text-zinc-300 text-sm max-w-sm">{loadError}</p>
                 </div>
             ) : reports.length === 0 ? (
-                <div className="py-16 px-6 text-center border border-dashed border-white/10 rounded-sm">
+                <div className="py-16 px-6 text-center border border-dashed border-white/10 rounded-card">
                     <FileBarChart className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
                     <p className="text-zinc-300 font-bold mb-1">Nenhum relatório lançado</p>
                     <p className="text-zinc-500 text-sm max-w-md mx-auto leading-relaxed">
@@ -328,7 +328,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
             ) : (
                 <div className="space-y-4">
                     {reports.map(report => (
-                        <article key={report.id} className="bg-[#1A1A1A] border border-white/5 rounded-sm p-4 sm:p-6 group">
+                        <article key={report.id} className="bg-[#1A1A1A] border border-white/5 rounded-card p-4 sm:p-6 group">
                             <div className="flex items-start justify-between gap-4 mb-4">
                                 <div>
                                     <h2 className="text-white font-bold text-lg">{formatPeriodo(report.ano, report.mes)}</h2>
@@ -358,7 +358,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
                                     ['Novos seguidores', report.seguidores],
                                     ['Publicados', report.publicados]
                                 ] as const).map(([label, value]) => (
-                                    <div key={label} className="bg-[#111111] border border-white/5 rounded-sm p-3">
+                                    <div key={label} className="bg-[#111111] border border-white/5 rounded-control p-3">
                                         <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{label}</p>
                                         <p className="text-lg font-bold text-white">{formatNumber(value)}</p>
                                     </div>

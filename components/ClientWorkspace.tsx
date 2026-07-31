@@ -10,9 +10,11 @@ import WeeklyUpdatesView from './WeeklyUpdatesView';
 import IdeasHubView from './IdeasHubView';
 import ClientReportsView from './ClientReportsView';
 import FeedPreview from './FeedPreview';
+import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
+import { PageHeader, StatTile, Card } from './ui';
 import {
     ArrowLeft, LayoutDashboard, Calendar, ClipboardList, Target,
-    DownloadCloud, FileBarChart, Building2, Loader2, X, Menu
+    DownloadCloud, FileBarChart, Building2, Loader2
 } from 'lucide-react';
 
 type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
@@ -97,28 +99,16 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
         };
     }, [events]);
 
-    const navButton = (item: typeof SECTIONS[number]) => {
-        const isActive = section === item.id;
-        const badge = item.id === 'calendar' ? stats.ajustePedido : 0;
-        return (
-            <button
-                key={item.id}
-                onClick={() => { setSection(item.id); setIsNavOpen(false); }}
-                className={`group flex items-center w-full px-4 py-3 text-sm font-medium rounded-sm transition-all relative ${
-                    isActive ? 'bg-[#FABE01]/10 text-[#FABE01]' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                }`}
-            >
-                {isActive && <span className="absolute left-0 top-0 bottom-0 w-1 bg-[#FABE01] rounded-r-full" />}
-                <item.icon className={`w-5 h-5 mr-3 shrink-0 ${isActive ? 'text-[#FABE01]' : 'text-zinc-500 group-hover:text-white'}`} />
-                <span className="flex-1 text-left">{item.label}</span>
-                {badge > 0 && (
-                    <span className="ml-2 min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px] font-bold">
-                        {badge > 9 ? '9+' : badge}
-                    </span>
-                )}
-            </button>
-        );
-    };
+    const navGroups: NavGroup[] = [{
+        title: 'Dados do cliente',
+        items: SECTIONS.map(s => ({
+            id: s.id,
+            label: s.label,
+            icon: s.icon,
+            badge: s.id === 'calendar' ? stats.ajustePedido : undefined,
+            badgeTone: 'amber' as const
+        }))
+    }];
 
     const renderSection = () => {
         switch (section) {
@@ -137,20 +127,9 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
         }
     };
 
-    const statCard = (label: string, value: number | string, hint?: string, accent?: string) => (
-        <div className="bg-[#1A1A1A] border border-white/5 rounded-sm p-5">
-            <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{label}</p>
-            <p className={`text-2xl sm:text-3xl font-bold ${accent || 'text-white'}`}>{value}</p>
-            {hint && <p className="text-xs text-zinc-600 mt-1.5 leading-snug">{hint}</p>}
-        </div>
-    );
-
     const renderOverview = () => (
         <div className="space-y-8">
-            <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">{empresaNome}</h1>
-                <p className="text-zinc-500 text-sm font-mono">ID: {empresaId}</p>
-            </div>
+            <PageHeader title={empresaNome} subtitle={`ID: ${empresaId}`} />
 
             {isLoading ? (
                 <div className="py-16 flex flex-col items-center gap-3">
@@ -159,28 +138,31 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {statCard('Publicações no mês', stats.noMes, `${stats.total} no total`)}
-                        {statCard(
-                            'Ajuste pedido',
-                            stats.ajustePedido,
-                            stats.ajustePedido > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe',
-                            stats.ajustePedido > 0 ? 'text-amber-400' : 'text-white'
-                        )}
-                        {statCard(
-                            'Aguardando o cliente',
-                            stats.aguardandoCliente,
-                            stats.aguardandoCliente > 0 ? 'Pronto, esperando aprovação' : 'Sem nada para aprovar'
-                        )}
-                        {statCard('Publicados', stats.publicados)}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <StatTile label="Publicações no mês" value={stats.noMes} icon={Calendar} tone="brand" hint={`${stats.total} no total`} />
+                        <StatTile
+                            label="Ajuste pedido"
+                            value={stats.ajustePedido}
+                            icon={ClipboardList}
+                            tone={stats.ajustePedido > 0 ? 'attention' : 'positive'}
+                            hint={stats.ajustePedido > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe'}
+                            onClick={stats.ajustePedido > 0 ? () => setSection('calendar') : undefined}
+                        />
+                        <StatTile
+                            label="Aguardando o cliente"
+                            value={stats.aguardandoCliente}
+                            icon={Target}
+                            hint={stats.aguardandoCliente > 0 ? 'Pronto, esperando aprovação' : 'Sem nada para aprovar'}
+                        />
+                        <StatTile label="Publicados" value={stats.publicados} icon={FileBarChart} tone="positive" />
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
                         <div className="xl:col-span-2 space-y-4">
                             {/* Proxima entrega: e a pergunta que a agencia faz ao abrir
                                 o cliente, e antes exigia varrer o calendario. */}
-                            <div className="bg-[#1A1A1A] border border-white/5 rounded-sm p-5">
-                                <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-3">Próxima entrega</p>
+                            <Card className="p-5">
+                                <p className="text-sm text-zinc-400 font-medium mb-3">Próxima entrega</p>
                                 {stats.proximo ? (
                                     <button
                                         onClick={() => setSection('calendar')}
@@ -193,7 +175,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                             <span className="text-sm text-zinc-400">
                                                 {stats.proximo.date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
                                             </span>
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider border ${
+                                            <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${
                                                 CLIENT_STAGES[getClientStage(stats.proximo)].bg
                                             } ${CLIENT_STAGES[getClientStage(stats.proximo)].text} ${
                                                 CLIENT_STAGES[getClientStage(stats.proximo)].border
@@ -205,10 +187,10 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                 ) : (
                                     <p className="text-zinc-500 text-sm">Nada agendado para os próximos dias.</p>
                                 )}
-                            </div>
+                            </Card>
 
                             {stats.semCapa > 0 && (
-                                <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-sm p-5">
+                                <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-card p-5">
                                     <p className="text-white font-bold text-sm mb-1">
                                         {stats.semCapa} publicação(ões) sem capa definida
                                     </p>
@@ -230,57 +212,39 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
 
     return (
         <div className="relative min-h-screen md:flex bg-[#111111] text-zinc-100">
-            {/* OVERLAY MOBILE */}
-            <div
-                className={`fixed inset-0 bg-black/80 z-40 backdrop-blur-sm transition-opacity md:hidden ${
-                    isNavOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                }`}
-                onClick={() => setIsNavOpen(false)}
-                aria-hidden="true"
-            />
-
-            {/* SUBMENU DO CLIENTE.
-                Nao reaproveita o Sidebar do portal de proposito: aquele e o menu
+            {/* Nao reaproveita o Sidebar do portal de proposito: aquele e o menu
                 do cliente e traz "Meu Perfil", que nao faz sentido dentro dos
-                dados de outra pessoa. */}
-            <aside
-                className={`fixed md:sticky top-0 left-0 z-50 h-screen w-72 bg-[#111111] border-r border-white/5 flex flex-col transform transition-transform md:translate-x-0 ${
-                    isNavOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}
-            >
-                <div className="px-4 py-5 border-b border-white/5">
-                    <button
-                        onClick={onBack}
-                        className="flex items-center w-full px-4 py-3 mb-4 text-sm font-bold rounded-sm bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
-                    >
-                        <ArrowLeft className="w-4 h-4 mr-2" />
-                        Voltar ao Painel
-                    </button>
-
-                    <div className="flex items-center gap-3 px-1">
-                        <div className="w-9 h-9 shrink-0 rounded-sm bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
+                dados de outra pessoa. So a casca visual e compartilhada. */}
+            <AppSidebar
+                groups={navGroups}
+                activeId={section}
+                onSelect={(id) => { setSection(id as Section); setIsNavOpen(false); }}
+                isOpen={isNavOpen}
+                onClose={() => setIsNavOpen(false)}
+                brand={
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 shrink-0 rounded-chip bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
                             <Building2 className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-white font-bold text-sm truncate" title={empresaNome}>{empresaNome}</p>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Cliente</p>
+                            <p className="text-white font-bold text-sm truncate leading-tight" title={empresaNome}>{empresaNome}</p>
+                            <p className="text-[10px] text-zinc-500 leading-tight mt-0.5">Cliente</p>
                         </div>
                     </div>
-                </div>
-
-                <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
-                    <p className="px-4 text-xs font-bold text-zinc-600 uppercase tracking-widest mb-3">Dados do cliente</p>
-                    {SECTIONS.map(navButton)}
-                </nav>
-            </aside>
-
-            <main className="flex-1 min-w-0 h-screen overflow-y-auto">
-                <header className="md:hidden sticky top-0 bg-[#111111]/95 backdrop-blur border-b border-white/10 p-4 flex items-center justify-between z-30">
-                    <p className="text-white font-bold truncate">{empresaNome}</p>
-                    <button onClick={() => setIsNavOpen(true)} aria-label="Abrir menu do cliente" className="p-2 text-white shrink-0">
-                        <Menu className="w-6 h-6" />
+                }
+                aboveNav={
+                    <button
+                        onClick={onBack}
+                        className="flex items-center justify-center gap-2 w-full px-3 py-2.5 text-sm font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Voltar ao painel
                     </button>
-                </header>
+                }
+            />
+
+            <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
+                <MobileTopBar title={empresaNome} onOpenMenu={() => setIsNavOpen(true)} />
 
                 <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {renderSection()}

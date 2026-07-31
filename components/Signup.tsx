@@ -142,7 +142,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
 
                     {/* Alerta de Erro */}
                     {error && (
-                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-sm text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-control text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
                             <AlertCircle className="w-4 h-4 shrink-0" />
                             <p>{error}</p>
                         </div>
@@ -164,7 +164,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                         required
                                         autoComplete="given-name"
                                         placeholder="Seu nome"
-                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     />
                                 </div>
                             </div>
@@ -177,7 +177,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     required
                                     autoComplete="family-name"
                                     placeholder="Seu sobrenome"
-                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 px-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 px-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                 />
                             </div>
                         </div>
@@ -195,7 +195,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     autoComplete="email"
                                     autoCapitalize="none"
                                     spellCheck={false}
-                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="seu@empresa.com"
                                 />
                             </div>
@@ -213,7 +213,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     required
                                     autoComplete="new-password"
                                     aria-invalid={passwordTooShort}
-                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="No mínimo 6 caracteres"
                                 />
                                 <button
@@ -242,7 +242,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                                     required
                                     autoComplete="new-password"
                                     aria-invalid={passwordsMismatch}
-                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                    className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                     placeholder="Repita a senha"
                                 />
                             </div>
@@ -256,7 +256,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
                             <button
                                 type="submit"
                                 disabled={isLoading || !canSubmit}
-                                className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3.5 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3.5 px-4 rounded-control transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isLoading ? (
                                     <> <Loader2 className="w-4 h-4 animate-spin" /> CRIANDO CONTA... </>

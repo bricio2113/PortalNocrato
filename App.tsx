@@ -20,8 +20,10 @@ import ProfileView from './components/ProfileView';
 import CompleteProfileModal from './components/CompleteProfileModal';
 import { splitFullName, getDisplayName, isProfileComplete } from './utils/avatar';
 
+import { MobileTopBar } from './components/AppSidebar';
+
 // Ícones e Assets
-import { Menu, Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 // @ts-ignore
 import favicon from './assets/favicon.png';
 
@@ -107,17 +109,16 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
                 toggleTheme={() => {}}
             />
 
-            <main className="flex-1 h-screen overflow-y-auto bg-[#111111]">
-                <header className="md:hidden sticky top-0 left-0 right-0 bg-[#111111]/90 backdrop-blur-md border-b border-white/10 p-4 flex items-center justify-between z-40">
-                    <div className="flex items-center gap-3"><img src={favicon} alt="Nocrato" className="h-8 w-auto brightness-0 invert" /><span className="text-lg font-bold text-white">Nocrato</span></div>
-                    <button
-                        onClick={() => setIsSidebarOpen(true)}
-                        className="p-2 text-white"
-                        aria-label="Abrir menu de navegação"
-                    >
-                        <Menu className="w-6 h-6" />
-                    </button>
-                </header>
+            <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto bg-[#111111]">
+                <MobileTopBar
+                    onOpenMenu={() => setIsSidebarOpen(true)}
+                    title={
+                        <span className="flex items-center justify-center gap-2">
+                            <img src={favicon} alt="" className="h-5 w-auto brightness-0 invert" />
+                            <span className="text-sm font-bold text-white">Nocrato</span>
+                        </span>
+                    }
+                />
                 <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {renderPortalContent()}
                 </div>

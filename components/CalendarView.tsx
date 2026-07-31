@@ -7,7 +7,13 @@ import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
 import { stripUndefined } from '../utils/firestore';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText, Instagram, LayoutList, Grid3x3, AlertTriangle } from 'lucide-react';
+import { getMediaPreview } from '../utils/media';
+import { PageHeader, SegmentedTabs, EmptyState } from './ui';
+import {
+    ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
+    Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
+    ImageOff, User, MessageSquareWarning
+} from 'lucide-react';
 
 interface CalendarViewProps {
     empresaId: string;
@@ -20,6 +26,52 @@ interface CalendarViewProps {
 // celular vira rolagem horizontal - ruim como primeira impressao. Em telas
 // pequenas a lista abre por padrao; o usuario ainda pode trocar para a grade.
 const prefersListView = () => typeof window !== 'undefined' && window.innerWidth < 768;
+
+// Fonte da miniatura do card, na mesma ordem de precedencia que a previa do
+// feed usa: escolha manual, capa do Drive, material final, material bruto.
+const coverSourceOf = (event: CalendarEvent) =>
+    event.previewUrl || event.coverUrl || event.finalUrl || event.url;
+
+/** Icone do formato. O quadradinho colorido e o que faz o card ser lido de longe. */
+const formatIcon = (type?: string) => {
+    const t = (type || '').toUpperCase();
+    if (t.includes('CARROSSEL')) return Images;
+    if (t.includes('REEL') || t.includes('VÍDEO') || t.includes('VIDEO')) return Play;
+    if (t.includes('STORY')) return Instagram;
+    return FileText;
+};
+
+/**
+ * Miniatura quadrada do material.
+ *
+ * O card da agenda so trazia texto: para saber qual peca era, tinha que abrir
+ * uma por uma. Com a capa resolvida do Drive ja disponivel, mostrar a imagem
+ * aqui e de graca e resolve a duvida sem clique nenhum.
+ */
+const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, size }) => {
+    const preview = getMediaPreview(coverSourceOf(event));
+    const styles = getTypeStyles(event.type);
+    const Icon = formatIcon(event.type);
+
+    if (preview && preview.kind === 'image') {
+        return (
+            <div className={`${size} shrink-0 rounded-chip overflow-hidden bg-[#111111]`}>
+                <img
+                    src={preview.src}
+                    alt=""
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+            </div>
+        );
+    }
+    return (
+        <div className={`${size} shrink-0 rounded-chip flex items-center justify-center ${styles.bg} ${styles.text}`}>
+            <Icon className="w-4 h-4" />
+        </div>
+    );
+};
 
 const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -258,37 +310,40 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
 
     return (
         <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
-            <header className="mb-6 md:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-                        <CalendarIcon className="w-8 h-8 text-[#FABE01] shrink-0" />
-                        Calendário Editorial
-                    </h1>
-                    <p className="text-zinc-400 mt-2 text-sm max-w-xl">
-                        Planeje, agende e visualize todas as suas publicações.
-                    </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                    <div className="flex bg-[#1A1A1A] p-1 rounded-sm border border-white/10 w-full sm:w-auto">
-                        <button onClick={() => setViewMode('grid')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><Grid3x3 className="w-4 h-4" /> <span className="sm:hidden md:inline">Grade</span></button>
-                        <button onClick={() => setViewMode('list')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><LayoutList className="w-4 h-4" /> <span className="sm:hidden md:inline">Lista</span></button>
-                    </div>
-                    <button onClick={handleAddNewEventClick} className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-2.5 px-6 rounded-sm shadow-[0_0_20px_rgba(250,190,1,0.2)] transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wide w-full sm:w-auto">
-                        <Plus className="w-5 h-5" /> Novo
-                    </button>
-                </div>
-            </header>
+            <PageHeader
+                title="Calendário Editorial"
+                subtitle="Planeje, agende e acompanhe todas as publicações."
+                actions={
+                    <>
+                        <SegmentedTabs
+                            value={viewMode}
+                            onChange={setViewMode}
+                            options={[
+                                { id: 'grid', label: 'Grade', icon: Grid3x3 },
+                                { id: 'list', label: 'Lista', icon: LayoutList }
+                            ]}
+                        />
+                        <button
+                            onClick={handleAddNewEventClick}
+                            className="bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold py-2.5 px-5 rounded-full transition-colors flex items-center justify-center gap-2 text-sm"
+                        >
+                            <Plus className="w-4 h-4" /> Nova publicação
+                        </button>
+                    </>
+                }
+            />
 
-            <div className="bg-[#111111] rounded-sm border border-white/5 shadow-2xl overflow-hidden">
-                <header className="flex flex-col sm:flex-row justify-between items-center p-4 md:p-6 border-b border-white/5 bg-black/20 gap-4">
-                    <h2 className="text-lg md:text-xl font-bold text-white capitalize flex items-center gap-2">
+            <div className="bg-[#1A1A1A] rounded-card border border-white/5 shadow-card overflow-hidden">
+                <header className="flex flex-col sm:flex-row justify-between sm:items-center p-4 md:p-5 border-b border-white/5 gap-3">
+                    <h2 className="text-lg font-bold text-white capitalize flex items-center gap-2">
+                        <CalendarIcon className="w-5 h-5 text-[#FABE01] shrink-0" />
                         {currentDate.toLocaleString('pt-BR', { month: 'long' })}
                         <span className="text-zinc-500 font-normal">{currentDate.getFullYear()}</span>
                     </h2>
-                    <div className="flex items-center bg-[#1A1A1A] rounded-sm border border-white/10 p-1 w-full sm:w-auto justify-between sm:justify-start">
-                        <button onClick={handlePrevMonth} className="p-3 md:p-2 text-zinc-400 hover:text-white rounded-sm"><ChevronLeft className="w-5 h-5" /></button>
-                        <button onClick={handleToday} className="px-6 md:px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:text-[#FABE01] border-x border-white/5 mx-1">Hoje</button>
-                        <button onClick={handleNextMonth} className="p-3 md:p-2 text-zinc-400 hover:text-white rounded-sm"><ChevronRight className="w-5 h-5" /></button>
+                    <div className="flex items-center gap-1 p-1 bg-white/[0.04] border border-white/5 rounded-full w-full sm:w-auto justify-between sm:justify-start">
+                        <button onClick={handlePrevMonth} aria-label="Mês anterior" className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+                        <button onClick={handleToday} className="px-4 py-1.5 text-xs font-semibold text-zinc-300 hover:text-black hover:bg-[#FABE01] rounded-full transition-colors">Hoje</button>
+                        <button onClick={handleNextMonth} aria-label="Próximo mês" className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"><ChevronRight className="w-4 h-4" /></button>
                     </div>
                 </header>
 
@@ -318,26 +373,43 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                             <div key={date.toISOString()} className={`group relative min-h-[96px] sm:min-h-[140px] p-1.5 sm:p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{date.getDate()}</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-sm transition-all"><Plus className="w-4 h-4" /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-control transition-all"><Plus className="w-4 h-4" /></button>
                                                 </div>
                                                 <div className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
                                                     {dayEvents.map(event => {
                                                         const styles = getTypeStyles(event.type);
+                                                        const stage = CLIENT_STAGES[stageOf(event)];
                                                         return (
-                                                            <div key={event.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }} className={`cursor-pointer p-2 rounded-sm text-xs font-medium border-l-2 transition-colors h-auto ${styles.bg} ${styles.border} ${styles.text}`}>
+                                                            // Card do dia: miniatura + titulo + formato.
+                                                            //
+                                                            // A faixa lateral de 2px era o unico sinal de formato e
+                                                            // exigia decorar a cor. Agora o card inteiro e tingido,
+                                                            // com a capa do material do lado - da para reconhecer a
+                                                            // peca sem abrir.
+                                                            <div
+                                                                key={event.id}
+                                                                onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }}
+                                                                // Borda neutra de proposito: `${styles.border}/30` seria uma
+                                                                // classe montada em tempo de execucao, e o Tailwind so gera o
+                                                                // que encontra literalmente no fonte. O fundo tingido ja
+                                                                // carrega a cor do formato.
+                                                                className={`cursor-pointer p-1.5 rounded-chip border border-white/5 hover:border-white/20 transition-colors ${styles.bg}`}
+                                                            >
                                                                 <div className="flex items-start gap-1.5">
-                                                                    <div className="mt-0.5 shrink-0">{event.plataforma === 'Instagram' ? <Instagram className="w-3 h-3 opacity-70" /> : <FileText className="w-3 h-3 opacity-70" />}</div>
-                                                                    <div className="flex flex-col gap-1 w-full">
-                                                                        <span className="leading-tight break-words whitespace-normal text-[11px]">{event.title || '(Sem título)'}</span>
+                                                                    <EventThumb event={event} size="w-6 h-6" />
+                                                                    <div className="flex flex-col gap-1 min-w-0 flex-1">
+                                                                        <span className={`leading-tight break-words text-[11px] font-medium ${styles.text}`}>
+                                                                            {event.title || '(Sem título)'}
+                                                                        </span>
                                                                         <div className="flex items-center gap-1 flex-wrap">
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
                                                                             {/* Estagio direto no card: sem isso o contador do menu
                                                                                 dizia "3 pendentes" e o usuario tinha que abrir post
                                                                                 por post para descobrir quais. */}
                                                                             {stageOf(event) !== 'em_producao' && (
                                                                                 <span
-                                                                                    className={`w-2 h-2 rounded-full shrink-0 ${CLIENT_STAGES[stageOf(event)].dot}`}
-                                                                                    title={CLIENT_STAGES[stageOf(event)].label}
+                                                                                    className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`}
+                                                                                    title={stage.label}
                                                                                 />
                                                                             )}
                                                                         </div>
@@ -358,54 +430,115 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                 {getEventsForMonth().length === 0 ? (
                                     // Empty state que aponta a proxima acao, em vez de so informar
                                     // que nao ha nada.
-                                    <div className="text-center py-14 px-6 border border-dashed border-white/10 rounded-sm">
-                                        <CalendarIcon className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                                        <p className="text-zinc-300 font-bold mb-1">
-                                            Nada agendado em {currentDate.toLocaleString('pt-BR', { month: 'long' })}
-                                        </p>
-                                        <p className="text-zinc-500 text-sm max-w-sm mx-auto leading-relaxed">
-                                            Crie a primeira publicação do mês ou use as setas acima para navegar até outro período.
-                                        </p>
-                                        <button
-                                            onClick={handleAddNewEventClick}
-                                            className="mt-6 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-sm uppercase tracking-wide transition-colors"
-                                        >
-                                            <Plus className="w-4 h-4" /> Criar publicação
-                                        </button>
-                                    </div>
+                                    <EmptyState
+                                        icon={CalendarIcon}
+                                        title={`Nada agendado em ${currentDate.toLocaleString('pt-BR', { month: 'long' })}`}
+                                        description="Crie a primeira publicação do mês ou use as setas acima para navegar até outro período."
+                                        action={
+                                            <button
+                                                onClick={handleAddNewEventClick}
+                                                className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-sm px-5 py-2.5 rounded-full transition-colors"
+                                            >
+                                                <Plus className="w-4 h-4" /> Criar publicação
+                                            </button>
+                                        }
+                                    />
                                 ) : (
-                                    <div className="space-y-4">
+                                    <div className="space-y-6">
                                         {calendarDays.filter(d => d !== null).map(date => {
                                             if (!date) return null;
                                             const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                             if (dayEvents.length === 0) return null;
                                             return (
-                                                <div key={date.toISOString()} className="bg-[#1A1A1A] border border-white/5 rounded-sm overflow-hidden">
-                                                    <div className={`px-4 py-2 text-sm font-bold flex items-center justify-between ${isToday(date) ? 'bg-[#FABE01] text-black' : 'bg-black/40 text-zinc-400'}`}>
-                                                        <span>{date.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
-                                                        <button onClick={() => handleCreateEventForDate(date)} className="p-1 hover:bg-white/20 rounded-sm"><Plus className="w-4 h-4" /></button>
+                                                <div key={date.toISOString()}>
+                                                    {/* Cabecalho do dia solto, sem caixa: os cards abaixo e que
+                                                        sao os objetos: a lista antiga embrulhava tudo em um
+                                                        painel so e os posts viravam linhas de tabela. */}
+                                                    <div className="flex items-center gap-3 mb-2.5">
+                                                        <span className={`shrink-0 w-10 h-10 rounded-chip flex flex-col items-center justify-center leading-none ${
+                                                            isToday(date) ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300'
+                                                        }`}>
+                                                            <span className="text-sm font-bold">{date.getDate()}</span>
+                                                            <span className="text-[8px] uppercase tracking-wide opacity-70 mt-0.5">
+                                                                {date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}
+                                                            </span>
+                                                        </span>
+                                                        {/* `capitalize` do Tailwind sobe a inicial de TODA palavra e
+                                                            produzia "Sábado, 25 De Julho". Só a primeira letra sobe. */}
+                                                        <span className="text-sm font-semibold text-zinc-300 first-letter:uppercase truncate">
+                                                            {date.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                        </span>
+                                                        <span className="flex-1 h-px bg-white/5" />
+                                                        <button
+                                                            onClick={() => handleCreateEventForDate(date)}
+                                                            aria-label={`Nova publicação em ${date.toLocaleDateString('pt-BR')}`}
+                                                            className="shrink-0 p-1.5 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-full transition-colors"
+                                                        >
+                                                            <Plus className="w-4 h-4" />
+                                                        </button>
                                                     </div>
-                                                    <div className="divide-y divide-white/5">
+
+                                                    <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                                                         {dayEvents.map(event => {
                                                             const styles = getTypeStyles(event.type);
+                                                            const stage = CLIENT_STAGES[stageOf(event)];
+                                                            const temMaterial = Boolean(event.url || event.finalUrl);
+                                                            const pediuAjuste = event.approval === 'ajuste_solicitado';
                                                             return (
-                                                                <div key={event.id} onClick={() => setSelectedEvent(event)} className="p-4 hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-4">
-                                                                    <div className={`p-2 rounded-full ${styles.bg} ${styles.text}`}>
-                                                                        {event.plataforma === 'Instagram' ? <Instagram className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                                                                <button
+                                                                    key={event.id}
+                                                                    onClick={() => setSelectedEvent(event)}
+                                                                    className={`text-left w-full bg-[#1A1A1A] border rounded-card p-3 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
+                                                                        pediuAjuste
+                                                                            ? 'border-amber-500/40 hover:border-amber-500/70'
+                                                                            : 'border-white/5 hover:border-white/20'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-start gap-3">
+                                                                        <EventThumb event={event} size="w-12 h-12" />
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="flex items-start justify-between gap-2">
+                                                                                <h4 className="text-white font-semibold text-sm leading-snug line-clamp-2">
+                                                                                    {event.title || '(Sem título)'}
+                                                                                </h4>
+                                                                                <span className={`shrink-0 w-2 h-2 mt-1.5 rounded-full ${stage.dot}`} title={stage.label} />
+                                                                            </div>
+                                                                            <p className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1.5 truncate">
+                                                                                {event.plataforma === 'Instagram'
+                                                                                    ? <Instagram className="w-3 h-3 shrink-0" />
+                                                                                    : <FileText className="w-3 h-3 shrink-0" />}
+                                                                                {event.plataforma || 'Sem plataforma'}
+                                                                                {event.proprietario && (
+                                                                                    <>
+                                                                                        <span className="text-zinc-700">·</span>
+                                                                                        <User className="w-3 h-3 shrink-0" />
+                                                                                        <span className="truncate">{event.proprietario}</span>
+                                                                                    </>
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="flex-1">
-                                                                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                                                            <h4 className="text-white font-medium text-sm">{event.title || '(Sem título)'}</h4>
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest ${styles.label}`}>{event.type}</span>
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider border ${CLIENT_STAGES[stageOf(event)].bg} ${CLIENT_STAGES[stageOf(event)].text} ${CLIENT_STAGES[stageOf(event)].border}`}>
-                                                                                {CLIENT_STAGES[stageOf(event)].label}
+
+                                                                    {/* Rodape de sinais: formato, estagio e o que
+                                                                        esta anexado. E a informacao que antes so
+                                                                        aparecia depois de abrir o post. */}
+                                                                    <div className="flex items-center gap-1.5 flex-wrap mt-3 pt-2.5 border-t border-white/5">
+                                                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
+                                                                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${stage.bg} ${stage.text} ${stage.border}`}>
+                                                                            {stage.label}
+                                                                        </span>
+                                                                        {pediuAjuste && (
+                                                                            <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
+                                                                                <MessageSquareWarning className="w-3 h-3" /> ajuste
                                                                             </span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2 text-xs text-zinc-500">
-                                                                            {event.proprietario && <span>{event.proprietario}</span>}
-                                                                        </div>
+                                                                        )}
+                                                                        <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-zinc-600">
+                                                                            {temMaterial
+                                                                                ? <><Paperclip className="w-3 h-3" /> material</>
+                                                                                : <><ImageOff className="w-3 h-3" /> sem material</>}
+                                                                        </span>
                                                                     </div>
-                                                                </div>
+                                                                </button>
                                                             );
                                                         })}
                                                     </div>

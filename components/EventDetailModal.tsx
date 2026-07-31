@@ -194,7 +194,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     // disabled:* cobre o modo leitura do cliente: as regras do Firestore ja
     // recusam a escrita dele nestes campos, e um formulario que parece editavel
     // mas falha ao salvar e pior que um formulario visivelmente travado.
-    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none disabled:opacity-60 disabled:cursor-not-allowed read-only:opacity-60";
+    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none disabled:opacity-60 disabled:cursor-not-allowed read-only:opacity-60";
 
     return (
         <div
@@ -204,7 +204,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
         >
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
-            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90dvh] sm:h-auto sm:max-h-[90dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-2xl flex flex-col h-[90dvh] sm:h-auto sm:max-h-[90dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
 
                 {isDeleting && (
                     <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
@@ -216,8 +216,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             Esta ação <strong className="text-white">não pode</strong> ser desfeita. O agendamento e o card correspondente na produção serão removidos.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                            <button onClick={handleCancelDelete} disabled={isSaving} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors disabled:opacity-50">Cancelar</button>
-                            <button onClick={handleConfirmDelete} disabled={isSaving} className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                            <button onClick={handleCancelDelete} disabled={isSaving} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors disabled:opacity-50">Cancelar</button>
+                            <button onClick={handleConfirmDelete} disabled={isSaving} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                                 {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {isSaving ? 'Excluindo...' : 'Sim, Excluir'}
                             </button>
@@ -233,8 +233,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             Você editou esta publicação e ainda não salvou. Se sair agora, as alterações são perdidas.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                            <button onClick={() => setShowDiscardWarning(false)} className="w-full py-3 rounded-sm border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Continuar editando</button>
-                            <button onClick={onClose} className="w-full py-3 rounded-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Descartar</button>
+                            <button onClick={() => setShowDiscardWarning(false)} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Continuar editando</button>
+                            <button onClick={onClose} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Descartar</button>
                         </div>
                     </div>
                 )}
@@ -257,7 +257,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             />
                         </div>
                     </div>
-                    <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-sm shrink-0"><X className="w-6 h-6" /></button>
+                    <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-control shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
                 {/* Body */}
@@ -267,7 +267,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         O cliente nao precisa entender os sete status internos da
                         agencia; precisa saber se a bola esta com ele. */}
                     {canReview && (
-                        <div className={`border rounded-sm p-4 ${stageStyle.bg} ${stageStyle.border}`}>
+                        <div className={`border rounded-card p-4 ${stageStyle.bg} ${stageStyle.border}`}>
                             <div className="flex items-start gap-3">
                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${stageStyle.dot}`} />
                                 <div className="flex-1 min-w-0">
@@ -292,7 +292,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                             <button
                                                 onClick={() => handleApproval('aprovado')}
                                                 disabled={approvalBusy !== null || localApproval === 'aprovado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-sm uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 {approvalBusy === 'aprovado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                                                 {localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar'}
@@ -300,7 +300,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                             <button
                                                 onClick={() => handleApproval('ajuste_solicitado')}
                                                 disabled={approvalBusy !== null || localApproval === 'ajuste_solicitado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-bold text-sm rounded-sm uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 {approvalBusy === 'ajuste_solicitado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareWarning className="w-4 h-4" />}
                                                 Pedir ajuste
@@ -329,7 +329,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 alt={`Prévia de ${editableEvent.title || 'publicação'}`}
                                 onError={() => setPreviewFailed(true)}
                                 loading="lazy"
-                                className="w-full max-h-[420px] object-contain bg-[#111111] border border-white/10 rounded-sm"
+                                className="w-full max-h-[420px] object-contain bg-[#111111] border border-white/10 rounded-control"
                             />
                         )}
                         {preview && preview.kind === 'video' && !previewFailed && (
@@ -337,11 +337,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 src={preview.src}
                                 controls
                                 onError={() => setPreviewFailed(true)}
-                                className="w-full max-h-[420px] bg-[#111111] border border-white/10 rounded-sm"
+                                className="w-full max-h-[420px] bg-[#111111] border border-white/10 rounded-control"
                             />
                         )}
                         {(!preview || preview.kind === 'external' || previewFailed) && (
-                            <div className="border border-dashed border-white/10 rounded-sm p-6 text-center">
+                            <div className="border border-dashed border-white/10 rounded-card p-6 text-center">
                                 {preview ? (
                                     <>
                                         {previewFailed ? <ImageOff className="w-8 h-8 text-zinc-700 mx-auto mb-2" /> : <FileVideo className="w-8 h-8 text-zinc-700 mx-auto mb-2" />}
@@ -431,7 +431,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
                                 {toSafeHref(editableEvent.url) && (
-                                    <a href={toSafeHref(editableEvent.url)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Material Bruto">
+                                    <a href={toSafeHref(editableEvent.url)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[#FABE01]/10 text-[#FABE01] border border-[#FABE01]/20 rounded-control flex items-center justify-center shrink-0" title="Acessar Material Bruto">
                                         <ExternalLink className="w-5 h-5" />
                                     </a>
                                 )}
@@ -447,7 +447,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     <LinkIcon className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
                                 {toSafeHref(editableEvent.finalUrl) && (
-                                    <a href={toSafeHref(editableEvent.finalUrl)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-sm flex items-center justify-center shrink-0" title="Acessar Conteúdo Final">
+                                    <a href={toSafeHref(editableEvent.finalUrl)!} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-control flex items-center justify-center shrink-0" title="Acessar Conteúdo Final">
                                         <ExternalLink className="w-5 h-5" />
                                     </a>
                                 )}
@@ -504,7 +504,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 hasMetrics ? (
                                     <div className="grid grid-cols-3 gap-3">
                                         {METRIC_FIELDS.map(({ key, label }) => (
-                                            <div key={key} className="bg-[#111111] border border-white/10 rounded-sm p-4">
+                                            <div key={key} className="bg-[#111111] border border-white/10 rounded-card p-4">
                                                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{label}</p>
                                                 <p className="text-xl font-bold text-white">
                                                     {formatMetric(editableEvent.metrics?.[key])}
@@ -537,7 +537,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                                 type="button"
                                                 onClick={handleSaveMetrics}
                                                 disabled={metricsBusy}
-                                                className="inline-flex items-center gap-2 px-4 py-2 border border-white/10 hover:bg-white/5 text-zinc-300 text-xs font-bold uppercase tracking-wide rounded-sm transition-colors disabled:opacity-50"
+                                                className="inline-flex items-center gap-2 px-4 py-2 border border-white/10 hover:bg-white/5 text-zinc-300 text-xs font-bold uppercase tracking-wide rounded-control transition-colors disabled:opacity-50"
                                             >
                                                 {metricsBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                                 Salvar resultado
@@ -603,12 +603,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             {hasUnsavedChanges && !isSaving && !isClient && (
                                 <span className="hidden sm:inline text-xs text-[#FABE01] font-medium">Alterações não salvas</span>
                             )}
-                            <button onClick={requestClose} disabled={isSaving} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm transition-colors disabled:opacity-50">{isClient ? 'Fechar' : 'Cancelar'}</button>
+                            <button onClick={requestClose} disabled={isSaving} className="hidden sm:block px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-control transition-colors disabled:opacity-50">{isClient ? 'Fechar' : 'Cancelar'}</button>
                             {/* Salvar campos e privilegio da agencia: as regras do
                                 Firestore recusam a escrita do cliente aqui, entao
                                 exibir o botao so produziria erro de permissao. */}
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
+                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
                                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                     {isSaving ? 'Salvando...' : (isCreating ? 'Agendar' : 'Salvar')}
                                 </button>

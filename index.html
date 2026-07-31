@@ -31,7 +31,33 @@
               dark: '#111111',
               card: '#1A1A1A',
               border: 'rgba(255, 255, 255, 0.05)'
+            },
+            // Superficies nomeadas. Sao os mesmos tons que ja estavam
+            // espalhados como literais; ter nome permite trocar o degrau de
+            // elevacao em um lugar so.
+            surface: {
+              base: '#111111',   // fundo da aplicacao
+              raised: '#1A1A1A', // cards e paineis
+              sunken: '#0D0D0D', // campos de entrada, poços
+              hover: '#212121'   // estado de hover sobre superficie elevada
             }
+          },
+          // ESCALA DE RAIO SEMANTICA.
+          //
+          // Antes era `rounded-sm` (2px) em tudo - card, botao e selo tinham a
+          // mesma quina, entao nada na tela dizia o que era container e o que
+          // era controle. Tres degraus nomeados pelo PAPEL do elemento, nao
+          // pelo tamanho: trocar a linguagem de forma vira editar tres linhas.
+          borderRadius: {
+            card: '1.25rem',    // 20px - cards, paineis, modais, empty states
+            control: '0.75rem', // 12px - botoes, inputs, selects, itens de menu
+            chip: '0.5rem'      // 8px  - selos, tags, quadradinhos de icone
+          },
+          boxShadow: {
+            // Elevacao discreta. No escuro a sombra quase nao aparece, entao o
+            // que separa o card do fundo e a borda; a sombra so ancora.
+            card: '0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6)',
+            glow: '0 0 0 1px rgba(250,190,1,0.2), 0 8px 24px -8px rgba(250,190,1,0.25)'
           }
         },
       },

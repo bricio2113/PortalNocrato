@@ -57,7 +57,7 @@ const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({ profile, on
         // quando o perfil passa a estar completo.
     };
 
-    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-sm px-4 py-3 text-base text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all";
+    const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-4 py-3 text-base text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all";
 
     return (
         <div
@@ -70,7 +70,7 @@ const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({ profile, on
                 <img src={favicon} alt="Nocrato" className="h-12 w-auto brightness-0 invert opacity-80" />
             </div>
 
-            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-6 sm:p-8 animate-in zoom-in-95 duration-300">
+            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-card p-6 sm:p-8 animate-in zoom-in-95 duration-300">
 
                 <div className="flex justify-center mb-6">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-2xl">
@@ -128,7 +128,7 @@ const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({ profile, on
                     <button
                         type="submit"
                         disabled={!canSubmit || isSaving}
-                        className="w-full flex items-center justify-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3.5 rounded-sm uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-3.5 rounded-control uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         {isSaving ? 'Salvando...' : 'Continuar'}

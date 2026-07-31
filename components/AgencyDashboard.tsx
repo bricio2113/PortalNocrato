@@ -5,13 +5,13 @@ import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import { UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
+import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
+import { PageHeader, StatTile, greeting } from './ui';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
-    X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
+    X, Search, Loader2, Users, LayoutDashboard, Briefcase,
     ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check
 } from 'lucide-react';
-// @ts-ignore
-import favicon from '../assets/favicon.png';
 
 interface UserData {
     id: string;
@@ -47,36 +47,6 @@ interface AgencyDashboardProps {
     userName?: string | null;
 }
 
-// As classes precisam existir literalmente no fonte: o Tailwind varre o codigo
-// estaticamente, entao `text-${color}-500` era removido no build e o icone
-// ficava sem cor. Mapa explicito resolve.
-const STAT_ACCENTS = {
-    yellow: 'text-[#FABE01]',
-    blue: 'text-blue-400',
-    green: 'text-green-400'
-} as const;
-
-type StatAccent = keyof typeof STAT_ACCENTS;
-
-const StatCard: React.FC<{
-    title: string;
-    value: number | string;
-    icon: React.ElementType;
-    color: StatAccent;
-    hint?: string;
-}> = ({ title, value, icon: Icon, color, hint }) => (
-    <div className="bg-[#1A1A1A] p-4 sm:p-6 rounded-sm border border-white/5 flex items-start justify-between gap-2 hover:border-[#FABE01]/30 transition-colors group">
-        <div className="min-w-0">
-            <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-            <h3 className="text-2xl sm:text-3xl font-bold text-white group-hover:text-[#FABE01] transition-colors">{value}</h3>
-            {hint && <p className="text-xs text-zinc-600 mt-1.5 leading-snug">{hint}</p>}
-        </div>
-        <div className={`hidden sm:block p-3 shrink-0 rounded-full bg-white/5 ${STAT_ACCENTS[color]} group-hover:bg-[#FABE01]/10 group-hover:text-[#FABE01] transition-colors`}>
-            <Icon className="w-6 h-6" />
-        </div>
-    </div>
-);
-
 // Empty state reutilizavel. O padrao aqui e sempre apontar a proxima acao -
 // uma tela que so informa "0 itens" deixa o usuario sem saida.
 const EmptyState: React.FC<{
@@ -85,14 +55,16 @@ const EmptyState: React.FC<{
     description: string;
     action?: { label: string; onClick: () => void };
 }> = ({ icon: Icon, title, description, action }) => (
-    <div className="col-span-full py-14 px-6 text-center border border-dashed border-white/10 rounded-sm">
-        <Icon className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-        <p className="text-zinc-300 font-bold mb-1">{title}</p>
+    <div className="col-span-full py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
+        <span className="w-14 h-14 mx-auto mb-4 rounded-card bg-white/[0.03] flex items-center justify-center">
+            <Icon className="w-7 h-7 text-zinc-600" />
+        </span>
+        <p className="text-white font-bold mb-1">{title}</p>
         <p className="text-zinc-500 text-sm max-w-md mx-auto leading-relaxed">{description}</p>
         {action && (
             <button
                 onClick={action.onClick}
-                className="mt-6 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-sm uppercase tracking-wide transition-colors"
+                className="mt-6 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-sm px-5 py-2.5 rounded-full transition-colors"
             >
                 {action.label}
                 <ArrowRight className="w-4 h-4" />
@@ -126,12 +98,12 @@ const ClientCard: React.FC<{
             tabIndex={0}
             onClick={() => onOpen()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
-            className={`group text-left bg-[#1A1A1A] border rounded-sm p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
+            className={`group text-left bg-[#1A1A1A] border rounded-card p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
                 ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-white/5 hover:border-[#FABE01]/40'
             }`}
         >
             <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 shrink-0 rounded-sm bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
+                <div className="w-10 h-10 shrink-0 rounded-control bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
                     <Building2 className="w-5 h-5" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -173,12 +145,12 @@ const ClientCard: React.FC<{
             {(ajustes > 0 || aguardando > 0) && (
                 <div className="flex flex-wrap gap-1.5 mb-4">
                     {ajustes > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-sm">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-control">
                             <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s) pedido(s)
                         </span>
                     )}
                     {aguardando > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-zinc-400 px-2 py-1 rounded-sm">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-zinc-400 px-2 py-1 rounded-control">
                             {aguardando} aguardando o cliente
                         </span>
                     )}
@@ -196,7 +168,7 @@ const ClientCard: React.FC<{
                     <button
                         key={section}
                         onClick={(e) => { e.stopPropagation(); onOpen(section); }}
-                        className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-white hover:bg-white/5 px-2 py-1.5 rounded-sm transition-colors"
+                        className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-white hover:bg-white/5 px-2 py-1.5 rounded-control transition-colors"
                     >
                         <Icon className="w-3 h-3" /> {label}
                     </button>
@@ -212,6 +184,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
     const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team'>('overview');
+    const [isNavOpen, setIsNavOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
@@ -423,54 +396,98 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const equipeFiltrada = filteredUsers.filter(u => u.role === 'agencia');
     const clientesFiltrados = filteredUsers.filter(u => u.role !== 'agencia');
 
+    // Cabecalho por secao. Fica junto porque a saudacao e o subtitulo mudam com
+    // a navegacao e antes nao existiam - a tela abria com "Painel
+    // Administrativo" fixo, que nao dizia onde voce estava.
+    const HEADERS: Record<typeof activeTab, { title: string; subtitle: string }> = {
+        overview: {
+            title: greeting(userName),
+            subtitle: 'Resumo do que exige atenção hoje em todos os clientes.'
+        },
+        editorial: {
+            title: 'Calendário Editorial',
+            subtitle: 'Todas as publicações de todos os clientes em um lugar só.'
+        },
+        clients: {
+            title: 'Clientes',
+            subtitle: 'Clique em um cliente para abrir o espaço de trabalho dele.'
+        },
+        team: {
+            title: 'Equipe & Permissões',
+            subtitle: 'Quem tem acesso ao portal e a qual empresa cada conta pertence.'
+        }
+    };
+
+    const navGroups: NavGroup[] = [
+        {
+            title: 'Geral',
+            items: [
+                { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+                { id: 'editorial', label: 'Calendário Editorial', icon: Calendar },
+                { id: 'clients', label: 'Clientes', icon: Briefcase, badge: totalAjustes, badgeTone: 'amber' }
+            ]
+        },
+        {
+            title: 'Gestão',
+            items: [
+                { id: 'team', label: 'Equipe & Permissões', icon: Users, badge: unlinkedUsers.length }
+            ]
+        }
+    ];
+
+    const perfilNome = getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email });
+
     return (
-        <div className="min-h-screen bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black flex flex-col">
-            <header className="bg-[#111111] border-b border-white/5 sticky top-0 z-30 backdrop-blur-md bg-opacity-90">
-                <div className="max-w-7xl mx-auto px-4 h-16 sm:h-20 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                        <img src={favicon} alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert shrink-0" />
-                        <div className="h-8 w-px bg-white/10 hidden sm:block" />
-                        <div className="min-w-0"><h1 className="text-base sm:text-lg font-bold text-white leading-none truncate">Painel Administrativo</h1><p className="hidden sm:block text-xs text-[#FABE01] mt-1 font-bold uppercase tracking-widest">Gestão Nocrato</p></div>
-                    </div>
-                    <div className="flex items-center gap-4 sm:gap-6">
-                        {onOpenProfile ? (
-                            <button onClick={onOpenProfile} className="flex items-center gap-3 group" title={auth.currentUser?.email || undefined}>
-                                {isSafeImageSrc(profile?.fotoUrl) ? (
-                                    <img src={profile!.fotoUrl!} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-                                ) : (
-                                    <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs">
-                                        {getInitials({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
-                                    </div>
-                                )}
-                                <div className="hidden md:block text-left">
-                                    <p className="text-sm font-medium text-white group-hover:text-[#FABE01] transition-colors">
-                                        {getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
-                                    </p>
-                                    <p className="text-xs text-zinc-500">Ver meu perfil</p>
+        <div className="relative min-h-screen md:flex bg-[#111111] text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
+            <AppSidebar
+                groups={navGroups}
+                activeId={activeTab}
+                // O termo de busca e compartilhado pelas secoes; sem limpar na
+                // troca, o usuario mudava de secao e via uma lista vazia por
+                // causa de um filtro digitado em outro contexto.
+                onSelect={(id) => { setActiveTab(id as any); setSearchTerm(''); setIsNavOpen(false); }}
+                isOpen={isNavOpen}
+                onClose={() => setIsNavOpen(false)}
+                footer={
+                    <div className="space-y-1">
+                        <button
+                            onClick={onOpenProfile}
+                            disabled={!onOpenProfile}
+                            title={auth.currentUser?.email || undefined}
+                            className="flex items-center gap-3 w-full p-2 rounded-control hover:bg-white/5 transition-colors text-left disabled:hover:bg-transparent group"
+                        >
+                            {isSafeImageSrc(profile?.fotoUrl) ? (
+                                <img src={profile!.fotoUrl!} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                            ) : (
+                                <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs">
+                                    {getInitials({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: auth.currentUser?.email })}
                                 </div>
-                            </button>
-                        ) : (
-                            <div className="hidden md:block text-right"><p className="text-sm font-medium text-white">{auth.currentUser?.email}</p><p className="text-xs text-zinc-500">Administrador</p></div>
-                        )}<button onClick={handleLogout} className="p-2 text-zinc-400 hover:text-white rounded-sm"><LogOut className="w-5 h-5" /></button></div>
-                </div>
-            </header>
+                            )}
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-medium text-white truncate group-hover:text-[#FABE01] transition-colors">
+                                    {perfilNome}
+                                </span>
+                                <span className="block text-[11px] text-zinc-500 truncate">Agência · ver meu perfil</span>
+                            </span>
+                        </button>
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-control text-zinc-400 hover:text-red-400 hover:bg-red-400/5 transition-colors"
+                        >
+                            <LogOut className="w-[18px] h-[18px] shrink-0" />
+                            Sair da conta
+                        </button>
+                    </div>
+                }
+            />
 
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 overflow-x-hidden">
-                {notification && <div className="fixed top-24 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-sm shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
+            <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
+                <MobileTopBar title={HEADERS[activeTab].title} onOpenMenu={() => setIsNavOpen(true)} />
 
-                <div className="flex items-center gap-6 sm:gap-8 mb-6 sm:mb-8 border-b border-white/5 overflow-x-auto custom-scrollbar">
-                    {[
-                        { id: 'overview', label: 'Visão Geral', curto: 'Geral', icon: LayoutDashboard },
-                        { id: 'editorial', label: 'Calendário Editorial', curto: 'Calendário', icon: Calendar },
-                        { id: 'clients', label: 'Clientes (Empresas)', curto: 'Clientes', icon: Briefcase },
-                        { id: 'team', label: 'Equipe & Permissões', curto: 'Equipe', icon: Users }
-                    ].map(tab => (
-                        // O termo de busca e compartilhado pelas abas; sem limpar na
-                        // troca, o usuario mudava de aba e via uma lista vazia por
-                        // causa de um filtro digitado em outro contexto.
-                        <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchTerm(''); }} className={`flex items-center gap-2 shrink-0 px-1 pb-3 sm:pb-4 text-xs sm:text-sm font-bold uppercase tracking-wide transition-all relative whitespace-nowrap ${activeTab === tab.id ? 'text-[#FABE01]' : 'text-zinc-500 hover:text-zinc-300'}`}><tab.icon className="w-4 h-4 mb-0.5 shrink-0" /><span className="sm:hidden">{tab.curto}</span><span className="hidden sm:inline">{tab.label}</span>{activeTab === tab.id && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#FABE01]" />}</button>
-                    ))}
-                </div>
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
+                    {notification && <div className="fixed top-20 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-control shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
+
+                    <PageHeader title={HEADERS[activeTab].title} subtitle={HEADERS[activeTab].subtitle} />
 
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4"><Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" /></div>
@@ -478,15 +495,24 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                     <>
                         {activeTab === 'overview' && (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                                    <StatCard title="Total de Clientes" value={empresas.length} icon={Building2} color="yellow" />
-                                    <StatCard title="Usuários Cadastrados" value={users.length} icon={Users} color="blue" />
-                                    <StatCard
-                                        title="Aguardando vínculo"
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                                    <StatTile label="Clientes" value={empresas.length} icon={Building2} tone="brand" />
+                                    <StatTile label="Usuários cadastrados" value={users.length} icon={Users} />
+                                    <StatTile
+                                        label="Ajustes pedidos"
+                                        value={totalAjustes}
+                                        icon={MessageSquareWarning}
+                                        tone={totalAjustes > 0 ? 'attention' : 'positive'}
+                                        hint={totalAjustes > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe'}
+                                        onClick={totalAjustes > 0 ? () => { setActiveTab('clients'); setSearchTerm(''); } : undefined}
+                                    />
+                                    <StatTile
+                                        label="Aguardando vínculo"
                                         value={unlinkedUsers.length}
                                         icon={Shield}
-                                        color={unlinkedUsers.length > 0 ? 'yellow' : 'green'}
+                                        tone={unlinkedUsers.length > 0 ? 'attention' : 'positive'}
                                         hint={unlinkedUsers.length > 0 ? 'Sem empresa, não conseguem usar o portal' : 'Todo mundo com acesso liberado'}
+                                        onClick={unlinkedUsers.length > 0 ? () => { setActiveTab('team'); setSearchTerm(''); } : undefined}
                                     />
                                 </div>
 
@@ -498,7 +524,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                     mais urgente da agencia, porque alguem do outro
                                     lado esta esperando. Vem antes do resto. */}
                                 {totalAjustes > 0 && (
-                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-sm p-5">
+                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-card p-5">
                                         <div className="flex items-start gap-3">
                                             <MessageSquareWarning className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                                             <div className="flex-1 min-w-0">
@@ -515,7 +541,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                         <button
                                                             key={empresa.id}
                                                             onClick={() => onOpenClient(empresa.id, empresa.nome, 'calendar')}
-                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-sm transition-colors"
+                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-control transition-colors"
                                                         >
                                                             {empresa.nome}
                                                             <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px]">
@@ -530,7 +556,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                 )}
 
                                 {totalAjustes === 0 && unlinkedUsers.length === 0 && (
-                                    <div className="border border-white/5 bg-[#1A1A1A] rounded-sm p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+                                    <div className="border border-white/5 bg-[#1A1A1A] rounded-card p-6 flex flex-col sm:flex-row sm:items-center gap-4">
                                         <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                                             <Check className="w-5 h-5" />
                                         </div>
@@ -542,7 +568,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                         </div>
                                         <button
                                             onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2.5 rounded-sm uppercase tracking-wide transition-colors shrink-0"
+                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2.5 rounded-control uppercase tracking-wide transition-colors shrink-0"
                                         >
                                             Ver clientes <ArrowRight className="w-3.5 h-3.5" />
                                         </button>
@@ -550,7 +576,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                 )}
 
                                 {unlinkedUsers.length > 0 && (
-                                    <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-sm p-5">
+                                    <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-card p-5">
                                         <div className="flex items-start gap-3">
                                             <UserCog className="w-5 h-5 text-[#FABE01] shrink-0 mt-0.5" />
                                             <div className="flex-1 min-w-0">
@@ -568,7 +594,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                 </p>
                                                 <button
                                                     onClick={() => { setActiveTab('team'); setSearchTerm(''); }}
-                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-4 py-2 rounded-sm uppercase tracking-wide transition-colors"
+                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-4 py-2 rounded-control uppercase tracking-wide transition-colors"
                                                 >
                                                     Resolver agora <ArrowRight className="w-3.5 h-3.5" />
                                                 </button>
@@ -590,7 +616,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
                                 <div className="relative w-full max-w-md">
                                     <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
-                                    <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] outline-none" />
+                                    <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] outline-none" />
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {/* Distinguir "nenhuma empresa cadastrada" de "a busca nao
@@ -636,7 +662,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                             placeholder="Buscar por nome ou e-mail..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-sm py-2.5 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2.5 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
                                         />
                                         {searchTerm && (
                                             <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white">
@@ -657,7 +683,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                     Separar por papel tambem elimina a coluna "Vínculo"
                                     vazia com "Global" repetido em toda linha de agencia. */}
                                 {filteredUsers.length === 0 ? (
-                                    <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-sm">
+                                    <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
                                         <Users className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
                                         <p className="text-zinc-300 font-bold mb-1">Nenhum usuário encontrado</p>
                                         <p className="text-zinc-500 text-sm">
@@ -686,7 +712,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                         return (
                                                             <div
                                                                 key={user.id}
-                                                                className={`bg-[#1A1A1A] border rounded-sm p-4 group transition-colors ${
+                                                                className={`bg-[#1A1A1A] border rounded-card p-4 group transition-colors ${
                                                                     semVinculo ? 'border-[#FABE01]/25' : 'border-white/5 hover:border-white/15'
                                                                 }`}
                                                             >
@@ -703,7 +729,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                         <div className="flex items-center gap-2 flex-wrap">
                                                                             <p className="font-bold text-white truncate">{getDisplayName(user)}</p>
                                                                             {isMe && (
-                                                                                <span className="text-[9px] font-bold uppercase tracking-wider bg-[#FABE01]/15 text-[#FABE01] px-1.5 py-0.5 rounded-sm">
+                                                                                <span className="text-[9px] font-bold uppercase tracking-wider bg-[#FABE01]/15 text-[#FABE01] px-1.5 py-0.5 rounded-control">
                                                                                     Você
                                                                                 </span>
                                                                             )}
@@ -729,13 +755,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                         <select
                                                                                             value={pendingRoleChanges[user.id] ?? user.role}
                                                                                             onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                                            className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-sm px-2 py-1.5 outline-none focus:border-[#FABE01]"
+                                                                                            className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-1.5 outline-none focus:border-[#FABE01]"
                                                                                         >
                                                                                             <option value="cliente">Cliente</option>
                                                                                             <option value="agencia">Agência</option>
                                                                                         </select>
                                                                                         {pendingRoleChanges[user.id] && (
-                                                                                            <button onClick={() => handleSaveRole(user.id)} aria-label="Salvar permissão" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                            <button onClick={() => handleSaveRole(user.id)} aria-label="Salvar permissão" className="p-1.5 bg-[#FABE01] text-black rounded-control">
                                                                                                 <Save className="w-3.5 h-3.5" />
                                                                                             </button>
                                                                                         )}
@@ -753,9 +779,9 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                                 onChange={e => setNewCompanyIdInput(e.target.value)}
                                                                                                 placeholder="Nome da empresa"
                                                                                                 autoFocus
-                                                                                                className="bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-1.5 rounded-sm w-36 outline-none"
+                                                                                                className="bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-1.5 rounded-control w-36 outline-none"
                                                                                             />
-                                                                                            <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                            <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="p-1.5 bg-[#FABE01] text-black rounded-control">
                                                                                                 <Save className="w-3.5 h-3.5" />
                                                                                             </button>
                                                                                             <button onClick={() => setCreatingCompanyForUser(null)} aria-label="Cancelar" className="p-1.5 text-zinc-500 hover:text-white">
@@ -767,14 +793,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                             <select
                                                                                                 value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
                                                                                                 onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                                                className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-sm px-2 py-1.5 max-w-[150px] outline-none focus:border-[#FABE01]"
+                                                                                                className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-1.5 max-w-[150px] outline-none focus:border-[#FABE01]"
                                                                                             >
                                                                                                 <option value="null">— sem empresa —</option>
                                                                                                 {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
                                                                                                 <option value="create_new">+ Nova empresa</option>
                                                                                             </select>
                                                                                             {pendingEmpresaChanges[user.id] !== undefined && (
-                                                                                                <button onClick={() => handleSaveEmpresa(user.id)} aria-label="Salvar vínculo" className="p-1.5 bg-[#FABE01] text-black rounded-sm">
+                                                                                                <button onClick={() => handleSaveEmpresa(user.id)} aria-label="Salvar vínculo" className="p-1.5 bg-[#FABE01] text-black rounded-control">
                                                                                                     <Save className="w-3.5 h-3.5" />
                                                                                                 </button>
                                                                                             )}
@@ -788,7 +814,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                     onClick={() => handlePasswordReset(user.email)}
                                                                                     title="Enviar link de redefinição de senha"
                                                                                     aria-label="Enviar redefinição de senha"
-                                                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-sm transition-colors"
+                                                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-control transition-colors"
                                                                                 >
                                                                                     <Mail className="w-4 h-4" />
                                                                                 </button>
@@ -797,7 +823,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                         onClick={() => handleDeleteUser(user.id)}
                                                                                         title="Remover usuário"
                                                                                         aria-label="Remover usuário"
-                                                                                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/5 rounded-sm transition-colors"
+                                                                                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/5 rounded-control transition-colors"
                                                                                     >
                                                                                         <Trash2 className="w-4 h-4" />
                                                                                     </button>
@@ -818,6 +844,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                         )}
                     </>
                 )}
+                </div>
             </main>
         </div>
     );
