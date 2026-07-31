@@ -48,9 +48,17 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
         return unsubscribe;
     }, [empresaId, eventId]);
 
-    // Mantem a conversa rolada no fim quando chega mensagem nova.
+    // Rola para o fim so quando CHEGA mensagem nova, nunca na abertura.
+    //
+    // Sem o controle de primeira carga, o scrollIntoView disparava ao montar e
+    // levava o corpo do modal inteiro ate a conversa - o usuario abria um post
+    // e caia embaixo, passando por cima da previa, dos campos e da aprovacao.
+    const totalAnterior = useRef<number | null>(null);
     useEffect(() => {
-        endRef.current?.scrollIntoView({ block: 'nearest' });
+        if (totalAnterior.current !== null && comments.length > totalAnterior.current) {
+            endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        totalAnterior.current = comments.length;
     }, [comments.length]);
 
     const handleSend = async (e: React.FormEvent) => {

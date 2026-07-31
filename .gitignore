@@ -30,3 +30,7 @@ skills-lock.json
 *.njsproj
 *.sln
 *.sw?
+
+# Saida do harness visual (regeneravel: ver harness/README.md)
+dist-harness/
+harness/generated.css

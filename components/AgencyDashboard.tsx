@@ -8,7 +8,7 @@ import AgencyCalendarBoard from './AgencyCalendarBoard';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, ChevronDown, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, UserPlus
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check
 } from 'lucide-react';
 // @ts-ignore
 import favicon from '../assets/favicon.png';
@@ -65,13 +65,13 @@ const StatCard: React.FC<{
     color: StatAccent;
     hint?: string;
 }> = ({ title, value, icon: Icon, color, hint }) => (
-    <div className="bg-[#1A1A1A] p-6 rounded-sm border border-white/5 flex items-start justify-between hover:border-[#FABE01]/30 transition-colors group">
+    <div className="bg-[#1A1A1A] p-4 sm:p-6 rounded-sm border border-white/5 flex items-start justify-between gap-2 hover:border-[#FABE01]/30 transition-colors group">
         <div className="min-w-0">
             <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
             <h3 className="text-2xl sm:text-3xl font-bold text-white group-hover:text-[#FABE01] transition-colors">{value}</h3>
             {hint && <p className="text-xs text-zinc-600 mt-1.5 leading-snug">{hint}</p>}
         </div>
-        <div className={`p-3 shrink-0 rounded-full bg-white/5 ${STAT_ACCENTS[color]} group-hover:bg-[#FABE01]/10 group-hover:text-[#FABE01] transition-colors`}>
+        <div className={`hidden sm:block p-3 shrink-0 rounded-full bg-white/5 ${STAT_ACCENTS[color]} group-hover:bg-[#FABE01]/10 group-hover:text-[#FABE01] transition-colors`}>
             <Icon className="w-6 h-6" />
         </div>
     </div>
@@ -458,17 +458,17 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 overflow-x-hidden">
                 {notification && <div className="fixed top-24 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-sm shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
 
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-8 mb-8 border-b border-white/5 pb-2 sm:pb-0 overflow-x-auto">
+                <div className="flex items-center gap-6 sm:gap-8 mb-6 sm:mb-8 border-b border-white/5 overflow-x-auto custom-scrollbar">
                     {[
-                        { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-                        { id: 'editorial', label: 'Calendário Editorial', icon: Calendar },
-                        { id: 'clients', label: 'Clientes (Empresas)', icon: Briefcase },
-                        { id: 'team', label: 'Equipe & Permissões', icon: Users }
+                        { id: 'overview', label: 'Visão Geral', curto: 'Geral', icon: LayoutDashboard },
+                        { id: 'editorial', label: 'Calendário Editorial', curto: 'Calendário', icon: Calendar },
+                        { id: 'clients', label: 'Clientes (Empresas)', curto: 'Clientes', icon: Briefcase },
+                        { id: 'team', label: 'Equipe & Permissões', curto: 'Equipe', icon: Users }
                     ].map(tab => (
                         // O termo de busca e compartilhado pelas abas; sem limpar na
                         // troca, o usuario mudava de aba e via uma lista vazia por
                         // causa de um filtro digitado em outro contexto.
-                        <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchTerm(''); }} className={`flex items-center gap-2 px-2 pb-4 text-sm font-bold uppercase tracking-wide transition-all relative whitespace-nowrap ${activeTab === tab.id ? 'text-[#FABE01]' : 'text-zinc-500 hover:text-zinc-300'}`}><tab.icon className="w-4 h-4 mb-0.5" />{tab.label}{activeTab === tab.id && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#FABE01]" />}</button>
+                        <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setSearchTerm(''); }} className={`flex items-center gap-2 shrink-0 px-1 pb-3 sm:pb-4 text-xs sm:text-sm font-bold uppercase tracking-wide transition-all relative whitespace-nowrap ${activeTab === tab.id ? 'text-[#FABE01]' : 'text-zinc-500 hover:text-zinc-300'}`}><tab.icon className="w-4 h-4 mb-0.5 shrink-0" /><span className="sm:hidden">{tab.curto}</span><span className="hidden sm:inline">{tab.label}</span>{activeTab === tab.id && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#FABE01]" />}</button>
                     ))}
                 </div>
 
@@ -478,7 +478,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                     <>
                         {activeTab === 'overview' && (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                                     <StatCard title="Total de Clientes" value={empresas.length} icon={Building2} color="yellow" />
                                     <StatCard title="Usuários Cadastrados" value={users.length} icon={Users} color="blue" />
                                     <StatCard
@@ -526,6 +526,26 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                 </div>
                                             </div>
                                         </div>
+                                    </div>
+                                )}
+
+                                {totalAjustes === 0 && unlinkedUsers.length === 0 && (
+                                    <div className="border border-white/5 bg-[#1A1A1A] rounded-sm p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+                                        <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                                            <Check className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-white font-bold text-sm mb-0.5">Nada pendente com a equipe</p>
+                                            <p className="text-zinc-400 text-sm leading-relaxed">
+                                                Nenhum ajuste pedido e todo mundo com empresa vinculada.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
+                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2.5 rounded-sm uppercase tracking-wide transition-colors shrink-0"
+                                        >
+                                            Ver clientes <ArrowRight className="w-3.5 h-3.5" />
+                                        </button>
                                     </div>
                                 )}
 

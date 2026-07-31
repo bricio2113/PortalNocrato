@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <meta name="theme-color" content="#111111" />
+  <meta name="description" content="Portal exclusivo para clientes da Agência Nocrato. Acompanhe seus resultados e agendamentos." />
+
+  <link rel="icon" type="image/png" href="/favicon.png" />
+
+  <title>Agência Nocrato | Portal do Cliente</title>
+
+  <link rel="stylesheet" href="/harness/generated.css">
+
+  <script>
+    // Força o modo dark imediatamente antes de carregar o corpo
+    document.documentElement.classList.add('dark');
+  </script>
+
+  <style>
+    /* Scrollbar Global Estilizada */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #111111;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #FABE01;
+    }
+
+    body {
+      background-color: #111111;
+      color: #f4f4f5;
+    }
+  </style>
+</head>
+
+<body class="bg-[#111111] antialiased selection:bg-[#FABE01] selection:text-black">
+<div id="root"></div>
+
+<script type="module" src="/harness/main.tsx"></script>
+</body>
+</html>
