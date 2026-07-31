@@ -148,7 +148,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
 
           {/* COLUNA 1: FORMULÁRIO DE ADIÇÃO */}
           <div className="lg:col-span-1">
-            <div className="bg-[#1A1A1A] rounded-sm border border-white/5 p-6 sticky top-8">
+            <div className="bg-[#1A1A1A] rounded-card border border-white/5 p-6 sticky top-8">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-[#FABE01]" />
                 Adicionar Novo Link
@@ -162,7 +162,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                       value={formData.title}
                       onChange={(e) => setFormData({...formData, title: e.target.value})}
                       placeholder="Ex: Pasta de Fotos Maio"
-                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
                       required
                   />
                 </div>
@@ -175,7 +175,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                         value={formData.url}
                         onChange={(e) => setFormData({...formData, url: e.target.value})}
                         placeholder="drive.google.com/..."
-                        className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 pl-9 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
+                        className="w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-2 pl-9 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all placeholder:text-zinc-600"
                         required
                     />
                     <LinkIcon className="absolute left-3 top-2.5 w-4 h-4 text-zinc-600" />
@@ -190,7 +190,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                   <select
                       value={formData.category}
                       onChange={(e) => setFormData({...formData, category: e.target.value})}
-                      className="w-full bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none cursor-pointer"
+                      className="w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-2 text-white text-sm focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none cursor-pointer"
                   >
                     {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
@@ -199,7 +199,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                 <button
                     type="submit"
                     disabled={!formData.title || !formData.url}
-                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-2.5 rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.1)] transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold py-2.5 rounded-control shadow-[0_0_15px_rgba(250,190,1,0.1)] transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Salvar Arquivo
                 </button>
@@ -217,16 +217,16 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {listError && (
-                      <p className="col-span-full text-red-400 text-sm border border-red-500/20 bg-red-500/5 rounded-sm px-4 py-3">
+                      <p className="col-span-full text-red-400 text-sm border border-red-500/20 bg-red-500/5 rounded-control px-4 py-3">
                         {listError}
                       </p>
                   )}
                   {links.map(link => (
-                      <div key={link.id} className="group bg-[#1A1A1A] border border-white/5 p-5 rounded-sm hover:border-[#FABE01]/30 transition-all flex flex-col justify-between min-h-[140px]">
+                      <div key={link.id} className="group bg-[#1A1A1A] border border-white/5 p-5 rounded-card hover:border-[#FABE01]/30 transition-all flex flex-col justify-between min-h-[140px]">
 
                         {/* Topo do Card */}
                         <div className="flex justify-between items-start mb-4">
-                          <div className="p-2 bg-white/5 rounded-sm group-hover:bg-[#FABE01]/10 transition-colors">
+                          <div className="p-2 bg-white/5 rounded-control group-hover:bg-[#FABE01]/10 transition-colors">
                             {getIconByCategory(link.category)}
                           </div>
                           <button
@@ -250,13 +250,13 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                                 href={toSafeHref(link.url)!}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-4 flex items-center justify-center gap-2 w-full py-2 border border-white/10 hover:bg-[#FABE01] hover:border-[#FABE01] text-zinc-300 hover:text-black text-sm font-bold rounded-sm transition-all group/btn"
+                                className="mt-4 flex items-center justify-center gap-2 w-full py-2 border border-white/10 hover:bg-[#FABE01] hover:border-[#FABE01] text-zinc-300 hover:text-black text-sm font-bold rounded-control transition-all group/btn"
                             >
                               Acessar Drive
                               <ExternalLink className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
                             </a>
                         ) : (
-                            <span className="mt-4 flex items-center justify-center w-full py-2 border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-bold rounded-sm">
+                            <span className="mt-4 flex items-center justify-center w-full py-2 border border-red-500/20 bg-red-500/5 text-red-400 text-xs font-bold rounded-control">
                               Link inválido
                             </span>
                         )}
@@ -264,7 +264,7 @@ const IdeasHubView: React.FC<IdeasHubViewProps> = ({ empresaId }) => {
                   ))}
 
                   {links.length === 0 && (
-                      <div className="col-span-full py-14 px-6 text-center border border-dashed border-white/10 rounded-sm">
+                      <div className="col-span-full py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
                         <Folder className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
                         <p className="text-zinc-300 font-bold mb-1">Nenhum arquivo salvo ainda</p>
                         {/* "ao lado" so era verdade no desktop: abaixo de lg o formulario

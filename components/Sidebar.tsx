@@ -1,13 +1,10 @@
 import React from 'react';
 import { View, UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
-// Importação da Logo
-// @ts-ignore
-import favicon from '../assets/favicon.png';
-// Ícones Lucide (Atualizados para Target e DownloadCloud)
+import { AppSidebar, NavGroup } from './AppSidebar';
 import {
     Calendar, Target, DownloadCloud, ExternalLink,
-    MessageCircle, LogOut, ArrowLeft, X, UserCircle
+    MessageCircle, LogOut, ArrowLeft, UserCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -30,221 +27,114 @@ interface SidebarProps {
     toggleTheme: () => void;
 }
 
-// --- ITEM DE NAVEGAÇÃO ---
-const NavItem: React.FC<{
-    icon: React.ReactNode;
-    label: string;
-    isActive: boolean;
-    onClick: () => void;
-    /** Quantidade pendente. Zero ou ausente nao desenha o selo. */
-    badge?: number;
-}> = ({ icon, label, isActive, onClick, badge }) => {
-    return (
-        <button
-            onClick={onClick}
-            className={`group flex items-center w-full px-4 py-3 text-sm font-medium rounded-sm transition-all duration-200 relative ${
-                isActive
-                    ? 'bg-[#FABE01]/10 text-[#FABE01]'
-                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
-            }`}
-        >
-            {/* Barra lateral dourada para item ativo */}
-            {isActive && (
-                <span className="absolute left-0 top-0 bottom-0 w-1 bg-[#FABE01] rounded-r-full shadow-[0_0_10px_#FABE01]" />
-            )}
-
-            <span className={`mr-3 transition-transform group-hover:scale-110 ${isActive ? 'text-[#FABE01]' : 'text-zinc-500 group-hover:text-white'}`}>
-        {icon}
-      </span>
-            <span className="flex-1 text-left">{label}</span>
-
-            {/* Selo de pendencia: e o unico sinal de que existe algo esperando o
-                usuario. Sem ele o portal nao tem motivo para ser aberto. */}
-            {badge !== undefined && badge > 0 && (
-                <span
-                    className="ml-2 shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-[#FABE01] text-black text-[10px] font-bold"
-                    aria-label={`${badge} item(ns) aguardando você`}
-                >
-                    {badge > 9 ? '9+' : badge}
-                </span>
-            )}
-        </button>
-    );
-};
-
-// --- COMPONENTE SIDEBAR ---
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, isOpen, onClose, handleLogout, userRole, userEmail, profile, empresaNome, pendingCount = 0, onBackToDashboard, theme, toggleTheme }) => {
-
-    const navItems = [
+/**
+ * Menu do portal do cliente.
+ *
+ * A casca - gaveta, overlay, pilulas, rodape - vive em AppSidebar e e a mesma
+ * do painel da agencia e do espaco de trabalho de um cliente. Aqui fica so o
+ * que e especifico deste contexto: quais secoes existem e o atalho de suporte.
+ */
+const Sidebar: React.FC<SidebarProps> = ({
+    currentView, setCurrentView, isOpen, onClose, handleLogout,
+    userRole, userEmail, profile, empresaNome, pendingCount = 0, onBackToDashboard
+}) => {
+    const groups: NavGroup[] = [
         {
-            view: View.CALENDAR,
-            label: 'Calendário Editorial',
-            icon: <Calendar className="w-5 h-5" />
+            title: 'Geral',
+            items: [
+                // O selo de pendencia e o unico sinal de que existe algo
+                // esperando o usuario. Sem ele o portal nao tem motivo para
+                // ser aberto.
+                { id: View.CALENDAR, label: 'Calendário Editorial', icon: Calendar, badge: pendingCount },
+                { id: View.UPDATES, label: 'Foco da Semana', icon: Target },
+                { id: View.IDEAS, label: 'Arquivos & Materiais', icon: DownloadCloud }
+            ]
         },
         {
-            view: View.UPDATES,
-            label: 'Foco da Semana',
-            // Ícone atualizado para Target (Alvo)
-            icon: <Target className="w-5 h-5" />
-        },
-        {
-            view: View.IDEAS,
-            label: 'Arquivos & Materiais',
-            // Ícone atualizado para DownloadCloud (Nuvem)
-            icon: <DownloadCloud className="w-5 h-5" />
-        },
-        {
-            view: View.PROFILE,
-            label: 'Meu Perfil',
-            icon: <UserCircle className="w-5 h-5" />
-        },
+            title: 'Conta',
+            items: [
+                { id: View.PROFILE, label: 'Meu Perfil', icon: UserCircle }
+            ]
+        }
     ];
 
     const handleNavItemClick = (view: View) => {
         setCurrentView(view);
-        if (window.innerWidth < 768) {
-            onClose(); // Fecha menu mobile ao clicar
-        }
-    }
+        if (window.innerWidth < 768) onClose(); // Fecha a gaveta ao escolher no mobile
+    };
+
+    const parts = { nome: profile?.nome, sobrenome: profile?.sobrenome, email: userEmail };
+    const hasPhoto = isSafeImageSrc(profile?.fotoUrl);
 
     return (
-        <>
-            {/* OVERLAY MOBILE */}
-            <div
-                className={`fixed inset-0 bg-black/80 z-40 backdrop-blur-sm transition-opacity duration-300 md:hidden ${
-                    isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                }`}
-                onClick={onClose}
-                aria-hidden="true"
-            />
-
-            {/* SIDEBAR */}
-            <aside
-                className={`
-            fixed md:sticky top-0 left-0 z-50 h-screen w-72 bg-[#111111] border-r border-white/5 
-            flex flex-col transform transition-transform duration-300 ease-out shadow-2xl md:shadow-none
-            ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-        `}
-            >
-                {/* HEADER DA SIDEBAR */}
-                <div className="h-20 flex items-center justify-between px-6 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                        <img src={favicon} alt="Nocrato" className="h-8 w-auto brightness-0 invert" />
-                        <div className="flex flex-col">
-                            <span className="text-lg font-bold text-white tracking-tight leading-none">Nocrato</span>
-                            <span className="text-[10px] text-[#FABE01] uppercase tracking-widest font-bold mt-0.5">Portal</span>
-                        </div>
-                    </div>
-
-                    {/* Botão Fechar (Mobile) */}
+        <AppSidebar
+            groups={groups}
+            activeId={currentView}
+            onSelect={(id) => handleNavItemClick(id as View)}
+            isOpen={isOpen}
+            onClose={onClose}
+            aboveNav={userRole === 'agencia' && onBackToDashboard ? (
+                <button
+                    onClick={onBackToDashboard}
+                    className="flex items-center justify-center gap-2 w-full px-3 py-2.5 text-sm font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
+                >
+                    <ArrowLeft className="w-4 h-4" />
+                    Voltar ao painel
+                </button>
+            ) : undefined}
+            footer={
+                <div className="space-y-1">
+                    {/* Identidade real da sessao. Antes isto era "Cliente Nocrato /
+                        Plano Premium" fixo no codigo: todo cliente via o mesmo
+                        nome e um plano que nao existe. */}
                     <button
-                        onClick={onClose}
-                        className="md:hidden p-2 text-zinc-400 hover:text-white transition-colors"
-                        aria-label="Fechar menu"
+                        onClick={() => handleNavItemClick(View.PROFILE)}
+                        title={userEmail || undefined}
+                        className="flex items-center gap-3 w-full p-2 rounded-control hover:bg-white/5 transition-colors text-left group"
                     >
-                        <X className="w-6 h-6" />
+                        {hasPhoto ? (
+                            <img src={profile!.fotoUrl!} alt="" className="w-9 h-9 shrink-0 rounded-full object-cover" />
+                        ) : (
+                            <div
+                                className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs"
+                                aria-hidden="true"
+                            >
+                                {getInitials(parts)}
+                            </div>
+                        )}
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-white truncate group-hover:text-[#FABE01] transition-colors">
+                                {getDisplayName(parts)}
+                            </span>
+                            <span className="block text-[11px] text-zinc-500 truncate">
+                                {userRole === 'agencia'
+                                    ? (empresaNome ? `Agência · vendo ${empresaNome}` : 'Agência')
+                                    : (empresaNome || 'Cliente')}
+                            </span>
+                        </span>
+                    </button>
+
+                    <a
+                        href="https://wa.me/5513991187759"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-control text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                        <MessageCircle className="w-[18px] h-[18px] shrink-0 text-zinc-500 group-hover:text-[#25D366] transition-colors" />
+                        Falar com a agência
+                        <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
+                    </a>
+
+                    <button
+                        onClick={handleLogout}
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-control text-zinc-400 hover:text-red-400 hover:bg-red-400/5 transition-colors"
+                    >
+                        <LogOut className="w-[18px] h-[18px] shrink-0" />
+                        Sair da conta
                     </button>
                 </div>
-
-                {/* CONTEÚDO DE NAVEGAÇÃO */}
-                <div className="flex-1 flex flex-col justify-between py-6 px-4 overflow-y-auto custom-scrollbar">
-
-                    {/* MENU PRINCIPAL */}
-                    <nav className="space-y-1">
-                        <p className="px-4 text-xs font-bold text-zinc-600 uppercase tracking-widest mb-4">Menu Principal</p>
-
-                        {userRole === 'agencia' && onBackToDashboard && (
-                            <button
-                                onClick={onBackToDashboard}
-                                className="flex items-center w-full px-4 py-3 mb-6 text-sm font-bold rounded-sm transition-all duration-200 bg-[#FABE01] text-black hover:bg-[#FABE01]/90 shadow-[0_0_15px_rgba(250,190,1,0.2)]"
-                            >
-                                <ArrowLeft className="w-4 h-4 mr-2" />
-                                Voltar ao Painel
-                            </button>
-                        )}
-
-                        {navItems.map((item) => (
-                            <NavItem
-                                key={item.view}
-                                icon={item.icon}
-                                label={item.label}
-                                isActive={currentView === item.view}
-                                onClick={() => handleNavItemClick(item.view)}
-                                badge={item.view === View.CALENDAR ? pendingCount : undefined}
-                            />
-                        ))}
-                    </nav>
-
-                    {/* RODAPÉ DA SIDEBAR */}
-                    <div className="space-y-1 pt-6 border-t border-white/5 mt-6">
-                        <p className="px-4 text-xs font-bold text-zinc-600 uppercase tracking-widest mb-2">Suporte & Config</p>
-
-                        <a
-                            href="https://wa.me/5513991187759"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group flex items-center w-full px-4 py-3 text-sm font-medium rounded-sm text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
-                        >
-                            <MessageCircle className="w-5 h-5 mr-3 text-zinc-500 group-hover:text-[#25D366] transition-colors" />
-                            Falar com a Agência
-                            <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
-                        </a>
-
-                        <button
-                            onClick={handleLogout}
-                            className="flex items-center w-full px-4 py-3 text-sm font-medium rounded-sm text-zinc-400 hover:text-red-400 hover:bg-red-400/5 transition-colors mt-2"
-                        >
-                            <LogOut className="w-5 h-5 mr-3" />
-                            Sair da Conta
-                        </button>
-                    </div>
-                </div>
-
-                {/* USER PROFILE MINI - identidade real da sessao.
-                    Antes isto era "Cliente Nocrato / Plano Premium" fixo no codigo:
-                    todo cliente via o mesmo nome e um plano que nao existe.
-                    Agora mostra nome e sobrenome; o e-mail vira o title, para
-                    quem precisa conferir a conta sem poluir a linha. */}
-                {(() => {
-                    const parts = { nome: profile?.nome, sobrenome: profile?.sobrenome, email: userEmail };
-                    const hasPhoto = isSafeImageSrc(profile?.fotoUrl);
-                    return (
-                        <button
-                            onClick={() => handleNavItemClick(View.PROFILE)}
-                            className="w-full p-4 border-t border-white/5 bg-black/20 hover:bg-black/40 transition-colors text-left group"
-                            title={userEmail || undefined}
-                        >
-                            <div className="flex items-center gap-3">
-                                {hasPhoto ? (
-                                    <img
-                                        src={profile!.fotoUrl!}
-                                        alt=""
-                                        className="w-8 h-8 shrink-0 rounded-full object-cover"
-                                    />
-                                ) : (
-                                    <div
-                                        className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-xs"
-                                        aria-hidden="true"
-                                    >
-                                        {getInitials(parts)}
-                                    </div>
-                                )}
-                                <div className="flex flex-col overflow-hidden flex-1">
-                                    <span className="text-sm font-medium text-white truncate group-hover:text-[#FABE01] transition-colors">
-                                        {getDisplayName(parts)}
-                                    </span>
-                                    <span className="text-[10px] text-zinc-500 truncate uppercase tracking-wider">
-                                        {userRole === 'agencia'
-                                            ? (empresaNome ? `Agência · vendo ${empresaNome}` : 'Agência')
-                                            : (empresaNome || 'Cliente')}
-                                    </span>
-                                </div>
-                            </div>
-                        </button>
-                    );
-                })()}
-            </aside>
-        </>
+            }
+        />
     );
 };
 

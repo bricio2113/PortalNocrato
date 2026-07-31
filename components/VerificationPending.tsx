@@ -86,7 +86,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
             </div>
 
             {/* Card Principal */}
-            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-6 sm:p-8 text-center animate-in zoom-in-95 duration-500">
+            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-card p-6 sm:p-8 text-center animate-in zoom-in-95 duration-500">
 
                 {/* Ícone de Destaque */}
                 <div className="flex justify-center mb-6">
@@ -104,7 +104,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
 
                 <p className="text-zinc-400 mb-6 leading-relaxed">
                     Enviamos um link de confirmação para:<br/>
-                    <span className="text-white font-medium bg-white/5 px-2 py-0.5 rounded-sm mt-1 inline-block">{user.email}</span>
+                    <span className="text-white font-medium bg-white/5 px-2 py-0.5 rounded-control mt-1 inline-block">{user.email}</span>
                 </p>
 
                 <p className="text-sm text-zinc-500 mb-8">
@@ -113,7 +113,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
 
                 {/* Mensagens de Feedback */}
                 {message && (
-                    <div className={`flex items-center gap-3 p-3 rounded-sm text-sm font-medium mb-6 text-left animate-in fade-in slide-in-from-top-2 ${
+                    <div className={`flex items-center gap-3 p-3 rounded-control text-sm font-medium mb-6 text-left animate-in fade-in slide-in-from-top-2 ${
                         message.type === 'success'
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                             : 'bg-red-500/10 text-red-400 border border-red-500/20'
@@ -130,7 +130,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
                     <button
                         onClick={() => checkVerification()}
                         disabled={isChecking || isSending}
-                        className="w-full flex justify-center items-center gap-2 py-3 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm rounded-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] transition-all hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isChecking ? (
                             <> <Loader2 className="w-4 h-4 animate-spin" /> Verificando... </>
@@ -142,7 +142,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
                     <button
                         onClick={handleResend}
                         disabled={isSending || isChecking}
-                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-[#FABE01]/30 hover:bg-[#FABE01]/5 text-[#FABE01] font-bold text-sm rounded-sm transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-[#FABE01]/30 hover:bg-[#FABE01]/5 text-[#FABE01] font-bold text-sm rounded-control transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isSending ? (
                             <> <RefreshCw className="w-4 h-4 animate-spin" /> Enviando... </>
@@ -153,7 +153,7 @@ const VerificationPending: React.FC<VerificationPendingProps> = ({ user, handleL
 
                     <button
                         onClick={onLogout}
-                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white text-sm font-medium rounded-sm transition-colors"
+                        className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white text-sm font-medium rounded-control transition-colors"
                     >
                         <LogOut className="w-4 h-4" />
                         Sair da conta

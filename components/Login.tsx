@@ -162,13 +162,13 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
 
                     {/* Alertas */}
                     {(error || resetError) && (
-                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-sm text-sm flex items-center gap-3">
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-control text-sm flex items-center gap-3">
                             <AlertCircle className="w-4 h-4 shrink-0" />
                             <p>{error || resetError}</p>
                         </div>
                     )}
                     {resetMessage && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-sm text-sm flex items-center gap-3">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-control text-sm flex items-center gap-3">
                             <CheckCircle2 className="w-4 h-4 shrink-0" />
                             <p>{resetMessage}</p>
                         </div>
@@ -190,7 +190,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         autoComplete="email"
                                         autoCapitalize="none"
                                         spellCheck={false}
-                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
                                 </div>
@@ -199,7 +199,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                             <button
                                 type="submit"
                                 disabled={isSendingReset}
-                                className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)]"
+                                className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3 px-4 rounded-control transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)]"
                             >
                                 {isSendingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar Link'}
                             </button>
@@ -224,7 +224,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         autoComplete="email"
                                         autoCapitalize="none"
                                         spellCheck={false}
-                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-4 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="seu@email.com"
                                     />
                                 </div>
@@ -246,7 +246,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
                                         autoComplete="current-password"
-                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-sm py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
+                                        className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-control py-3 pl-10 pr-10 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600"
                                         placeholder="••••••••"
                                     />
                                     <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-3 top-3.5 text-zinc-500 hover:text-white transition-colors">
@@ -259,7 +259,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3.5 px-4 rounded-sm transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5"
+                                    className="w-full bg-[#FABE01] hover:bg-[#FABE01]/90 text-[#111111] font-bold py-3.5 px-4 rounded-control transition-all flex items-center justify-center gap-2 uppercase tracking-wide text-sm shadow-[0_0_15px_rgba(250,190,1,0.2)] hover:shadow-[0_0_20px_rgba(250,190,1,0.4)] hover:-translate-y-0.5"
                                 >
                                     {isLoading ? (
                                         <> <Loader2 className="w-4 h-4 animate-spin" /> ACESSANDO... </>

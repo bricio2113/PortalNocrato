@@ -125,7 +125,7 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
                                         <span className="text-xs font-bold text-white truncate" title={comment.authorEmail}>
                                             {getDisplayName({ nome: comment.authorName, email: comment.authorEmail })}
                                         </span>
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-control ${
                                             isAgency ? 'bg-[#FABE01]/15 text-[#FABE01]' : 'bg-white/5 text-zinc-400'
                                         }`}>
                                             {isAgency ? 'Agência' : 'Cliente'}
@@ -165,13 +165,13 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
                             handleSend(e as unknown as React.FormEvent);
                         }
                     }}
-                    className="flex-1 bg-[#111111] border border-zinc-700 rounded-sm px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all resize-none"
+                    className="flex-1 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all resize-none"
                 />
                 <button
                     type="submit"
                     disabled={!text.trim() || isSending}
                     aria-label="Enviar comentário"
-                    className="h-10 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold rounded-sm flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="h-10 px-4 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold rounded-control flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                     {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
