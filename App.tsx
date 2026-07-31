@@ -118,7 +118,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
                         <Menu className="w-6 h-6" />
                     </button>
                 </header>
-                <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {renderPortalContent()}
                 </div>
             </main>

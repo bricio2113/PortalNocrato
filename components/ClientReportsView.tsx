@@ -188,7 +188,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
             </header>
 
             {isAgency && isFormOpen && (
-                <form onSubmit={handleSubmit} className="bg-[#1A1A1A] border border-[#FABE01]/20 rounded-sm p-6 mb-8 space-y-5">
+                <form onSubmit={handleSubmit} className="bg-[#1A1A1A] border border-[#FABE01]/20 rounded-sm p-4 sm:p-6 mb-8 space-y-5">
                     <div className="flex items-center justify-between">
                         <h2 className="text-white font-bold">
                             {editingId ? `Editando ${formatPeriodo(form.ano, form.mes)}` : 'Novo relatório'}
@@ -328,7 +328,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
             ) : (
                 <div className="space-y-4">
                     {reports.map(report => (
-                        <article key={report.id} className="bg-[#1A1A1A] border border-white/5 rounded-sm p-6 group">
+                        <article key={report.id} className="bg-[#1A1A1A] border border-white/5 rounded-sm p-4 sm:p-6 group">
                             <div className="flex items-start justify-between gap-4 mb-4">
                                 <div>
                                     <h2 className="text-white font-bold text-lg">{formatPeriodo(report.ano, report.mes)}</h2>
@@ -340,7 +340,7 @@ const ClientReportsView: React.FC<ClientReportsViewProps> = ({ empresaId, userRo
                                     )}
                                 </div>
                                 {isAgency && (
-                                    <div className="flex items-center gap-1 sm:opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                                         <button onClick={() => openEdit(report)} aria-label="Editar relatório" className="p-2 text-zinc-500 hover:text-[#FABE01] transition-colors">
                                             <Pencil className="w-4 h-4" />
                                         </button>

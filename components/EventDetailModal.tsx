@@ -204,10 +204,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
         >
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
-            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90vh] sm:h-auto sm:max-h-[90vh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-xl sm:rounded-sm shadow-2xl flex flex-col h-[90dvh] sm:h-auto sm:max-h-[90dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
 
                 {isDeleting && (
-                    <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
+                    <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
                         <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
                         {/* Antes dizia "Esta ação pode ser desfeita" - o oposto do que
                             acontece. A exclusao apaga o evento, o espelho e o card do
@@ -227,7 +227,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 )}
 
                 {showDiscardWarning && (
-                    <div className="absolute inset-0 z-20 bg-[#1A1A1A] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200">
+                    <div className="absolute inset-0 z-20 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
                         <h3 className="text-xl font-bold text-white mb-2">Descartar alterações?</h3>
                         <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
                             Você editou esta publicação e ainda não salvou. Se sair agora, as alterações são perdidas.
@@ -240,7 +240,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 )}
 
                 {/* Header */}
-                <div className="flex items-start justify-between p-6 border-b border-white/5 shrink-0 gap-4">
+                <div className="flex items-start justify-between p-4 sm:p-6 border-b border-white/5 shrink-0 gap-3 sm:gap-4">
                     <div className="flex-1">
                         <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Título da Publicação</label>
                         <div className="relative w-full min-h-[40px]">
@@ -261,7 +261,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </div>
 
                 {/* Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar">
 
                     {/* ESTAGIO + APROVACAO
                         O cliente nao precisa entender os sete status internos da

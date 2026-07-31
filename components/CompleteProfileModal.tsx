@@ -70,7 +70,7 @@ const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({ profile, on
                 <img src={favicon} alt="Nocrato" className="h-12 w-auto brightness-0 invert opacity-80" />
             </div>
 
-            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-8 animate-in zoom-in-95 duration-300">
+            <div className="w-full max-w-md bg-[#1A1A1A] border border-white/5 shadow-2xl rounded-sm p-6 sm:p-8 animate-in zoom-in-95 duration-300">
 
                 <div className="flex justify-center mb-6">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#FABE01] to-[#DE7928] flex items-center justify-center text-black font-bold text-2xl">

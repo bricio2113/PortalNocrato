@@ -48,9 +48,17 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
         return unsubscribe;
     }, [empresaId, eventId]);
 
-    // Mantem a conversa rolada no fim quando chega mensagem nova.
+    // Rola para o fim so quando CHEGA mensagem nova, nunca na abertura.
+    //
+    // Sem o controle de primeira carga, o scrollIntoView disparava ao montar e
+    // levava o corpo do modal inteiro ate a conversa - o usuario abria um post
+    // e caia embaixo, passando por cima da previa, dos campos e da aprovacao.
+    const totalAnterior = useRef<number | null>(null);
     useEffect(() => {
-        endRef.current?.scrollIntoView({ block: 'nearest' });
+        if (totalAnterior.current !== null && comments.length > totalAnterior.current) {
+            endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        totalAnterior.current = comments.length;
     }, [comments.length]);
 
     const handleSend = async (e: React.FormEvent) => {
@@ -132,7 +140,7 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
                                     <button
                                         onClick={() => handleDelete(comment.id)}
                                         aria-label="Remover comentário"
-                                        className="text-zinc-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                        className="text-zinc-700 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
                                     >
                                         <Trash2 className="w-3.5 h-3.5" />
                                     </button>

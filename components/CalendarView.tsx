@@ -306,16 +306,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                     <>
                         {viewMode === 'grid' && (
                             <div className="overflow-x-auto">
-                                <div className="grid grid-cols-7 bg-[#1A1A1A] min-w-[1200px]">
+                                <div className="grid grid-cols-7 bg-[#1A1A1A] min-w-[840px] lg:min-w-[1100px]">
                                     {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
                                         <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500 uppercase tracking-widest border-b border-r border-white/5 bg-[#111111]">{day}</div>
                                     ))}
                                     {calendarDays.map((date, index) => {
-                                        if (!date) return <div key={`empty-${index}`} className="bg-[#111111]/50 border-b border-r border-white/5 min-h-[140px]" />;
+                                        if (!date) return <div key={`empty-${index}`} className="bg-[#111111]/50 border-b border-r border-white/5 min-h-[96px] sm:min-h-[140px]" />;
                                         const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                         const isTodayDate = isToday(date);
                                         return (
-                                            <div key={date.toISOString()} className={`group relative min-h-[140px] p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
+                                            <div key={date.toISOString()} className={`group relative min-h-[96px] sm:min-h-[140px] p-1.5 sm:p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{date.getDate()}</span>
                                                     <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-sm transition-all"><Plus className="w-4 h-4" /></button>

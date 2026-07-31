@@ -158,7 +158,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
 
             {/* BARRA SUPERIOR */}
             <div className={embedded ? 'border-b border-white/5 mb-2' : 'sticky top-0 z-30 bg-[#111111]/95 backdrop-blur border-b border-white/5'}>
-                <div className={`flex items-center justify-between gap-4 ${embedded ? 'py-1' : 'px-4 sm:px-8 py-3'}`}>
+                <div className={`flex flex-wrap items-center justify-between gap-3 ${embedded ? 'py-1' : 'px-4 sm:px-8 py-3'}`}>
                     {onBack && !embedded ? (
                         <button
                             onClick={onBack}
@@ -169,7 +169,7 @@ const AgencyCalendarBoard: React.FC<AgencyCalendarBoardProps> = ({ userEmail, us
                         </button>
                     ) : <span />}
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                     {/* Resolver capas: le a pasta do Drive de cada post e grava a
                         imagem de capa. Fica aqui, e nao automatico no carregamento,
                         porque sao N chamadas de rede - disparar isso a cada abertura

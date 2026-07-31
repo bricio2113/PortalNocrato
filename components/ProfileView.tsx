@@ -128,7 +128,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
                     </div>
                 )}
 
-                <form onSubmit={handleSave} className="bg-[#1A1A1A] border border-white/5 rounded-sm p-6 space-y-8">
+                <form onSubmit={handleSave} className="bg-[#1A1A1A] border border-white/5 rounded-sm p-4 sm:p-6 space-y-6 sm:space-y-8">
 
                     {/* FOTO */}
                     <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">

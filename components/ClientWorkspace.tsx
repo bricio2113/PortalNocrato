@@ -140,7 +140,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const statCard = (label: string, value: number | string, hint?: string, accent?: string) => (
         <div className="bg-[#1A1A1A] border border-white/5 rounded-sm p-5">
             <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">{label}</p>
-            <p className={`text-3xl font-bold ${accent || 'text-white'}`}>{value}</p>
+            <p className={`text-2xl sm:text-3xl font-bold ${accent || 'text-white'}`}>{value}</p>
             {hint && <p className="text-xs text-zinc-600 mt-1.5 leading-snug">{hint}</p>}
         </div>
     );
@@ -219,7 +219,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                             )}
                         </div>
 
-                        <div className="w-full">
+                        <div className="w-full max-w-md xl:max-w-none mx-auto xl:mx-0">
                             <FeedPreview events={events} empresaNome={empresaNome} />
                         </div>
                     </div>
@@ -282,7 +282,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                     </button>
                 </header>
 
-                <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {renderSection()}
                 </div>
             </main>
