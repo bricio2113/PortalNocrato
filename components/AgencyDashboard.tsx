@@ -189,6 +189,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
     const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
+    /** Card de colaborador aberto para edicao. Um por vez, de proposito. */
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
 
     // Pendencia por empresa: quais clientes pediram ajuste e estao esperando.
@@ -298,15 +300,56 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         }
     };
 
-    const handleSaveRole = async (userId: string) => {
-        const newRole = pendingRoleChanges[userId];
-        if (!newRole) return;
+    // EDICAO DE UM COLABORADOR.
+    //
+    // Antes os dois selects viviam abertos no card e cada um tinha o proprio
+    // botao de salvar, que so aparecia depois de mexer. Resultado: nada dizia
+    // se o que estava na tela era o valor atual ou uma alteracao ainda nao
+    // gravada, e trocar permissao e empresa exigia dois saves. Agora o card e
+    // leitura por padrao e a edicao e um estado explicito, com um Salvar so.
+    const startUserEdit = (userId: string) => {
+        setEditingUserId(userId);
+        setCreatingCompanyForUser(null);
+        descartarRascunho(userId);
+    };
+
+    const descartarRascunho = (userId: string) => {
+        setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
+        setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
+    };
+
+    const cancelUserEdit = (userId: string) => {
+        setEditingUserId(null);
+        setCreatingCompanyForUser(null);
+        descartarRascunho(userId);
+    };
+
+    const saveUserEdit = async (userId: string) => {
+        const novoRole = pendingRoleChanges[userId];
+        const novaEmpresa = pendingEmpresaChanges[userId];
+        if (novoRole === undefined && novaEmpresa === undefined) {
+            setEditingUserId(null);
+            return;
+        }
+
+        // Uma escrita so: gravar em dois update() separados deixaria a conta
+        // num estado meio-salvo se o segundo falhasse.
+        const patch: Record<string, unknown> = {};
+        if (novoRole !== undefined) patch.role = novoRole;
+        if (novaEmpresa !== undefined) patch.empresaId = novaEmpresa;
+
         try {
-            await db.collection('usuarios').doc(userId).update({ role: newRole });
-            setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
-            setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
-            showNotification('Atualizado!');
-        } catch (e) { showNotification('Erro'); }
+            await db.collection('usuarios').doc(userId).update(patch);
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } as UserData : u));
+            descartarRascunho(userId);
+            setEditingUserId(null);
+            showNotification('Alterações salvas.');
+        } catch (e) {
+            console.error(e);
+            // Mantem o modo de edicao aberto: o rascunho continua na tela para
+            // o usuario tentar de novo em vez de perder o que escolheu.
+            showNotification('Não foi possível salvar. Tente novamente.');
+        }
     };
 
     const handleEmpresaSelection = (userId: string, val: string) => {
@@ -317,17 +360,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             return;
         }
         setPendingEmpresaChanges(prev => ({ ...prev, [userId]: val === 'null' ? null : val }));
-    };
-
-    const handleSaveEmpresa = async (userId: string) => {
-        const newId = pendingEmpresaChanges[userId];
-        if (newId === undefined) return;
-        try {
-            await db.collection('usuarios').doc(userId).update({ empresaId: newId });
-            setUsers(users.map(u => u.id === userId ? { ...u, empresaId: newId } : u));
-            setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
-            showNotification('Vínculo atualizado!');
-        } catch (e) { showNotification('Erro'); }
     };
 
     const handleCreateAndAssignCompany = async (userId: string) => {
@@ -359,6 +391,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             await db.collection('usuarios').doc(userId).update({ empresaId });
             setCreatingCompanyForUser(null);
             setNewCompanyIdInput('');
+            // O vinculo ja foi gravado aqui; deixar o card em edicao faria o
+            // Salvar seguinte reenviar um empresaId antigo do rascunho.
+            setEditingUserId(null);
+            descartarRascunho(userId);
             showNotification(`Empresa "${nome}" criada e vinculada.`);
             fetchData();
         } catch (e) {
@@ -699,138 +735,198 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                             ['Clientes', clientesFiltrados, 'Cada um vê apenas a própria empresa.']
                                         ] as const).map(([titulo, lista, legenda]) => lista.length > 0 && (
                                             <section key={titulo}>
-                                                <div className="flex items-baseline gap-3 mb-3">
-                                                    <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-widest">{titulo}</h3>
-                                                    <span className="text-xs text-zinc-600">{lista.length}</span>
+                                                <div className="flex items-center gap-2.5 mb-1">
+                                                    <h3 className="text-lg font-bold text-white tracking-tight">{titulo}</h3>
+                                                    <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">{lista.length}</span>
                                                 </div>
-                                                <p className="text-xs text-zinc-600 mb-4">{legenda}</p>
+                                                <p className="text-xs text-zinc-500 mb-4">{legenda}</p>
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
                                                     {lista.map(user => {
                                                         const isMe = user.id === auth.currentUser?.uid;
                                                         const semVinculo = user.role !== 'agencia' && !user.empresaId;
+                                                        const isEditing = editingUserId === user.id;
+                                                        const empresaAtual = empresas.find(e => e.id === user.empresaId);
+                                                        // Vinculo orfao: aponta para uma empresa que nao existe mais.
+                                                        // Sem tratar, o card se contradizia - selo "Ativo" no canto e
+                                                        // "Nenhuma" no campo Empresa. A conta funciona pela metade:
+                                                        // passa pelo gate de empresa mas nao acha dado nenhum.
+                                                        const vinculoOrfao = Boolean(user.empresaId) && !empresaAtual;
+
+                                                        // Selo de situacao. Ate agora o unico jeito de saber que uma
+                                                        // conta estava sem empresa era ler o texto de aviso; um selo
+                                                        // no canto responde isso varrendo a grade com o olho.
+                                                        const selo = user.role === 'agencia'
+                                                            ? { texto: 'Agência', cor: 'bg-[#FABE01]/15 text-[#FABE01]' }
+                                                            : semVinculo
+                                                                ? { texto: 'Sem empresa', cor: 'bg-amber-500/15 text-amber-400' }
+                                                                : vinculoOrfao
+                                                                    ? { texto: 'Vínculo quebrado', cor: 'bg-red-500/15 text-red-400' }
+                                                                    : { texto: 'Ativo', cor: 'bg-emerald-500/15 text-emerald-400' };
+
                                                         return (
                                                             <div
                                                                 key={user.id}
-                                                                className={`bg-[#1A1A1A] border rounded-card p-4 group transition-colors ${
-                                                                    semVinculo ? 'border-[#FABE01]/25' : 'border-white/5 hover:border-white/15'
+                                                                className={`bg-[#1A1A1A] border rounded-card p-4 flex flex-col transition-colors ${
+                                                                    vinculoOrfao ? 'border-red-500/30'
+                                                                        : semVinculo ? 'border-[#FABE01]/25'
+                                                                        : 'border-white/5 hover:border-white/15'
                                                                 }`}
                                                             >
+                                                                {/* IDENTIDADE */}
                                                                 <div className="flex items-start gap-3">
                                                                     {isSafeImageSrc(user.fotoUrl) ? (
-                                                                        <img src={user.fotoUrl!} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                                                                        <img src={user.fotoUrl!} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
                                                                     ) : (
-                                                                        <div className="w-10 h-10 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-xs">
+                                                                        <div className="w-11 h-11 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-sm">
                                                                             {getInitials(user)}
                                                                         </div>
                                                                     )}
-
                                                                     <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                        <div className="flex items-center gap-2">
                                                                             <p className="font-bold text-white truncate">{getDisplayName(user)}</p>
-                                                                            {isMe && (
-                                                                                <span className="text-[9px] font-bold uppercase tracking-wider bg-[#FABE01]/15 text-[#FABE01] px-1.5 py-0.5 rounded-control">
-                                                                                    Você
-                                                                                </span>
-                                                                            )}
+                                                                            {isMe && <span className="text-[9px] font-bold uppercase tracking-wider text-[#FABE01] shrink-0">você</span>}
                                                                         </div>
-                                                                        <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                                                                        <p className="text-xs text-zinc-500 truncate">
+                                                                            {user.role === 'agencia'
+                                                                                ? 'Equipe da agência'
+                                                                                : empresaAtual?.nome || (vinculoOrfao ? 'Empresa não encontrada' : 'Cliente sem empresa')}
+                                                                        </p>
+                                                                    </div>
+                                                                    <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${selo.cor}`}>
+                                                                        {selo.texto}
+                                                                    </span>
+                                                                </div>
 
-                                                                        {semVinculo && (
-                                                                            <p className="text-[11px] text-[#FABE01] mt-2 leading-relaxed">
-                                                                                Sem empresa: entra no portal e vê apenas um aviso.
+                                                                {/* CAMPOS. Em leitura sao texto; so viram controle no
+                                                                    modo de edicao. Antes os dois selects ficavam sempre
+                                                                    abertos no card, e nada dizia se aquilo era o valor
+                                                                    atual ou uma alteracao pendente. */}
+                                                                <div className="grid grid-cols-2 gap-3 mt-4">
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-1">Permissão</p>
+                                                                        {isEditing && !isMe ? (
+                                                                            <select
+                                                                                value={pendingRoleChanges[user.id] ?? user.role}
+                                                                                onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
+                                                                                className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
+                                                                            >
+                                                                                <option value="cliente">Cliente</option>
+                                                                                <option value="agencia">Agência</option>
+                                                                            </select>
+                                                                        ) : (
+                                                                            <p className="text-sm text-zinc-200 truncate">
+                                                                                {user.role === 'agencia' ? 'Administrador' : 'Cliente'}
                                                                             </p>
                                                                         )}
-
-                                                                        {/* Controles ficam embaixo, com rotulo. Antes eram
-                                                                            dois selects sem rotulo no meio da linha, e nada
-                                                                            dizia o que cada um fazia. */}
-                                                                        <div className="flex flex-wrap items-end gap-3 mt-3">
-                                                                            <div>
-                                                                                <label className="block text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-1">Permissão</label>
-                                                                                {isMe ? (
-                                                                                    <p className="text-xs text-[#FABE01] font-bold py-1.5">Administrador</p>
-                                                                                ) : (
-                                                                                    <div className="flex items-center gap-1.5">
-                                                                                        <select
-                                                                                            value={pendingRoleChanges[user.id] ?? user.role}
-                                                                                            onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                                            className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-1.5 outline-none focus:border-[#FABE01]"
-                                                                                        >
-                                                                                            <option value="cliente">Cliente</option>
-                                                                                            <option value="agencia">Agência</option>
-                                                                                        </select>
-                                                                                        {pendingRoleChanges[user.id] && (
-                                                                                            <button onClick={() => handleSaveRole(user.id)} aria-label="Salvar permissão" className="p-1.5 bg-[#FABE01] text-black rounded-control">
-                                                                                                <Save className="w-3.5 h-3.5" />
-                                                                                            </button>
-                                                                                        )}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            {user.role !== 'agencia' && (
-                                                                                <div>
-                                                                                    <label className="block text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-1">Empresa</label>
-                                                                                    {creatingCompanyForUser === user.id ? (
-                                                                                        <div className="flex items-center gap-1.5">
-                                                                                            <input
-                                                                                                value={newCompanyIdInput}
-                                                                                                onChange={e => setNewCompanyIdInput(e.target.value)}
-                                                                                                placeholder="Nome da empresa"
-                                                                                                autoFocus
-                                                                                                className="bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-1.5 rounded-control w-36 outline-none"
-                                                                                            />
-                                                                                            <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="p-1.5 bg-[#FABE01] text-black rounded-control">
-                                                                                                <Save className="w-3.5 h-3.5" />
-                                                                                            </button>
-                                                                                            <button onClick={() => setCreatingCompanyForUser(null)} aria-label="Cancelar" className="p-1.5 text-zinc-500 hover:text-white">
-                                                                                                <X className="w-3.5 h-3.5" />
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    ) : (
-                                                                                        <div className="flex items-center gap-1.5">
-                                                                                            <select
-                                                                                                value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
-                                                                                                onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                                                className="bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-1.5 max-w-[150px] outline-none focus:border-[#FABE01]"
-                                                                                            >
-                                                                                                <option value="null">— sem empresa —</option>
-                                                                                                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                                                <option value="create_new">+ Nova empresa</option>
-                                                                                            </select>
-                                                                                            {pendingEmpresaChanges[user.id] !== undefined && (
-                                                                                                <button onClick={() => handleSaveEmpresa(user.id)} aria-label="Salvar vínculo" className="p-1.5 bg-[#FABE01] text-black rounded-control">
-                                                                                                    <Save className="w-3.5 h-3.5" />
-                                                                                                </button>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            )}
-
-                                                                            <div className="flex items-center gap-1 ml-auto">
-                                                                                <button
-                                                                                    onClick={() => handlePasswordReset(user.email)}
-                                                                                    title="Enviar link de redefinição de senha"
-                                                                                    aria-label="Enviar redefinição de senha"
-                                                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/5 rounded-control transition-colors"
-                                                                                >
-                                                                                    <Mail className="w-4 h-4" />
-                                                                                </button>
-                                                                                {!isMe && (
-                                                                                    <button
-                                                                                        onClick={() => handleDeleteUser(user.id)}
-                                                                                        title="Remover usuário"
-                                                                                        aria-label="Remover usuário"
-                                                                                        className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/5 rounded-control transition-colors"
-                                                                                    >
-                                                                                        <Trash2 className="w-4 h-4" />
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
                                                                     </div>
+
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-1">Empresa</p>
+                                                                        {user.role === 'agencia' ? (
+                                                                            <p className="text-sm text-zinc-500 truncate">Todos os clientes</p>
+                                                                        ) : isEditing ? (
+                                                                            creatingCompanyForUser === user.id ? (
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <input
+                                                                                        value={newCompanyIdInput}
+                                                                                        onChange={e => setNewCompanyIdInput(e.target.value)}
+                                                                                        placeholder="Nome da empresa"
+                                                                                        autoFocus
+                                                                                        className="min-w-0 flex-1 bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-2 rounded-control outline-none"
+                                                                                    />
+                                                                                    <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="shrink-0 p-2 bg-[#FABE01] text-black rounded-control">
+                                                                                        <Save className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                    <button onClick={() => setCreatingCompanyForUser(null)} aria-label="Cancelar nova empresa" className="shrink-0 p-2 text-zinc-500 hover:text-white">
+                                                                                        <X className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <select
+                                                                                    value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
+                                                                                    onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
+                                                                                    className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
+                                                                                >
+                                                                                    <option value="null">— sem empresa —</option>
+                                                                                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                                                    <option value="create_new">+ Nova empresa</option>
+                                                                                </select>
+                                                                            )
+                                                                        ) : (
+                                                                            <p
+                                                                                className={`text-sm truncate ${vinculoOrfao ? 'text-red-400' : semVinculo ? 'text-amber-400' : 'text-zinc-200'}`}
+                                                                                title={vinculoOrfao ? `ID gravado: ${user.empresaId}` : undefined}
+                                                                            >
+                                                                                {empresaAtual?.nome || (vinculoOrfao ? user.empresaId : 'Nenhuma')}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* CONTATO em poco proprio: o e-mail e longo e estava
+                                                                    competindo com o nome na mesma coluna de texto. */}
+                                                                <div className="mt-3 flex items-center gap-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2.5 min-w-0">
+                                                                    <Mail className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+                                                                    <span className="text-xs text-zinc-400 truncate" title={user.email}>{user.email}</span>
+                                                                </div>
+
+                                                                {!isEditing && semVinculo && (
+                                                                    <p className="text-[11px] text-amber-400/90 mt-3 leading-relaxed">
+                                                                        Sem empresa, esta conta entra no portal e vê apenas um aviso.
+                                                                    </p>
+                                                                )}
+                                                                {!isEditing && vinculoOrfao && (
+                                                                    <p className="text-[11px] text-red-400/90 mt-3 leading-relaxed">
+                                                                        A empresa vinculada não existe mais. Escolha outra em Editar, ou a conta entra e não encontra nada.
+                                                                    </p>
+                                                                )}
+
+                                                                {/* ACOES */}
+                                                                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
+                                                                    {isEditing ? (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => cancelUserEdit(user.id)}
+                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
+                                                                            >
+                                                                                Cancelar
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => saveUserEdit(user.id)}
+                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
+                                                                            >
+                                                                                Salvar
+                                                                            </button>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => startUserEdit(user.id)}
+                                                                                disabled={isMe && user.role === 'agencia'}
+                                                                                title={isMe ? 'Você não pode alterar a própria permissão' : undefined}
+                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                            >
+                                                                                Editar
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => handlePasswordReset(user.email)}
+                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
+                                                                            >
+                                                                                Enviar senha
+                                                                            </button>
+                                                                            {!isMe && (
+                                                                                <button
+                                                                                    onClick={() => handleDeleteUser(user.id)}
+                                                                                    title="Remover usuário"
+                                                                                    aria-label={`Remover ${getDisplayName(user)}`}
+                                                                                    className="shrink-0 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-400/5 rounded-control transition-colors"
+                                                                                >
+                                                                                    <Trash2 className="w-4 h-4" />
+                                                                                </button>
+                                                                            )}
+                                                                        </>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         );

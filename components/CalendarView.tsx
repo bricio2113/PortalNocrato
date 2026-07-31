@@ -42,6 +42,41 @@ const formatIcon = (type?: string) => {
 };
 
 /**
+ * Faixa de capa do card da grade mensal.
+ *
+ * Ocupa a largura inteira do card em vez de um quadradinho de 24px ao lado do
+ * texto: naquele tamanho a peca era um borrao e nao respondia "qual conteudo e
+ * esse?", que e a unica razao de mostrar imagem aqui. Sem capa nao desenha
+ * nada - faixa vazia so rouba altura.
+ */
+const EventCover: React.FC<{ event: CalendarEvent }> = ({ event }) => {
+    // Esconder so o <img> no onError deixava a moldura de pe: um retangulo
+    // escuro de 130px em cada card cuja capa esta restrita ou fora do ar - pior
+    // que nao ter faixa nenhuma. Desmontando a faixa inteira, o card volta a
+    // ser exatamente o de um post sem capa.
+    const [falhou, setFalhou] = useState(false);
+    const src = coverSourceOf(event);
+    const preview = getMediaPreview(src);
+
+    // Um src novo merece uma nova tentativa; sem isto o card ficava marcado
+    // como falho para sempre depois de "Resolver capas" trocar a imagem.
+    useEffect(() => { setFalhou(false); }, [src]);
+
+    if (falhou || !preview || preview.kind !== 'image') return null;
+    return (
+        <div className="w-full aspect-[4/3] bg-[#111111] overflow-hidden">
+            <img
+                src={preview.src}
+                alt=""
+                loading="lazy"
+                className="w-full h-full object-cover"
+                onError={() => setFalhou(true)}
+            />
+        </div>
+    );
+};
+
+/**
  * Miniatura quadrada do material.
  *
  * O card da agenda so trazia texto: para saber qual peca era, tinha que abrir
@@ -49,11 +84,17 @@ const formatIcon = (type?: string) => {
  * aqui e de graca e resolve a duvida sem clique nenhum.
  */
 const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, size }) => {
-    const preview = getMediaPreview(coverSourceOf(event));
+    // Mesmo motivo do EventCover: capa quebrada cai para o icone do formato em
+    // vez de deixar um quadrado vazio onde deveria ter a peca.
+    const [falhou, setFalhou] = useState(false);
+    const src = coverSourceOf(event);
+    const preview = getMediaPreview(src);
     const styles = getTypeStyles(event.type);
     const Icon = formatIcon(event.type);
 
-    if (preview && preview.kind === 'image') {
+    useEffect(() => { setFalhou(false); }, [src]);
+
+    if (!falhou && preview && preview.kind === 'image') {
         return (
             <div className={`${size} shrink-0 rounded-chip overflow-hidden bg-[#111111]`}>
                 <img
@@ -61,7 +102,7 @@ const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, s
                     alt=""
                     loading="lazy"
                     className="w-full h-full object-cover"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    onError={() => setFalhou(true)}
                 />
             </div>
         );
@@ -366,16 +407,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                         <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500 uppercase tracking-widest border-b border-r border-white/5 bg-[#111111]">{day}</div>
                                     ))}
                                     {calendarDays.map((date, index) => {
-                                        if (!date) return <div key={`empty-${index}`} className="bg-[#111111]/50 border-b border-r border-white/5 min-h-[96px] sm:min-h-[140px]" />;
+                                        if (!date) return <div key={`empty-${index}`} className="bg-[#111111]/50 border-b border-r border-white/5 min-h-[110px] sm:min-h-[170px]" />;
                                         const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                         const isTodayDate = isToday(date);
                                         return (
-                                            <div key={date.toISOString()} className={`group relative min-h-[96px] sm:min-h-[140px] p-1.5 sm:p-2 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
+                                            <div key={date.toISOString()} className={`group relative min-h-[110px] sm:min-h-[170px] p-2 sm:p-2.5 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{date.getDate()}</span>
                                                     <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-control transition-all"><Plus className="w-4 h-4" /></button>
                                                 </div>
-                                                <div className="flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                                                <div className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
                                                     {dayEvents.map(event => {
                                                         const styles = getTypeStyles(event.type);
                                                         const stage = CLIENT_STAGES[stageOf(event)];
@@ -393,26 +434,24 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                 // classe montada em tempo de execucao, e o Tailwind so gera o
                                                                 // que encontra literalmente no fonte. O fundo tingido ja
                                                                 // carrega a cor do formato.
-                                                                className={`cursor-pointer p-1.5 rounded-chip border border-white/5 hover:border-white/20 transition-colors ${styles.bg}`}
+                                                                className={`cursor-pointer rounded-chip border border-white/5 hover:border-white/20 transition-colors overflow-hidden ${styles.bg}`}
                                                             >
-                                                                <div className="flex items-start gap-1.5">
-                                                                    <EventThumb event={event} size="w-6 h-6" />
-                                                                    <div className="flex flex-col gap-1 min-w-0 flex-1">
-                                                                        <span className={`leading-tight break-words text-[11px] font-medium ${styles.text}`}>
-                                                                            {event.title || '(Sem título)'}
-                                                                        </span>
-                                                                        <div className="flex items-center gap-1 flex-wrap">
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
-                                                                            {/* Estagio direto no card: sem isso o contador do menu
-                                                                                dizia "3 pendentes" e o usuario tinha que abrir post
-                                                                                por post para descobrir quais. */}
-                                                                            {stageOf(event) !== 'em_producao' && (
-                                                                                <span
-                                                                                    className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`}
-                                                                                    title={stage.label}
-                                                                                />
-                                                                            )}
-                                                                        </div>
+                                                                <EventCover event={event} />
+                                                                <div className="p-2.5 space-y-2">
+                                                                    <p className={`text-[11px] leading-relaxed font-medium break-words line-clamp-4 ${styles.text}`}>
+                                                                        {event.title || '(Sem título)'}
+                                                                    </p>
+                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
+                                                                        {/* Estagio direto no card: sem isso o contador do menu
+                                                                            dizia "3 pendentes" e o usuario tinha que abrir post
+                                                                            por post para descobrir quais. */}
+                                                                        {stageOf(event) !== 'em_producao' && (
+                                                                            <span
+                                                                                className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`}
+                                                                                title={stage.label}
+                                                                            />
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </div>

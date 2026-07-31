@@ -27,6 +27,12 @@ cp harness/generated.css dist-harness/harness/generated.css
 node harness/audit.mjs
 ```
 
+> **Rode o passo do `tailwindcss` toda vez que mexer em classe.** O CSS é
+> gerado varrendo o código; reaproveitar um `generated.css` antigo faz a classe
+> nova simplesmente não existir, e o elemento é medido com 0 de altura sem erro
+> nenhum. Já aconteceu: uma faixa de capa `aspect-[4/3]` mediu 0px e parecia bug
+> no componente — era só o CSS velho.
+
 O `audit.mjs` sobe um servidor estático, abre cada tela em 360px e 390px e
 reporta:
 

@@ -19,6 +19,12 @@ const EVENTS = Array.from({ length: 14 }, (_, i) => ({
     approval: i % 4 === 0 ? 'ajuste_solicitado' : undefined,
     approvalByName: 'Maria Silva',
     url: 'https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrS',
+    // Parte dos posts com capa e parte sem, de proposito: os dois caminhos do
+    // card precisam ser medidos. Sem isto a grade so era exercitada no estado
+    // "sem imagem" e a faixa de capa nunca aparecia na auditoria.
+    // (Offline a imagem nao carrega e o onError a esconde; o que se valida
+    // aqui e a altura e o espacamento que a faixa ocupa, nao o arquivo.)
+    coverUrl: i % 2 === 0 ? `https://exemplo.invalido/capa-${i}.jpg` : undefined,
     copy: 'Legenda de exemplo '.repeat(8)
 }));
 
@@ -27,7 +33,7 @@ const LINKS = Array.from({ length: 5 }, (_, i) => ({ id: `l${i}`, title: `Materi
 const WEEKLY = Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, text: `Tarefa da semana ${i + 1} com texto razoavelmente longo`, completed: i % 3 === 0 }));
 const USERS = Array.from({ length: 8 }, (_, i) => ({
     id: `u${i}`, email: `usuario.numero${i}@umdominiobemlongo.com.br`,
-    role: i % 3 === 0 ? 'agencia' : 'cliente', empresaId: i % 3 === 0 ? null : 'agencia-mara',
+    role: i % 3 === 0 ? 'agencia' : 'cliente', empresaId: i % 3 === 0 ? null : (i % 4 === 1 ? 'empresa-que-nao-existe' : 'Agencia Mara'),
     nome: ['Maria', 'João', 'Ana', 'Carlos'][i % 4], sobrenome: ['Silva', 'Almeida', 'Nogueira', 'Teixeira'][i % 4]
 }));
 const EMPRESAS = ['Agencia Mara', 'Agencia Nocrato', 'Dra.SylviaFisio', 'MarcioFisio'].map(n => ({ id: n, nome: n }));
