@@ -9,13 +9,14 @@ import { subscribePendingCounts, PendingCounts } from './utils/posts';
 import Sidebar from './components/Sidebar';
 import CalendarView from './components/CalendarView';
 import WeeklyUpdatesView from './components/WeeklyUpdatesView';
-import IdeasHubView from './components/IdeasHubView';
+import MateriaisView from './components/MateriaisView';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import AgencyDashboard from './components/AgencyDashboard';
 import VerificationPending from './components/VerificationPending';
 // Importação da Nova View de Produção
 import ClientWorkspace from './components/ClientWorkspace';
+import ClientHomeView from './components/ClientHomeView';
 import ProfileView from './components/ProfileView';
 import CompleteProfileModal from './components/CompleteProfileModal';
 import { splitFullName, getDisplayName, isProfileComplete } from './utils/avatar';
@@ -80,14 +81,29 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 
     const renderPortalContent = () => {
         switch (currentView) {
+            case View.HOME: return (
+                <ClientHomeView
+                    empresaId={targetEmpresaId}
+                    empresaNome={targetEmpresaId}
+                    userName={userName}
+                    onIrParaCalendario={setCurrentView}
+                />
+            );
             case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
             case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
-            case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
+            case View.IDEAS: return <MateriaisView empresaId={targetEmpresaId} userRole={role} />;
             case View.PROFILE:
                 return profile
                     ? <ProfileView profile={profile} onSaved={onProfileSaved} />
                     : <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
-            default: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
+            default: return (
+                <ClientHomeView
+                    empresaId={targetEmpresaId}
+                    empresaNome={targetEmpresaId}
+                    userName={userName}
+                    onIrParaCalendario={setCurrentView}
+                />
+            );
         }
     };
 
@@ -128,7 +144,9 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 };
 
 const App: React.FC = () => {
-    const [currentView, setCurrentView] = useState<View>(View.CALENDAR);
+    // Abre na visao geral, nao no calendario: a primeira pergunta de quem
+    // entra e "tem algo me esperando?".
+    const [currentView, setCurrentView] = useState<View>(View.HOME);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const [user, setUser] = useState<firebase.User | null>(null);

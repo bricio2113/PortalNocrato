@@ -13,6 +13,7 @@ import FeedPreview from './FeedPreview';
 import { formatTime } from '../utils/date';
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
 import { subscribeThumbs } from '../utils/midia';
+import { registrarMudancas } from '../utils/historico';
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
     Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
@@ -338,7 +339,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         if (eventData.id) {
             try {
                 const { id, ...data } = eventData;
+                // Estado ANTES da escrita, para saber o que mudou. Lido daqui e
+                // nao do banco: `events` esta em onSnapshot, entao o array local
+                // e a versao que o usuario tinha na tela ao editar.
+                const antes = events.find(e => e.id === eventData.id) || null;
                 await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(stripUndefined(data));
+                // Nao bloqueia o salvamento: registrar() nunca lanca.
+                registrarMudancas(empresaId, antes, eventData, userEmail || '', userName || null, userRole);
                 await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
                 // Sem setEvents: o onSnapshot ja reflete a escrita, inclusive
                 // pelo cache local do Firestore. Duplicar aqui podia inserir
@@ -384,6 +391,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             try {
                 const { id, ...data } = eventData;
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(stripUndefined(data));
+                registrarMudancas(empresaId, null, { ...eventData, id: docRef.id }, userEmail || '', userName || null, userRole);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
 
                 // Cria o Card no Kanban com o status exato do modal

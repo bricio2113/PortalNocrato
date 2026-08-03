@@ -12,6 +12,7 @@ import 'firebase/compat/firestore';
 import { db } from './firebase';
 import { ApprovalState, EventMetrics, PostComment } from '../types';
 import { needsClientAction, needsAgencyAction } from './eventState';
+import { registrar } from './historico';
 import { slaAtual } from './sla';
 
 const empresaRef = (empresaId: string) => db.collection('empresas').doc(empresaId);
@@ -35,6 +36,20 @@ export async function setApproval(
         approvalByName: byName || null,
         approvalAt: new Date()
     });
+
+    // Historico DEPOIS da escrita principal, e sem await bloqueante: registrar()
+    // nunca lanca, e a aprovacao nao pode falhar por causa de um registro de
+    // auditoria. A regra exige que `por` seja o e-mail de quem escreve, entao
+    // sem `by` nao ha o que registrar.
+    if (by) {
+        void registrar(empresaId, {
+            eventId, tipo: 'aprovacao', para: state,
+            por: by, porNome: byName || null,
+            // Quem chama setApproval na interface e sempre o cliente - a agencia
+            // ve o estado e nao vota (ver EventDetailModal).
+            porPapel: 'cliente'
+        });
+    }
 }
 
 // --- METRICAS ---

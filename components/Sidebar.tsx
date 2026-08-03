@@ -3,7 +3,7 @@ import { View, UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
 import { AppSidebar, NavGroup } from './AppSidebar';
 import {
-    Calendar, Target, DownloadCloud, ExternalLink,
+    Calendar, Target, DownloadCloud, ExternalLink, LayoutDashboard,
     MessageCircle, LogOut, ArrowLeft, UserCircle
 } from 'lucide-react';
 
@@ -42,10 +42,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         {
             title: 'Geral',
             items: [
-                // O selo de pendencia e o unico sinal de que existe algo
-                // esperando o usuario. Sem ele o portal nao tem motivo para
-                // ser aberto.
-                { id: View.CALENDAR, label: 'Calendário Editorial', icon: Calendar, badge: pendingCount },
+                // O selo de pendencia sai do calendario e vem para a Visao Geral:
+                // e ela que agora responde "tem algo me esperando?", e o selo
+                // precisa estar onde a resposta esta.
+                { id: View.HOME, label: 'Visão Geral', icon: LayoutDashboard, badge: pendingCount },
+                { id: View.CALENDAR, label: 'Calendário Editorial', icon: Calendar },
                 { id: View.UPDATES, label: 'Foco da Semana', icon: Target },
                 { id: View.IDEAS, label: 'Arquivos & Materiais', icon: DownloadCloud }
             ]

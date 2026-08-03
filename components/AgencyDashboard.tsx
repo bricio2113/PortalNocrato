@@ -8,13 +8,14 @@ import { isAdmin, permissionLevel, PERMISSION_LABEL, PERMISSION_HINT } from '../
 import { Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
 import ClientFormModal from './ClientFormModal';
+import PersonFinanceModal from './PersonFinanceModal';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, DollarSign
 } from 'lucide-react';
 
 interface UserData {
@@ -246,6 +247,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [fichaAberta, setFichaAberta] = useState<'novo' | Empresa | null>(null);
     /** Usuario a vincular assim que o cliente for criado, se veio do select. */
     const [vincularApos, setVincularApos] = useState<string | null>(null);
+    /** Pessoa com a ficha financeira aberta. So admin abre. */
+    const [financeiroDe, setFinanceiroDe] = useState<UserData | null>(null);
 
     // Quem esta olhando: admin ou colaborador.
     //
@@ -1043,8 +1046,21 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                 onClick={() => handlePasswordReset(user.email)}
                                                                                 className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
                                                                             >
-                                                                                Enviar senha
+                                                                                Senha
                                                                             </button>
+                                                                            {/* Ficha financeira: valor, dia de pagamento,
+                                                                                escopo. Vive em subcolecao propria - o
+                                                                                documento do usuario e lido pela equipe
+                                                                                inteira. So admin ve o botao. */}
+                                                                            {souAdmin && (
+                                                                                <button
+                                                                                    onClick={() => setFinanceiroDe(user)}
+                                                                                    title="Financeiro"
+                                                                                    className="shrink-0 p-2 text-zinc-600 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-control transition-colors"
+                                                                                >
+                                                                                    <DollarSign className="w-4 h-4" />
+                                                                                </button>
+                                                                            )}
                                                                             {!isMe && souAdmin && (
                                                                                 <button
                                                                                     onClick={() => handleDeleteUser(user.id)}
@@ -1072,6 +1088,16 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 )}
                 </div>
             </main>
+
+            {financeiroDe && (
+                <PersonFinanceModal
+                    uid={financeiroDe.id}
+                    nome={getDisplayName(financeiroDe)}
+                    ehColaborador={financeiroDe.role === 'agencia'}
+                    autorEmail={auth.currentUser?.email}
+                    onClose={() => setFinanceiroDe(null)}
+                />
+            )}
 
             {fichaAberta && (
                 <ClientFormModal

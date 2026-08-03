@@ -3,10 +3,12 @@ import ReactDOM from 'react-dom/client';
 import CalendarView from '../components/CalendarView';
 import ClientProductionView from '../components/ClientProductionView';
 import WeeklyUpdatesView from '../components/WeeklyUpdatesView';
-import IdeasHubView from '../components/IdeasHubView';
 import ClientReportsView from '../components/ClientReportsView';
 import ClientFormModal from '../components/ClientFormModal';
 import ThumbBench from './ThumbBench';
+import MateriaisView from '../components/MateriaisView';
+import ClientHomeView from '../components/ClientHomeView';
+import PostTimeline from '../components/PostTimeline';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
 import ProfileView from '../components/ProfileView';
@@ -42,10 +44,14 @@ const SCREENS: Record<string, React.ReactNode> = {
     'calendario-cliente': <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" empresaNome="Agencia Mara" userRole="cliente" userEmail="cliente@exemplo.com" userName="Cliente Exemplo" /></div>,
     producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" /></div>,
     semana: <div className="p-4 bg-[#111111] min-h-screen"><WeeklyUpdatesView empresaId="agencia-mara" /></div>,
-    arquivos: <div className="p-4 bg-[#111111] min-h-screen"><IdeasHubView empresaId="agencia-mara" /></div>,
+    arquivos: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
     'ficha-cliente': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
     'ficha-cliente-colab': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin={false} autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
     thumb: <ThumbBench />,
+    materiais: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
+    'materiais-cliente': <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="cliente" /></div>,
+    'home-cliente': <div className="p-4 bg-[#111111] min-h-screen"><ClientHomeView empresaId="agencia-mara" empresaNome="Agencia Mara" userName="Cliente Exemplo" onIrParaCalendario={noop} /></div>,
+    andamento: <div className="p-6 bg-[#111111] min-h-screen max-w-lg"><PostTimeline empresaId="agencia-mara" eventId="ev0" userRole="cliente" /></div>,
     relatorios: <div className="p-4 bg-[#111111] min-h-screen"><ClientReportsView empresaId="agencia-mara" userRole="agencia" userName="Pedro Vidal" /></div>,
     modal: <div className="bg-[#111111] min-h-screen"><EventDetailModal event={evento} onSave={noop} onDelete={noop} onClose={noop} empresaId="agencia-mara" userEmail={profile.email} userRole="agencia" userName="Pedro Vidal" /></div>
 };

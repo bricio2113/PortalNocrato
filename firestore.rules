@@ -237,6 +237,23 @@ service cloud.firestore {
       match /_meta/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+      // HISTORICO das publicacoes: o "andamento" que o cliente ve.
+      //
+      // SO ESCRITA, NUNCA EDICAO. Nao ha allow update nem delete: a serventia de
+      // um historico e ser prova, e prova que se edita nao serve. Registro
+      // errado se corrige com registro novo.
+      //
+      // `por` e `porPapel` precisam refletir quem esta escrevendo, senao o
+      // cliente poderia gravar uma entrada assinada como agencia - mesma
+      // protecao que post_comments tem.
+      match /historico/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow create: if (isAgency() || belongsTo(empresaId))
+                      && request.resource.data.por == request.auth.token.email
+                      && request.resource.data.porPapel == (isAgency() ? 'agencia' : 'cliente');
+        allow update, delete: if false;
+      }
+
       // MINIATURAS das publicacoes: um documento por evento, com a capa em
       // data URI de ~40 KB.
       //

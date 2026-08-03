@@ -68,7 +68,21 @@ const snap = (rows: any[]) => ({
     docs: rows.map(r => ({ id: r.id, exists: true, data: () => ({ ...r, toDate: undefined }), ref: { update: async () => {}, delete: async () => {} } }))
 });
 
+// Historico de exemplo: um de cada tipo, para a linha do tempo mostrar todas as
+// frases e nao so a mais comum.
+const HISTORICO = [
+    { id: 'h1', eventId: 'ev0', tipo: 'criado', para: 'Carrossel institucional', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-6)) },
+    { id: 'h2', eventId: 'ev0', tipo: 'status', de: 'Pendente', para: 'Em andamento', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-4)) },
+    { id: 'h3', eventId: 'ev0', tipo: 'midia', de: '0', para: '3', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-3)) },
+    { id: 'h4', eventId: 'ev0', tipo: 'data', de: d(-1).toISOString(), para: d(2).toISOString(), por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-2)) },
+    { id: 'h5', eventId: 'ev0', tipo: 'aprovacao', para: 'ajuste_solicitado', por: 'cliente@x.com', porNome: 'João Almeida', porPapel: 'cliente', em: ts(d(-1)) },
+    { id: 'h6', eventId: 'ev0', tipo: 'prazo', para: d(3).toISOString(), por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-1)) },
+    { id: 'h7', eventId: 'ev0', tipo: 'aprovacao', para: 'aprovado', por: 'cliente@x.com', porNome: 'João Almeida', porPapel: 'cliente', em: ts(hoje) }
+];
+
 const pick = (path: string) => {
+    if (path.includes('historico')) return HISTORICO;
+    if (path.includes('covers')) return [];
     if (path.includes('kanban_tasks')) return TASKS;
     if (path.includes('drive_links')) return LINKS;
     if (path.includes('post_comments')) return [{ id: 'c1', eventId: 'ev0', authorEmail: 'maria@x.com', authorName: 'Maria Silva', authorRole: 'agencia', text: 'Comentário de exemplo com um texto mais longo para ver a quebra.', createdAt: { toDate: () => hoje } }];
@@ -120,9 +134,29 @@ const makeDoc = (path: string): any => ({
  * https plausivel, porque isSafeImageSrc recusa qualquer coisa que nao seja
  * https ou data URI de imagem.
  */
+// Pastas e arquivos falsos, para a tela de materiais ter o que listar.
+const PASTAS_MOCK = ['Imagens', 'Vídeos', 'Identidade Visual', 'Contratos e Documentos'];
+const ARQUIVOS_MOCK = ['capa-01.jpg', 'capa-02.jpg', 'briefing.pdf', 'reel-bruto.mp4', '.pasta'];
+const tipoPorNome = (n: string) =>
+    n.endsWith('.pdf') ? 'application/pdf' : n.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
+
 export const storage: any = {
     ref: (caminho: string) => ({
         fullPath: caminho,
+        listAll: async () => {
+            // Raiz de materiais devolve PASTAS; dentro de uma pasta, ARQUIVOS.
+            const dentroDePasta = /\/materiais\/[^/]+$/.test(caminho);
+            return {
+                prefixes: dentroDePasta ? [] : PASTAS_MOCK.map(nome => ({ name: nome, fullPath: `${caminho}/${nome}` })),
+                items: dentroDePasta ? ARQUIVOS_MOCK.map(nome => ({
+                    name: nome,
+                    fullPath: `${caminho}/${nome}`,
+                    getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(nome)}`,
+                    getMetadata: async () => ({ size: 1024 * 420, contentType: tipoPorNome(nome) }),
+                    delete: async () => registrar('delete-storage', `${caminho}/${nome}`)
+                })) : []
+            };
+        },
         put: (arquivo: any) => {
             registrar('upload', caminho, { contentType: arquivo?.type, size: arquivo?.size });
             const task: any = {

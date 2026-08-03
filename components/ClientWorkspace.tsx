@@ -8,7 +8,7 @@ import { summarizeSla } from '../utils/sla';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
 import WeeklyUpdatesView from './WeeklyUpdatesView';
-import IdeasHubView from './IdeasHubView';
+import MateriaisView from './MateriaisView';
 import ClientReportsView from './ClientReportsView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, Card } from './ui';
@@ -123,7 +123,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
             case 'weekly':
                 return <WeeklyUpdatesView empresaId={empresaId} />;
             case 'files':
-                return <IdeasHubView empresaId={empresaId} />;
+                return <MateriaisView empresaId={empresaId} userRole="agencia" />;
             case 'reports':
                 return <ClientReportsView empresaId={empresaId} userRole="agencia" userName={userName} />;
             default:

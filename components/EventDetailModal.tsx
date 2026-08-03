@@ -9,6 +9,7 @@ import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState'
 import { setApproval, saveMetrics } from '../utils/posts';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
+import PostTimeline from './PostTimeline';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
@@ -702,6 +703,21 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     )}
                                 </>
                             )}
+                        </div>
+                    )}
+
+                    {/* ANDAMENTO.
+                        Vem ANTES da conversa de proposito: quando o cliente abre
+                        o post, a primeira pergunta dele e "em que pe esta?", nao
+                        "o que foi dito?". O historico responde a primeira sem
+                        ninguem ter que digitar nada. */}
+                    {canReview && empresaId && (
+                        <div className="border-t border-white/5 pt-6">
+                            <PostTimeline
+                                empresaId={empresaId}
+                                eventId={event.id}
+                                userRole={userRole}
+                            />
                         </div>
                     )}
 
