@@ -12,6 +12,7 @@ import { PageHeader, SegmentedTabs, EmptyState } from './ui';
 import FeedPreview from './FeedPreview';
 import { formatTime } from '../utils/date';
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
+import { subscribeThumbs } from '../utils/midia';
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
     Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
@@ -37,6 +38,33 @@ const prefersListView = () => typeof window !== 'undefined' && window.innerWidth
 const coverSourceOf = (event: CalendarEvent) =>
     event.previewUrl || event.coverUrl || event.finalUrl || event.url;
 
+/**
+ * Miniaturas geradas no upload, indexadas por eventId.
+ *
+ * Vive em contexto e nao em prop porque EventCover e EventThumb estao tres
+ * niveis abaixo, dentro de dois `map` - passar prop ate la significaria alterar
+ * a assinatura de tudo no caminho.
+ */
+const ThumbsContext = React.createContext<Record<string, string>>({});
+
+/**
+ * A miniatura do Firestore VENCE tudo.
+ *
+ * E ~40 KB contra os 3 MB do arquivo original, e e por isso que a grade do mes
+ * com 25 capas custa 1,4 MB de saida em vez de 100 MB. Ver utils/thumbnail.ts.
+ *
+ * Os campos antigos (previewUrl, coverUrl, links do Drive) continuam como
+ * fallback: todo post que existe hoje depende deles, e nao vai ganhar miniatura
+ * sozinho.
+ */
+const useThumb = (event: CalendarEvent): { src: string; local: boolean } | null => {
+    const thumbs = React.useContext(ThumbsContext);
+    const doFirestore = thumbs[event.id];
+    if (doFirestore) return { src: doFirestore, local: true };
+    const preview = getMediaPreview(coverSourceOf(event));
+    return preview && preview.kind === 'image' ? { src: preview.src, local: false } : null;
+};
+
 /** Icone do formato. O quadradinho colorido e o que faz o card ser lido de longe. */
 const formatIcon = (type?: string) => {
     const t = (type || '').toUpperCase();
@@ -60,20 +88,21 @@ const EventCover: React.FC<{ event: CalendarEvent }> = ({ event }) => {
     // que nao ter faixa nenhuma. Desmontando a faixa inteira, o card volta a
     // ser exatamente o de um post sem capa.
     const [falhou, setFalhou] = useState(false);
-    const src = coverSourceOf(event);
-    const preview = getMediaPreview(src);
+    const capa = useThumb(event);
 
-    // Um src novo merece uma nova tentativa; sem isto o card ficava marcado
-    // como falho para sempre depois de "Resolver capas" trocar a imagem.
-    useEffect(() => { setFalhou(false); }, [src]);
+    // Uma fonte nova merece uma nova tentativa; sem isto o card ficava marcado
+    // como falho para sempre depois de um upload trocar a imagem.
+    useEffect(() => { setFalhou(false); }, [capa?.src]);
 
-    if (falhou || !preview || preview.kind !== 'image') return null;
+    if (falhou || !capa) return null;
     return (
         <div className="w-full aspect-[4/3] bg-[#111111] overflow-hidden">
             <img
-                src={preview.src}
+                src={capa.src}
                 alt=""
-                loading="lazy"
+                // Miniatura em data URI ja esta no documento que a tela acabou de
+                // ler: `loading=lazy` nela seria custo sem beneficio.
+                loading={capa.local ? undefined : 'lazy'}
                 className="w-full h-full object-cover"
                 onError={() => setFalhou(true)}
             />
@@ -92,20 +121,19 @@ const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, s
     // Mesmo motivo do EventCover: capa quebrada cai para o icone do formato em
     // vez de deixar um quadrado vazio onde deveria ter a peca.
     const [falhou, setFalhou] = useState(false);
-    const src = coverSourceOf(event);
-    const preview = getMediaPreview(src);
+    const capa = useThumb(event);
     const styles = getTypeStyles(event.type);
     const Icon = formatIcon(event.type);
 
-    useEffect(() => { setFalhou(false); }, [src]);
+    useEffect(() => { setFalhou(false); }, [capa?.src]);
 
-    if (!falhou && preview && preview.kind === 'image') {
+    if (!falhou && capa) {
         return (
             <div className={`${size} shrink-0 rounded-chip overflow-hidden bg-[#111111]`}>
                 <img
-                    src={preview.src}
+                    src={capa.src}
                     alt=""
-                    loading="lazy"
+                    loading={capa.local ? undefined : 'lazy'}
                     className="w-full h-full object-cover"
                     onError={() => setFalhou(true)}
                 />
@@ -151,6 +179,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     // overflow-y-auto, que recorta qualquer filho posicionado. Um unico cartao
     // flutuante ancorado no cursor resolve e nunca duplica.
     const [hover, setHover] = useState<{ event: CalendarEvent; x: number; y: number } | null>(null);
+
+    // Uma assinatura para TODAS as capas da empresa. Um listener por card seriam
+    // 30 conexoes pelo mesmo numero de leituras.
+    const [thumbs, setThumbs] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (!empresaId) return;
+        return subscribeThumbs(empresaId, setThumbs);
+    }, [empresaId]);
 
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1);
@@ -410,6 +446,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     };
 
     return (
+        <ThumbsContext.Provider value={thumbs}>
         <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
             <PageHeader
                 title="Calendário Editorial"
@@ -725,6 +762,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                         events={events}
                         empresaNome={empresaNome || empresaId}
                         onSelectEvent={setSelectedEvent}
+                        thumbs={thumbs}
                     />
                 </div>
             </div>
@@ -802,6 +840,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 />
             )}
         </div>
+        </ThumbsContext.Provider>
     );
 };
 

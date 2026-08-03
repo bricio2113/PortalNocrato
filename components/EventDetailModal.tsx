@@ -8,6 +8,7 @@ import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState';
 import { setApproval, saveMetrics } from '../utils/posts';
 import PostComments from './PostComments';
+import MediaUpload from './MediaUpload';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
@@ -543,6 +544,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
                     {/* LINKS: MATERIAL BRUTO E FINALIZADO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {/* UPLOAD DIRETO.
+                            Fica ANTES dos campos de link de proposito: subir o
+                            arquivo aqui e o caminho principal agora, e o link do
+                            Drive vira o caminho legado, para o material que ja
+                            existe fora do portal. Deixar o link primeiro
+                            ensinaria o fluxo antigo a quem entra hoje.
+
+                            So aparece em post JA SALVO: o caminho no bucket
+                            inclui o eventId, e num post sem id o arquivo iria
+                            para "posts//arquivo" - orfao, sem dono e sem como
+                            achar depois. */}
+                        {!isCreating && empresaId && (
+                            <div className="sm:col-span-2">
+                                <MediaUpload
+                                    empresaId={empresaId}
+                                    eventId={event.id}
+                                    midias={editableEvent.midias || []}
+                                    onChange={(midias) => handleChange('midias', midias)}
+                                    onThumb={() => { /* a capa vive em covers/, fora do evento */ }}
+                                    disabled={isClient}
+                                />
+                            </div>
+                        )}
+
                         {/* Link Material Bruto */}
                         <div>
                             <label className={labelStyle}>Link do Material (Bruto)</label>

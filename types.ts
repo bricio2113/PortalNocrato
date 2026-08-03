@@ -121,6 +121,25 @@ export interface EventMetrics {
   atualizadoEm?: Date | null;
 }
 
+/**
+ * Arquivo de midia enviado para o Cloud Storage.
+ *
+ * A ORDEM DO ARRAY E A ORDEM DO CARROSSEL. Nao reordenar sem o usuario pedir.
+ *
+ * `path` e guardado alem da url porque a url de download nao serve para apagar:
+ * a exclusao no Storage e por caminho no bucket. Sem ele, remover um arquivo
+ * exigiria adivinhar o caminho a partir da url assinada.
+ *
+ * A MINIATURA NAO ESTA AQUI: vive em empresas/{id}/covers/{eventId}, no
+ * Firestore. Ver o cabecalho de utils/midia.ts para o motivo (custo de leitura).
+ */
+export interface MidiaArquivo {
+  url: string;
+  path: string;
+  contentType: string;
+  bytes: number;
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -133,6 +152,9 @@ export interface CalendarEvent {
   finalUrl?: string;
   copy?: string;
   description?: string;
+
+  /** Arquivos enviados para o Storage. A ordem e a do carrossel. */
+  midias?: MidiaArquivo[];
 
   /**
    * Prazo de PRODUCAO - quando a peca precisa estar pronta internamente.
