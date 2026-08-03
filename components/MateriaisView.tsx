@@ -5,10 +5,14 @@ import {
     tipoDoArquivo, TEMPLATE_PASTAS
 } from '../utils/pastas';
 import { PageHeader, EmptyState, Card } from './ui';
+import { db } from '../utils/firebase';
+import { toSafeHref } from '../utils/url';
 import {
     Folder, FolderPlus, Upload, ArrowLeft, Trash2, Loader2, AlertTriangle,
-    FileText, Play, Download, Sparkles
+    FileText, Play, Download, Sparkles, ExternalLink, Link as LinkIcon
 } from 'lucide-react';
+
+interface LinkLegado { id: string; title: string; url: string; category?: string }
 
 interface MateriaisViewProps {
     empresaId: string;
@@ -42,6 +46,24 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
     const [enviando, setEnviando] = useState<{ nome: string; pct: number } | null>(null);
     const [criandoNome, setCriandoNome] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    /**
+     * Links do Drive salvos antes das pastas existirem.
+     *
+     * Esta secao existe porque trocar a tela de links pelas pastas fez o material
+     * ja cadastrado DESAPARECER da interface - o dado continuava em drive_links,
+     * mas sem nenhum leitor. Isso e perda de acesso, nao migracao. Os links
+     * continuam aqui, marcados como antigos, ate a equipe subir os arquivos.
+     */
+    const [legados, setLegados] = useState<LinkLegado[]>([]);
+    useEffect(() => {
+        if (!empresaId) return;
+        return db.collection('empresas').doc(empresaId).collection('drive_links')
+            .onSnapshot(
+                snap => setLegados(snap.docs.map(d => ({ id: d.id, ...d.data() } as LinkLegado))),
+                erro => console.error('Falha ao ler links antigos:', erro)
+            );
+    }, [empresaId]);
 
     const recarregarPastas = useCallback(async () => {
         setCarregando(true);
@@ -345,6 +367,68 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {legados.length > 0 && (
+                <div className="mt-8">
+                    <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-semibold text-white">Links do Drive</h3>
+                        <span className="text-[10px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+                            {legados.length} · cadastro antigo
+                        </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
+                        Salvos antes das pastas existirem. Continuam funcionando; conforme os
+                        arquivos subirem para as pastas acima, dá para removê-los.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {legados.map(link => {
+                            // Revalida o esquema na leitura: link gravado antes da
+                            // validacao existir pode conter javascript: ou data:.
+                            const href = toSafeHref(link.url);
+                            return (
+                                <div key={link.id} className="bg-[#1A1A1A] border border-white/5 rounded-control p-3 flex items-center gap-2.5">
+                                    <LinkIcon className="w-4 h-4 text-zinc-600 shrink-0" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-sm text-zinc-200 truncate">{link.title}</span>
+                                        {link.category && <span className="block text-[10px] text-zinc-600">{link.category}</span>}
+                                    </span>
+                                    {href ? (
+                                        <a
+                                            href={href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            aria-label={`Abrir ${link.title}`}
+                                            className="shrink-0 p-1.5 rounded-full text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 transition-colors"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </a>
+                                    ) : (
+                                        <span className="shrink-0 text-[10px] text-red-400">inválido</span>
+                                    )}
+                                    {ehAgencia && (
+                                        <button
+                                            onClick={async () => {
+                                                if (!window.confirm(`Remover o link "${link.title}"?`)) return;
+                                                try {
+                                                    await db.collection('empresas').doc(empresaId)
+                                                        .collection('drive_links').doc(link.id).delete();
+                                                } catch (e) {
+                                                    console.error(e);
+                                                    setErro('Não foi possível remover o link.');
+                                                }
+                                            }}
+                                            aria-label={`Remover link ${link.title}`}
+                                            className="shrink-0 p-1.5 rounded-full text-zinc-700 hover:text-red-400 transition-colors"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
         </div>
