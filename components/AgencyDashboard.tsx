@@ -11,7 +11,7 @@ import { PageHeader, StatTile, greeting } from './ui';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle
 } from 'lucide-react';
 
 interface UserData {
@@ -92,6 +92,7 @@ const ClientCard: React.FC<{
 }> = ({ empresa, stats, usuarios, onOpen, onDelete }) => {
     const ajustes = stats?.aguardandoAgencia || 0;
     const aguardando = stats?.aguardandoCliente || 0;
+    const atrasados = stats?.atrasados || 0;
 
     return (
         <div
@@ -100,7 +101,9 @@ const ClientCard: React.FC<{
             onClick={() => onOpen()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
             className={`group text-left bg-[#1A1A1A] border rounded-card p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
-                ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-white/5 hover:border-[#FABE01]/40'
+                atrasados > 0 ? 'border-red-500/30 hover:border-red-500/60'
+                    : ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60'
+                    : 'border-white/5 hover:border-[#FABE01]/40'
             }`}
         >
             <div className="flex items-start gap-3 mb-4">
@@ -143,15 +146,21 @@ const ClientCard: React.FC<{
                 </div>
             </div>
 
-            {(ajustes > 0 || aguardando > 0) && (
+            {(ajustes > 0 || aguardando > 0 || atrasados > 0) && (
                 <div className="flex flex-wrap gap-1.5 mb-4">
+                    {/* Atraso de producao: interno, e o mais urgente do card. */}
+                    {atrasados > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-500/15 text-red-400 border border-red-500/30 px-2 py-1 rounded-full">
+                            <AlertTriangle className="w-3 h-3" /> {atrasados} atrasado(s)
+                        </span>
+                    )}
                     {ajustes > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-control">
-                            <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s) pedido(s)
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-full">
+                            <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s)
                         </span>
                     )}
                     {aguardando > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-zinc-400 px-2 py-1 rounded-control">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white/5 text-zinc-400 px-2 py-1 rounded-full">
                             {aguardando} aguardando o cliente
                         </span>
                     )}
@@ -236,6 +245,12 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const empresasComAjuste = empresas.filter(e => (pendingByEmpresa[e.id]?.aguardandoAgencia || 0) > 0);
     const totalAjustes = empresasComAjuste.reduce(
         (sum, e) => sum + (pendingByEmpresa[e.id]?.aguardandoAgencia || 0), 0
+    );
+
+    // ATRASO DE PRODUCAO, somado em todos os clientes. Interno da agencia.
+    const empresasAtrasadas = empresas.filter(e => (pendingByEmpresa[e.id]?.atrasados || 0) > 0);
+    const totalAtrasados = empresasAtrasadas.reduce(
+        (sum, e) => sum + (pendingByEmpresa[e.id]?.atrasados || 0), 0
     );
 
     const showNotification = (msg: string) => {
@@ -556,8 +571,21 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                     <>
                         {activeTab === 'overview' && (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
                                     <StatTile label="Clientes" value={empresas.length} icon={Building2} tone="brand" />
+                                    {/* Producao atrasada vem antes de "usuarios
+                                        cadastrados": e a unica coisa aqui que
+                                        exige acao hoje. */}
+                                    <StatTile
+                                        label="Produção atrasada"
+                                        value={totalAtrasados}
+                                        icon={AlertTriangle}
+                                        tone={totalAtrasados > 0 ? 'attention' : 'positive'}
+                                        hint={totalAtrasados > 0
+                                            ? `Em ${empresasAtrasadas.length} cliente(s) · prazo vencido`
+                                            : 'Nenhum prazo de produção vencido'}
+                                        onClick={totalAtrasados > 0 ? () => { setActiveTab('clients'); setSearchTerm(''); } : undefined}
+                                    />
                                     <StatTile label="Usuários cadastrados" value={users.length} icon={Users} />
                                     <StatTile
                                         label="Ajustes pedidos"

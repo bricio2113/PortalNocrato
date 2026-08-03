@@ -32,7 +32,12 @@ const SCREENS: Record<string, React.ReactNode> = {
     perfil: <div className="p-4 bg-[#111111] min-h-screen"><ProfileView profile={profile} /></div>,
     painel: <AgencyDashboard handleLogout={noop} onOpenClient={noop} onOpenProfile={noop} profile={profile} userEmail={profile.email} userName="Pedro Vidal" />,
     'cliente-workspace': <ClientWorkspace empresaId="agencia-mara" empresaNome="Agencia Mara" userEmail={profile.email} userName="Pedro Vidal" onBack={noop} />,
-    calendario: <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" userRole="agencia" userEmail={profile.email} userName="Pedro Vidal" /></div>,
+    calendario: <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" empresaNome="Agencia Mara" userRole="agencia" userEmail={profile.email} userName="Pedro Vidal" /></div>,
+    // O MESMO calendario visto pelo cliente. Existe como tela propria porque a
+    // diferenca entre os dois papeis nao e cosmetica: o cliente nao arrasta, nao
+    // ve prazo de producao nem atraso. Sem esta tela, metade do componente
+    // nunca era renderizada na auditoria.
+    'calendario-cliente': <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" empresaNome="Agencia Mara" userRole="cliente" userEmail="cliente@exemplo.com" userName="Cliente Exemplo" /></div>,
     producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" /></div>,
     semana: <div className="p-4 bg-[#111111] min-h-screen"><WeeklyUpdatesView empresaId="agencia-mara" /></div>,
     arquivos: <div className="p-4 bg-[#111111] min-h-screen"><IdeasHubView empresaId="agencia-mara" /></div>,

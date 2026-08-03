@@ -65,7 +65,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     // Contador de pendencia no menu. Para o cliente conta o que espera decisao
     // dele; para a agencia, os ajustes que o cliente pediu e ninguem resolveu.
     // Cada lado ve a propria fila.
-    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0, semCapa: 0 });
+    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0, semCapa: 0, atrasados: 0, semPrazo: 0 });
 
     useEffect(() => {
         if (!targetEmpresaId) return;

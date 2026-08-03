@@ -12,6 +12,7 @@ import 'firebase/compat/firestore';
 import { db } from './firebase';
 import { ApprovalState, EventMetrics, PostComment } from '../types';
 import { needsClientAction, needsAgencyAction } from './eventState';
+import { deadlineState, isProducaoEncerrada } from './deadline';
 
 const empresaRef = (empresaId: string) => db.collection('empresas').doc(empresaId);
 
@@ -127,6 +128,13 @@ export interface PendingCounts {
     publicados: number;
     /** Sem capa manual nem resolvida: a previa do feed fica vazia. */
     semCapa: number;
+    /**
+     * Producao com prazo vencido e ainda em aberto. INTERNO DA AGENCIA - nao
+     * exibir no portal do cliente (ver utils/deadline.ts).
+     */
+    atrasados: number;
+    /** Producao em aberto sem prazo definido: nunca aparece como atrasada. */
+    semPrazo: number;
 }
 
 /**
@@ -149,6 +157,8 @@ export function subscribePendingCounts(
             let noMes = 0;
             let publicados = 0;
             let semCapa = 0;
+            let atrasados = 0;
+            let semPrazo = 0;
 
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
@@ -162,11 +172,20 @@ export function subscribePendingCounts(
                 if (date && date.getMonth() === agora.getMonth() && date.getFullYear() === agora.getFullYear()) {
                     noMes++;
                 }
+
+                // Prazo de producao. Contado aqui, e nao numa segunda leitura,
+                // porque a colecao ja esta na mao.
+                const prazo = (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null;
+                if (!isProducaoEncerrada(event)) {
+                    if (!prazo) semPrazo++;
+                    else if (deadlineState({ ...event, prazoProducao: prazo }, agora)?.atrasado) atrasados++;
+                }
             });
 
             onData({
                 aguardandoCliente, aguardandoAgencia,
-                total: snapshot.size, noMes, publicados, semCapa
+                total: snapshot.size, noMes, publicados, semCapa,
+                atrasados, semPrazo
             });
         },
         error => console.error('Erro ao contar pendências:', error)

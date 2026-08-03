@@ -6,13 +6,23 @@ const d = (offset: number) => new Date(hoje.getFullYear(), hoje.getMonth(), Math
 // O codigo do app chama .toDate() nos campos de data, porque no Firestore real
 // eles sao Timestamp. O mock precisa devolver o mesmo formato.
 const ts = (date: Date) => ({ toDate: () => date });
+const withHora = (date: Date, hora: number | null) => {
+    if (hora === null) return date;
+    const out = new Date(date);
+    out.setHours(hora, hora % 2 ? 30 : 0, 0, 0);
+    return out;
+};
 
 const EVENTS = Array.from({ length: 14 }, (_, i) => ({
     id: `ev${i}`,
     title: i % 3 === 0
         ? 'Carrossel institucional com um título bem comprido para testar quebra de linha'
         : `Publicação ${i + 1}`,
-    date: ts(d(i - 6)),
+    // Hora definida em parte dos posts e ausente em outros: 00:00 e tratado
+    // como "sem hora" e os dois caminhos precisam ser medidos.
+    date: ts(withHora(d(i - 6), i % 3 === 0 ? null : 9 + (i % 10))),
+    // Prazos espalhados: vencido, hoje, proximo, folgado e ausente.
+    prazoProducao: i % 5 === 4 ? undefined : ts(d(i - 6 - (i % 5 === 0 ? 4 : i % 5))),
     type: ['Post', 'Reel', 'Story', 'Carrossel', 'Tráfego'][i % 5],
     status: ['Pendente', 'Concluído', 'Postado', 'Editado', 'Agendado'][i % 5],
     plataforma: 'Instagram',
@@ -69,10 +79,20 @@ const makeCollection = (path: string): any => ({
     get: async () => snap(pick(path)),
     onSnapshot: (cb: any) => { setTimeout(() => cb(snap(pick(path))), 0); return () => {}; }
 });
+// Registro das escritas, para a auditoria PROVAR que uma interacao gravou em
+// vez de apenas nao ter dado erro. Foi o que faltava para verificar o arraste do
+// calendario: sem isto, "nenhum erro no console" era todo o teste.
+const registrar = (op: string, path: string, data?: any) => {
+    const w = (globalThis as any).__writes || ((globalThis as any).__writes = []);
+    w.push({ op, path, data: data ? JSON.parse(JSON.stringify(data, (_k, v) => v instanceof Date ? v.toISOString() : v)) : undefined });
+};
+
 const makeDoc = (path: string): any => ({
     collection: (name: string) => makeCollection(`${path}/${name}`),
     get: async () => ({ exists: true, id: path.split('/').pop(), data: () => pick(path)[0] || {} }),
-    set: async () => {}, update: async () => {}, delete: async () => {}
+    set: async (data: any) => registrar('set', path, data),
+    update: async (data: any) => registrar('update', path, data),
+    delete: async () => registrar('delete', path)
 });
 
 export const db: any = { collection: (name: string) => makeCollection(name), batch: () => ({ update() {}, commit: async () => {} }) };

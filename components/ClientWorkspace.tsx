@@ -4,17 +4,17 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { CalendarEvent } from '../types';
 import { getClientStage, CLIENT_STAGES, needsClientAction, needsAgencyAction } from '../utils/eventState';
+import { summarizeDeadlines } from '../utils/deadline';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
 import WeeklyUpdatesView from './WeeklyUpdatesView';
 import IdeasHubView from './IdeasHubView';
 import ClientReportsView from './ClientReportsView';
-import FeedPreview from './FeedPreview';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, Card } from './ui';
 import {
     ArrowLeft, LayoutDashboard, Calendar, ClipboardList, Target,
-    DownloadCloud, FileBarChart, Building2, Loader2
+    DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock
 } from 'lucide-react';
 
 type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
@@ -68,7 +68,8 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         return {
                             ...data,
                             id: doc.id,
-                            date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date()
+                            date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
+                            prazoProducao: (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null
                         } as CalendarEvent;
                     }));
                     setIsLoading(false);
@@ -95,7 +96,10 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
             ajustePedido: events.filter(needsAgencyAction).length,
             publicados: events.filter(e => e.status === 'Postado').length,
             proximo: proximos[0] || null,
-            semCapa: events.filter(e => !e.previewUrl && !e.coverUrl).length
+            semCapa: events.filter(e => !e.previewUrl && !e.coverUrl).length,
+            // Prazo de PRODUCAO. Este espaco de trabalho e da agencia, entao
+            // pode aparecer aqui; no portal do cliente, nao.
+            prazos: summarizeDeadlines(events)
         };
     }, [events]);
 
@@ -113,7 +117,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const renderSection = () => {
         switch (section) {
             case 'calendar':
-                return <CalendarView empresaId={empresaId} userRole="agencia" userEmail={userEmail} userName={userName} />;
+                return <CalendarView empresaId={empresaId} empresaNome={empresaNome} userRole="agencia" userEmail={userEmail} userName={userName} />;
             case 'production':
                 return <ClientProductionView empresaId={empresaId} userEmail={userEmail} userName={userName} />;
             case 'weekly':
@@ -157,8 +161,44 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         <StatTile label="Publicados" value={stats.publicados} icon={FileBarChart} tone="positive" />
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-                        <div className="xl:col-span-2 space-y-4">
+                    {/* PRODUCAO - interno.
+                        Separado do bloco de cima de proposito: os quatro numeros
+                        acima o cliente tambem enxerga no portal dele; estes tres
+                        sao da cozinha e nunca saem daqui. */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-3">
+                            <h3 className="text-sm font-semibold text-zinc-300">Produção</h3>
+                            <span className="text-[10px] font-semibold text-zinc-500 bg-white/5 px-2 py-0.5 rounded-full">
+                                interno · o cliente não vê
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <StatTile
+                                label="Atrasados"
+                                value={stats.prazos.atrasados}
+                                icon={AlertTriangle}
+                                tone={stats.prazos.atrasados > 0 ? 'attention' : 'positive'}
+                                hint={stats.prazos.atrasados > 0 ? 'Prazo de produção vencido' : 'Nenhum prazo vencido'}
+                                onClick={stats.prazos.atrasados > 0 ? () => setSection('calendar') : undefined}
+                            />
+                            <StatTile
+                                label="Vencem em até 2 dias"
+                                value={stats.prazos.hoje + stats.prazos.proximos}
+                                icon={Clock}
+                                hint={stats.prazos.hoje > 0 ? `${stats.prazos.hoje} vence(m) hoje` : undefined}
+                            />
+                            <StatTile
+                                label="Sem prazo definido"
+                                value={stats.prazos.semPrazo}
+                                icon={CalendarClock}
+                                hint={stats.prazos.semPrazo > 0
+                                    ? 'Nunca aparecem como atrasados — ponto cego'
+                                    : 'Toda produção em aberto tem prazo'}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
                             {/* Proxima entrega: e a pergunta que a agencia faz ao abrir
                                 o cliente, e antes exigia varrer o calendario. */}
                             <Card className="p-5">
@@ -199,11 +239,6 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                     </p>
                                 </div>
                             )}
-                        </div>
-
-                        <div className="w-full max-w-md xl:max-w-none mx-auto xl:mx-0">
-                            <FeedPreview events={events} empresaNome={empresaNome} />
-                        </div>
                     </div>
                 </>
             )}

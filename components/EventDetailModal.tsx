@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ApprovalState, CalendarEvent, EventMetrics } from '../types';
 import { PLATAFORMA_OPTIONS, STATUS_OPTIONS, FORMATO_OPTIONS } from '../constants';
 import { toSafeHref } from '../utils/url';
-import { toDateInputValue, fromDateInputValue } from '../utils/date';
+import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTime } from '../utils/date';
+import { deadlineState, deadlineClasses } from '../utils/deadline';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState';
 import { setApproval, saveMetrics } from '../utils/posts';
@@ -11,7 +12,7 @@ import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
     Youtube, Twitter, Globe, Check, Loader2, AlertTriangle,
-    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo
+    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock
 } from 'lucide-react';
 
 interface EventDetailModalProps {
@@ -380,10 +381,37 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div>
-                            <label className={labelStyle}>Data</label>
-                            <div className="relative">
-                                <input type="date" disabled={isClient} value={toDateInputValue(editableEvent.date)} onChange={(e) => { const parsed = fromDateInputValue(e.target.value); if (parsed) handleChange('date', parsed); }} className={`${inputStyle} [color-scheme:dark]`} />
-                                <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                            <label className={labelStyle}>Publicação</label>
+                            {/* Data e hora no mesmo campo `date`. A hora nao virou
+                                coluna propria porque toda ordenacao, filtro de mes
+                                e comparacao com "agora" que ja existem passam a
+                                considerar o horario sem nenhuma mudanca. */}
+                            <div className="flex gap-2">
+                                <div className="relative flex-1 min-w-0">
+                                    <input
+                                        type="date"
+                                        disabled={isClient}
+                                        value={toDateInputValue(editableEvent.date)}
+                                        onChange={(e) => {
+                                            const parsed = fromDateInputValue(e.target.value);
+                                            // Preserva a hora ja escolhida: sem isto trocar o
+                                            // dia jogava a publicacao de volta para 00:00.
+                                            if (parsed) handleChange('date', hasTime(editableEvent.date)
+                                                ? withTime(parsed, toTimeInputValue(editableEvent.date))
+                                                : parsed);
+                                        }}
+                                        className={`${inputStyle} [color-scheme:dark]`}
+                                    />
+                                    <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                </div>
+                                <input
+                                    type="time"
+                                    disabled={isClient}
+                                    aria-label="Horário da publicação"
+                                    value={hasTime(editableEvent.date) ? toTimeInputValue(editableEvent.date) : ''}
+                                    onChange={(e) => handleChange('date', withTime(editableEvent.date, e.target.value))}
+                                    className={`${inputStyle} [color-scheme:dark] w-[7.5rem] shrink-0`}
+                                />
                             </div>
                         </div>
                         <div>
@@ -394,6 +422,38 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 </select>
                             </div>
                         </div>
+
+                        {/* PRAZO DE PRODUCAO - so a agencia ve.
+                            Nao e a data de publicacao: e quando a peca precisa
+                            estar pronta por dentro. Mostrar "atrasado 3 dias" ao
+                            cliente cria um problema que ele nao tem, num post que
+                            ainda vai sair no prazo. Ver utils/deadline.ts. */}
+                        {!isClient && (
+                            <div>
+                                <label className={labelStyle}>Prazo de produção</label>
+                                <div className="relative">
+                                    <input
+                                        type="date"
+                                        value={editableEvent.prazoProducao ? toDateInputValue(editableEvent.prazoProducao) : ''}
+                                        onChange={(e) => handleChange('prazoProducao', fromDateInputValue(e.target.value))}
+                                        className={`${inputStyle} [color-scheme:dark]`}
+                                    />
+                                    <Clock className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                </div>
+                                {(() => {
+                                    const prazo = deadlineState(editableEvent);
+                                    return prazo ? (
+                                        <span className={`inline-block mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${deadlineClasses(prazo.tone)}`}>
+                                            {prazo.label}
+                                        </span>
+                                    ) : (
+                                        <p className="text-[11px] text-zinc-600 mt-2 leading-snug">
+                                            Sem prazo definido. Interno — o cliente não vê.
+                                        </p>
+                                    );
+                                })()}
+                            </div>
+                        )}
                         <div>
                             <label className={labelStyle}>Formato / Tipo</label>
                             <div className="relative">

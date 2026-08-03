@@ -60,6 +60,16 @@ export interface CalendarEvent {
   copy?: string;
   description?: string;
 
+  /**
+   * Prazo de PRODUCAO - quando a peca precisa estar pronta internamente.
+   *
+   * Separado de `date`, que e a data de publicacao acordada com o cliente.
+   * Interno da agencia: ver utils/deadline.ts para o motivo de nao aparecer no
+   * portal do cliente. Ausente = sem prazo definido, o que e um estado
+   * legitimo e nao vira atraso.
+   */
+  prazoProducao?: Date | null;
+
   /** Ausente em posts criados antes da aprovacao existir: tratar como 'aguardando'. */
   approval?: ApprovalState;
   /** E-mail de quem aprovou ou pediu ajuste, para o historico. */
