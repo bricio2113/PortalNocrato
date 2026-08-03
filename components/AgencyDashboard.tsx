@@ -9,6 +9,7 @@ import { Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
 import ClientFormModal from './ClientFormModal';
 import PersonFinanceModal from './PersonFinanceModal';
+import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
@@ -507,6 +508,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     // nao vinculada. E a pendencia mais acionavel do painel, por isso vira
     // destaque na Visao Geral em vez de ficar escondida na tabela.
     const unlinkedUsers = users.filter(u => u.role !== 'agencia' && !u.empresaId);
+    // Filtrada pela busca, para a fila respeitar o filtro digitado.
+    const semVinculo = filteredUsers.filter(u => u.role !== 'agencia' && !u.empresaId);
 
     // Separar por papel elimina a coluna "Vínculo" com "Global" repetido em toda
     // linha de agencia, que era ruido puro.
@@ -532,8 +535,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             subtitle: 'Clique em um cliente para abrir o espaço de trabalho dele.'
         },
         team: {
-            title: 'Equipe & Permissões',
-            subtitle: 'Quem tem acesso ao portal e a qual empresa cada conta pertence.'
+            title: 'Equipe',
+            subtitle: 'Quem trabalha na agência. O acesso de cada cliente fica dentro do próprio cliente.'
         }
     };
 
@@ -549,7 +552,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         {
             title: 'Gestão',
             items: [
-                { id: 'team', label: 'Equipe & Permissões', icon: Users, badge: unlinkedUsers.length }
+                { id: 'team', label: 'Equipe', icon: Users, badge: unlinkedUsers.length, badgeTone: 'amber' as const }
             ]
         }
     ];
@@ -808,282 +811,179 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                         )}
 
                         {activeTab === 'team' && (
-                            <div className="space-y-6 animate-in fade-in">
+                            <div className="space-y-8 animate-in fade-in">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                     <div className="relative w-full sm:max-w-md">
-                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                        <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-500 pointer-events-none" />
                                         <input
                                             type="text"
-                                            placeholder="Buscar por nome ou e-mail..."
+                                            placeholder="Buscar por nome, e-mail ou cargo..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2.5 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
                                         />
                                         {searchTerm && (
-                                            <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white">
+                                            <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-3 text-zinc-500 hover:text-white">
                                                 <X className="w-4 h-4" />
                                             </button>
                                         )}
                                     </div>
                                     <p className="text-xs text-zinc-500 sm:ml-auto shrink-0">
-                                        <span className="text-white font-bold">{equipe.length}</span> na equipe ·{' '}
-                                        <span className="text-white font-bold">{clientes.length}</span> cliente(s)
+                                        <span className="text-white font-semibold">{equipe.length}</span> na equipe
+                                        {semVinculo.length > 0 && (
+                                            <> · <span className="text-amber-400 font-semibold">{semVinculo.length}</span> aguardando vínculo</>
+                                        )}
                                     </p>
                                 </div>
 
-                                {/* Cartoes em vez de tabela.
-                                    A tabela tinha 800px de largura minima, entao rolava
-                                    lateralmente em qualquer tela media, e empilhava
-                                    e-mail, dois selects e dois icones na mesma linha.
-                                    Separar por papel tambem elimina a coluna "Vínculo"
-                                    vazia com "Global" repetido em toda linha de agencia. */}
-                                {filteredUsers.length === 0 ? (
-                                    <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
-                                        <Users className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                                        <p className="text-zinc-300 font-bold mb-1">Nenhum usuário encontrado</p>
-                                        <p className="text-zinc-500 text-sm">
-                                            {searchTerm
-                                                ? <>Nada corresponde a “{searchTerm}”. <button onClick={() => setSearchTerm('')} className="text-[#FABE01] hover:underline font-bold">Limpar busca</button></>
-                                                : 'Os usuários aparecem aqui depois de criarem conta no portal.'}
+                                {/* CONTAS AGUARDANDO VINCULO.
+                                    Vem primeiro porque e a unica coisa nesta tela que
+                                    exige acao hoje: enquanto nao tiverem empresa, essas
+                                    contas entram no portal e veem so um aviso.
+
+                                    Elas ficam AQUI, e nao na aba Clientes, porque ainda
+                                    nao sao cliente de ninguem - nao ha cliente sob o qual
+                                    listar. Depois de vinculadas, somem daqui e passam a
+                                    viver dentro do cliente (aba Acessos do cliente). */}
+                                {semVinculo.length > 0 && (
+                                    <section>
+                                        <div className="flex items-center gap-2.5 mb-1">
+                                            <h3 className="text-lg font-bold text-white tracking-tight">Aguardando vínculo</h3>
+                                            <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-full">
+                                                {semVinculo.length}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-zinc-500 mb-4">
+                                            Criaram conta mas não pertencem a nenhum cliente. Sem vínculo, entram e veem apenas um aviso.
                                         </p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-8">
-                                        {([
-                                            ['Equipe da agência', equipeFiltrada, 'Acesso a todos os clientes.'],
-                                            ['Clientes', clientesFiltrados, 'Cada um vê apenas a própria empresa.']
-                                        ] as const).map(([titulo, lista, legenda]) => lista.length > 0 && (
-                                            <section key={titulo}>
-                                                <div className="flex items-center gap-2.5 mb-1">
-                                                    <h3 className="text-lg font-bold text-white tracking-tight">{titulo}</h3>
-                                                    <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">{lista.length}</span>
-                                                </div>
-                                                <p className="text-xs text-zinc-500 mb-4">{legenda}</p>
 
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-                                                    {lista.map(user => {
-                                                        const isMe = user.id === auth.currentUser?.uid;
-                                                        const semVinculo = user.role !== 'agencia' && !user.empresaId;
-                                                        const isEditing = editingUserId === user.id;
-                                                        const empresaAtual = empresas.find(e => e.id === user.empresaId);
-                                                        // Vinculo orfao: aponta para uma empresa que nao existe mais.
-                                                        // Sem tratar, o card se contradizia - selo "Ativo" no canto e
-                                                        // "Nenhuma" no campo Empresa. A conta funciona pela metade:
-                                                        // passa pelo gate de empresa mas nao acha dado nenhum.
-                                                        const vinculoOrfao = Boolean(user.empresaId) && !empresaAtual;
-
-                                                        // Selo de situacao. Ate agora o unico jeito de saber que uma
-                                                        // conta estava sem empresa era ler o texto de aviso; um selo
-                                                        // no canto responde isso varrendo a grade com o olho.
-                                                        const nivel = permissionLevel(user);
-                                                        const selo = user.role === 'agencia'
-                                                            ? nivel === 'admin'
-                                                                ? { texto: 'Admin', cor: 'bg-[#FABE01]/15 text-[#FABE01]' }
-                                                                : { texto: 'Colaborador', cor: 'bg-white/5 text-zinc-400' }
-                                                            : semVinculo
-                                                                ? { texto: 'Sem empresa', cor: 'bg-amber-500/15 text-amber-400' }
-                                                                : vinculoOrfao
-                                                                    ? { texto: 'Vínculo quebrado', cor: 'bg-red-500/15 text-red-400' }
-                                                                    : { texto: 'Ativo', cor: 'bg-emerald-500/15 text-emerald-400' };
-
-                                                        return (
-                                                            <div
-                                                                key={user.id}
-                                                                className={`bg-[#1A1A1A] border rounded-card p-4 flex flex-col transition-colors ${
-                                                                    vinculoOrfao ? 'border-red-500/30'
-                                                                        : semVinculo ? 'border-[#FABE01]/25'
-                                                                        : 'border-white/5 hover:border-white/15'
-                                                                }`}
-                                                            >
-                                                                {/* IDENTIDADE */}
-                                                                <div className="flex items-start gap-3">
-                                                                    {isSafeImageSrc(user.fotoUrl) ? (
-                                                                        <img src={user.fotoUrl!} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
-                                                                    ) : (
-                                                                        <div className="w-11 h-11 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-sm">
-                                                                            {getInitials(user)}
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <p className="font-bold text-white truncate">{getDisplayName(user)}</p>
-                                                                            {isMe && <span className="text-[9px] font-bold uppercase tracking-wider text-[#FABE01] shrink-0">você</span>}
-                                                                        </div>
-                                                                        {/* Cargo como etiqueta: a equipe passa a ser
-                                                                            legivel por funcao, nao so por nome. */}
-                                                                        {user.cargo && (
-                                                                            <span className="inline-block text-[10px] font-medium text-zinc-300 bg-white/5 px-2 py-0.5 rounded-full mt-1 mb-0.5 truncate max-w-full">
-                                                                                {user.cargo}
-                                                                            </span>
-                                                                        )}
-                                                                        <p className="text-xs text-zinc-500 truncate">
-                                                                            {user.role === 'agencia'
-                                                                                ? PERMISSION_HINT[nivel]
-                                                                                : empresaAtual?.nome || (vinculoOrfao ? 'Empresa não encontrada' : 'Cliente sem empresa')}
-                                                                        </p>
-                                                                    </div>
-                                                                    <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${selo.cor}`}>
-                                                                        {selo.texto}
-                                                                    </span>
-                                                                </div>
-
-                                                                {/* CAMPOS. Em leitura sao texto; so viram controle no
-                                                                    modo de edicao. Antes os dois selects ficavam sempre
-                                                                    abertos no card, e nada dizia se aquilo era o valor
-                                                                    atual ou uma alteracao pendente. */}
-                                                                <div className="grid grid-cols-2 gap-3 mt-4">
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-[11px] font-medium text-zinc-500 mb-1">Permissão</p>
-                                                                        {isEditing && !isMe && nivel !== 'admin' ? (
-                                                                            <select
-                                                                                value={pendingRoleChanges[user.id] ?? user.role}
-                                                                                onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                                className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                            >
-                                                                                <option value="cliente">Cliente</option>
-                                                                                <option value="agencia">Agência</option>
-                                                                            </select>
-                                                                        ) : (
-                                                                            <p className="text-sm text-zinc-200 truncate">
-                                                                                {PERMISSION_LABEL[nivel]}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-[11px] font-medium text-zinc-500 mb-1">Empresa</p>
-                                                                        {user.role === 'agencia' ? (
-                                                                            <p className="text-sm text-zinc-500 truncate">Todos os clientes</p>
-                                                                        ) : isEditing ? (
-                                                                            // "+ Novo cliente" abre a ficha completa (ClientFormModal) em vez
-                                                                            // do campo de texto solto que existia aqui e criava o cliente com
-                                                                            // nome e mais nada. Um caminho de criacao so.
-                                                                            <select
-                                                                                value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
-                                                                                onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                                className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                            >
-                                                                                <option value="null">— sem empresa —</option>
-                                                                                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                                {souAdmin && <option value="create_new">+ Nova empresa</option>}
-                                                                            </select>
-                                                                        ) : (
-                                                                            <p
-                                                                                className={`text-sm truncate ${vinculoOrfao ? 'text-red-400' : semVinculo ? 'text-amber-400' : 'text-zinc-200'}`}
-                                                                                title={vinculoOrfao ? `ID gravado: ${user.empresaId}` : undefined}
-                                                                            >
-                                                                                {empresaAtual?.nome || (vinculoOrfao ? user.empresaId : 'Nenhuma')}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {isEditing && (
-                                                                    <div className="mt-3">
-                                                                        <p className="text-[11px] font-medium text-zinc-500 mb-1">Cargo</p>
-                                                                        <input
-                                                                            value={pendingCargoChanges[user.id] ?? user.cargo ?? ''}
-                                                                            onChange={(e) => setPendingCargoChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                            placeholder={user.role === 'agencia' ? 'Ex: Social Media' : 'Ex: Responsável pelo marketing'}
-                                                                            className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                        />
-                                                                    </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                            {semVinculo.map(user => (
+                                                <PersonCard
+                                                    key={user.id}
+                                                    pessoa={user}
+                                                    selo={SELO_SEM_EMPRESA}
+                                                    borda="atencao"
+                                                    subtitulo="Conta sem cliente"
+                                                    acoes={souAdmin ? [
+                                                        { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) },
+                                                        { label: 'Remover conta', onClick: () => handleDeleteUser(user.id), destrutiva: true }
+                                                    ] : [
+                                                        { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) }
+                                                    ]}
+                                                >
+                                                    {souAdmin ? (
+                                                        <>
+                                                            <label className="block text-[10px] text-zinc-600 mb-1.5">Vincular ao cliente</label>
+                                                            <div className="flex gap-1.5">
+                                                                <select
+                                                                    value={pendingEmpresaChanges[user.id] ?? 'null'}
+                                                                    onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
+                                                                    className="min-w-0 flex-1 bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
+                                                                >
+                                                                    <option value="null">— escolha —</option>
+                                                                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                                    <option value="create_new">+ Novo cliente</option>
+                                                                </select>
+                                                                {pendingEmpresaChanges[user.id] && (
+                                                                    <button
+                                                                        onClick={() => saveUserEdit(user.id)}
+                                                                        className="shrink-0 px-3 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
+                                                                    >
+                                                                        Vincular
+                                                                    </button>
                                                                 )}
-
-                                                                {/* CONTATO em poco proprio: o e-mail e longo e estava
-                                                                    competindo com o nome na mesma coluna de texto. */}
-                                                                <div className="mt-3 flex items-center gap-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2.5 min-w-0">
-                                                                    <Mail className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                                                                    <span className="text-xs text-zinc-400 truncate" title={user.email}>{user.email}</span>
-                                                                </div>
-
-                                                                {!isEditing && semVinculo && (
-                                                                    <p className="text-[11px] text-amber-400/90 mt-3 leading-relaxed">
-                                                                        Sem empresa, esta conta entra no portal e vê apenas um aviso.
-                                                                    </p>
-                                                                )}
-                                                                {!isEditing && vinculoOrfao && (
-                                                                    <p className="text-[11px] text-red-400/90 mt-3 leading-relaxed">
-                                                                        A empresa vinculada não existe mais. {souAdmin ? 'Escolha outra em Editar' : 'Peça a um administrador para corrigir'}, ou a conta entra e não encontra nada.
-                                                                    </p>
-                                                                )}
-
-                                                                {/* ACOES */}
-                                                                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
-                                                                    {isEditing ? (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={() => cancelUserEdit(user.id)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
-                                                                            >
-                                                                                Cancelar
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => saveUserEdit(user.id)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
-                                                                            >
-                                                                                Salvar
-                                                                            </button>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            {/* Nao desenhado em vez de desabilitado.
-                                                                                Oito botoes dourados apagados ainda
-                                                                                pareciam a acao principal do card e
-                                                                                convidavam ao clique; um card sem o
-                                                                                botao diz a verdade de imediato.
-                                                                                Admin nao aparece porque o nivel vem
-                                                                                de ADMIN_EMAILS, nao desta tela. */}
-                                                                            {souAdmin && nivel !== 'admin' && (
-                                                                                <button
-                                                                                    onClick={() => startUserEdit(user.id)}
-                                                                                    className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
-                                                                                >
-                                                                                    Editar
-                                                                                </button>
-                                                                            )}
-                                                                            <button
-                                                                                onClick={() => handlePasswordReset(user.email)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
-                                                                            >
-                                                                                Senha
-                                                                            </button>
-                                                                            {/* Ficha financeira: valor, dia de pagamento,
-                                                                                escopo. Vive em subcolecao propria - o
-                                                                                documento do usuario e lido pela equipe
-                                                                                inteira. So admin ve o botao. */}
-                                                                            {souAdmin && (
-                                                                                <button
-                                                                                    onClick={() => setFinanceiroDe(user)}
-                                                                                    title="Financeiro"
-                                                                                    className="shrink-0 p-2 text-zinc-600 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-control transition-colors"
-                                                                                >
-                                                                                    <DollarSign className="w-4 h-4" />
-                                                                                </button>
-                                                                            )}
-                                                                            {!isMe && souAdmin && (
-                                                                                <button
-                                                                                    onClick={() => handleDeleteUser(user.id)}
-                                                                                    title="Remover usuário"
-                                                                                    aria-label={`Remover ${getDisplayName(user)}`}
-                                                                                    className="shrink-0 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-400/5 rounded-control transition-colors"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </div>
                                                             </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </section>
-                                        ))}
-                                    </div>
+                                                        </>
+                                                    ) : (
+                                                        <p className="text-[11px] text-zinc-600 leading-relaxed">
+                                                            Só administradores vinculam contas a um cliente.
+                                                        </p>
+                                                    )}
+                                                </PersonCard>
+                                            ))}
+                                        </div>
+                                    </section>
                                 )}
+
+                                {/* EQUIPE DA AGENCIA.
+                                    Cliente NAO aparece nesta tela: o acesso de um cliente
+                                    pertence ao cliente, e vive dentro dele (aba Acessos).
+                                    Listar os dois aqui repetia o nome da empresa em dois
+                                    campos e mostrava "Permissão: Cliente" embaixo de um
+                                    titulo que ja dizia Clientes. */}
+                                <section>
+                                    <div className="flex items-center gap-2.5 mb-1">
+                                        <h3 className="text-lg font-bold text-white tracking-tight">Equipe da agência</h3>
+                                        <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+                                            {equipeFiltrada.length}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 mb-4">
+                                        Acesso a todos os clientes. Administrador é definido pela lista de e-mails do
+                                        sistema, não por esta tela — por isso o nível não aparece como campo editável.
+                                    </p>
+
+                                    {equipeFiltrada.length === 0 ? (
+                                        <EmptyState
+                                            icon={Users}
+                                            title={searchTerm ? 'Nenhum resultado' : 'Nenhuma pessoa na equipe'}
+                                            description={searchTerm
+                                                ? `Nada corresponde a “${searchTerm}”.`
+                                                : 'A equipe aparece aqui depois de criar conta no portal.'}
+                                            action={searchTerm ? { label: 'Limpar busca', onClick: () => setSearchTerm('') } : undefined}
+                                        />
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                            {equipeFiltrada.map(user => {
+                                                const nivel = permissionLevel(user);
+                                                const isMe = user.id === auth.currentUser?.uid;
+                                                const isEditing = editingUserId === user.id;
+                                                return (
+                                                    <PersonCard
+                                                        key={user.id}
+                                                        pessoa={user}
+                                                        ehVoce={isMe}
+                                                        selo={nivel === 'admin' ? SELO_ADMIN : SELO_COLABORADOR}
+                                                        subtitulo={user.cargo || 'Cargo não definido'}
+                                                        campos={[{ rotulo: 'Permissão', valor: PERMISSION_LABEL[nivel] }]}
+                                                        acoes={[
+                                                            ...(souAdmin ? [{ label: isEditing ? 'Fechar edição' : 'Editar cargo', onClick: () => isEditing ? cancelUserEdit(user.id) : startUserEdit(user.id) }] : []),
+                                                            { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) },
+                                                            ...(souAdmin ? [{ label: 'Financeiro', onClick: () => setFinanceiroDe(user) }] : []),
+                                                            ...(souAdmin && !isMe ? [{ label: 'Remover da equipe', onClick: () => handleDeleteUser(user.id), destrutiva: true }] : [])
+                                                        ]}
+                                                    >
+                                                        {isEditing && souAdmin && (
+                                                            <>
+                                                                <label className="block text-[10px] text-zinc-600 mb-1.5">Cargo</label>
+                                                                <div className="flex gap-1.5">
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={pendingCargoChanges[user.id] ?? user.cargo ?? ''}
+                                                                        onChange={(e) => setPendingCargoChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
+                                                                        onKeyDown={(e) => { if (e.key === 'Enter') saveUserEdit(user.id); }}
+                                                                        placeholder="Ex: Social Media"
+                                                                        className="min-w-0 flex-1 bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => saveUserEdit(user.id)}
+                                                                        className="shrink-0 px-3 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
+                                                                    >
+                                                                        Salvar
+                                                                    </button>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </PersonCard>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </section>
                             </div>
                         )}
+
                     </>
                 )}
                 </div>

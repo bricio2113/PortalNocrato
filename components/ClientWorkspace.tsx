@@ -11,13 +11,17 @@ import WeeklyUpdatesView from './WeeklyUpdatesView';
 import MateriaisView from './MateriaisView';
 import ClientReportsView from './ClientReportsView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
+import PersonCard, { SELO_ATIVO } from './PersonCard';
+import { PERMISSION_LABEL } from '../utils/permissions';
+import { auth } from '../utils/firebase';
+import { isAdmin } from '../utils/permissions';
 import { PageHeader, StatTile, Card } from './ui';
 import {
     ArrowLeft, LayoutDashboard, Calendar, ClipboardList, Target,
-    DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock
+    DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock, KeyRound, Users
 } from 'lucide-react';
 
-type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' | 'acessos';
 
 interface ClientWorkspaceProps {
     empresaId: string;
@@ -35,7 +39,12 @@ const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
     { id: 'production', label: 'Produção', icon: ClipboardList },
     { id: 'weekly', label: 'Foco da Semana', icon: Target },
     { id: 'files', label: 'Arquivos & Materiais', icon: DownloadCloud },
-    { id: 'reports', label: 'Relatórios', icon: FileBarChart }
+    { id: 'reports', label: 'Relatórios', icon: FileBarChart },
+    // O acesso de um cliente pertence AO CLIENTE, e por isso vive aqui.
+    // Antes essas contas apareciam misturadas na Equipe & Permissoes da agencia,
+    // onde repetiam o nome da empresa em dois campos e mostravam "Permissão:
+    // Cliente" embaixo de um titulo que ja dizia Clientes.
+    { id: 'acessos', label: 'Acessos', icon: KeyRound }
 ];
 
 /**
@@ -54,6 +63,30 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const [isNavOpen, setIsNavOpen] = useState(false);
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Contas vinculadas a ESTE cliente. Carregadas so quando a secao abre: e uma
+    // leitura da colecao usuarios inteira, e nao faz sentido paga-la em toda
+    // visita ao espaco de trabalho.
+    const souAdmin = isAdmin(auth.currentUser?.email);
+    const [acessos, setAcessos] = useState<{ id: string; email: string; nome?: string | null; sobrenome?: string | null; fotoUrl?: string | null; cargo?: string | null }[]>([]);
+    const [carregandoAcessos, setCarregandoAcessos] = useState(false);
+    const [avisoAcesso, setAvisoAcesso] = useState('');
+
+    const carregarAcessos = React.useCallback(async () => {
+        setCarregandoAcessos(true);
+        setAvisoAcesso('');
+        try {
+            const snap = await db.collection('usuarios').where('empresaId', '==', empresaId).get();
+            setAcessos(snap.docs.map(d => ({ id: d.id, ...d.data() } as typeof acessos[number])));
+        } catch (e) {
+            console.error(e);
+            setAvisoAcesso('Não foi possível carregar os acessos.');
+        } finally { setCarregandoAcessos(false); }
+    }, [empresaId]);
+
+    useEffect(() => {
+        if (section === 'acessos') void carregarAcessos();
+    }, [section, carregarAcessos]);
 
     // Assinatura propria para os numeros macro e para a previa do feed. O
     // CalendarView tem a dele; separar evita acoplar as duas telas.
@@ -126,10 +159,93 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                 return <MateriaisView empresaId={empresaId} userRole="agencia" />;
             case 'reports':
                 return <ClientReportsView empresaId={empresaId} userRole="agencia" userName={userName} />;
+            case 'acessos':
+                return renderAcessos();
             default:
                 return renderOverview();
         }
     };
+
+    /**
+     * Quem consegue entrar no portal DESTE cliente.
+     *
+     * A permissao nao e editavel: cliente cadastrado e sempre cliente. A empresa
+     * tambem nao - ela e definida no vinculo e nao muda por rotina; o que muda,
+     * quando o cliente pede, e o NOME da empresa, na ficha dele. Por isso aqui so
+     * existem senha e remocao.
+     */
+    const renderAcessos = () => (
+        <div>
+            <PageHeader
+                title="Acessos"
+                subtitle={`Quem consegue entrar no portal de ${empresaNome}.`}
+            />
+
+            {avisoAcesso && (
+                <p className="text-red-400 text-sm mb-4 flex items-start gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {avisoAcesso}
+                </p>
+            )}
+
+            {carregandoAcessos ? (
+                <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 text-[#FABE01] animate-spin" /></div>
+            ) : acessos.length === 0 ? (
+                <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
+                    <span className="w-14 h-14 mx-auto mb-4 rounded-card bg-white/[0.03] flex items-center justify-center">
+                        <Users className="w-7 h-7 text-zinc-600" />
+                    </span>
+                    <p className="text-white font-bold mb-1">Ninguém tem acesso ainda</p>
+                    <p className="text-zinc-500 text-sm max-w-md mx-auto leading-relaxed">
+                        Quando alguém do cliente criar conta, vincule em <strong className="text-zinc-300">Equipe → Aguardando vínculo</strong>.
+                    </p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {acessos.map(pessoa => (
+                        <PersonCard
+                            key={pessoa.id}
+                            pessoa={pessoa}
+                            selo={SELO_ATIVO}
+                            subtitulo={pessoa.cargo || 'Contato do cliente'}
+                            campos={[{ rotulo: 'Permissão', valor: PERMISSION_LABEL.cliente }]}
+                            acoes={[
+                                {
+                                    label: 'Enviar redefinição de senha',
+                                    onClick: async () => {
+                                        try {
+                                            await auth.sendPasswordResetEmail(pessoa.email);
+                                            setAvisoAcesso('');
+                                            window.alert(`E-mail de redefinição enviado para ${pessoa.email}.`);
+                                        } catch (e) {
+                                            console.error(e);
+                                            setAvisoAcesso('Não foi possível enviar o e-mail.');
+                                        }
+                                    }
+                                },
+                                ...(souAdmin ? [{
+                                    label: 'Remover acesso',
+                                    destrutiva: true,
+                                    onClick: async () => {
+                                        if (!window.confirm(`Remover o acesso de ${pessoa.email}? A conta deixa de entrar no portal.`)) return;
+                                        try {
+                                            // Desvincula em vez de apagar a conta: apagar e
+                                            // irreversivel e nem sempre e o que se quer - o
+                                            // contato pode ter saido da empresa e voltar.
+                                            await db.collection('usuarios').doc(pessoa.id).update({ empresaId: null });
+                                            await carregarAcessos();
+                                        } catch (e) {
+                                            console.error(e);
+                                            setAvisoAcesso('Não foi possível remover. Só administradores fazem isso.');
+                                        }
+                                    }
+                                }] : [])
+                            ]}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 
     const renderOverview = () => (
         <div className="space-y-8">

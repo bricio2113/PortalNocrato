@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(4173, r));
 
-const SCREENS = ['login','signup','verificacao','perfil-obrigatorio','perfil','painel','cliente-workspace','calendario','calendario-cliente','producao','semana','arquivos','relatorios','ficha-cliente','ficha-cliente-colab','modal','thumb','materiais','materiais-cliente','home-cliente','andamento'];
+const SCREENS = ['login','signup','verificacao','perfil-obrigatorio','perfil','painel','cliente-workspace','calendario','calendario-cliente','producao','semana','arquivos','relatorios','ficha-cliente','ficha-cliente-colab','modal','thumb','materiais','materiais-cliente','home-cliente','andamento','pessoa-card'];
 const VIEWPORTS = [{ name: '360', width: 360, height: 740 }, { name: '390', width: 390, height: 844 }];
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });

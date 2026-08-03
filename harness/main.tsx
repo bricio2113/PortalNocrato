@@ -9,6 +9,7 @@ import ThumbBench from './ThumbBench';
 import MateriaisView from '../components/MateriaisView';
 import ClientHomeView from '../components/ClientHomeView';
 import PostTimeline from '../components/PostTimeline';
+import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA, SELO_ATIVO } from '../components/PersonCard';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
 import ProfileView from '../components/ProfileView';
@@ -51,6 +52,12 @@ const SCREENS: Record<string, React.ReactNode> = {
     materiais: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
     'materiais-cliente': <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="cliente" /></div>,
     'home-cliente': <div className="p-4 bg-[#111111] min-h-screen"><ClientHomeView empresaId="agencia-mara" empresaNome="Agencia Mara" userName="Cliente Exemplo" onIrParaCalendario={noop} /></div>,
+    'pessoa-card': <div className="p-6 bg-[#111111] min-h-screen grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <PersonCard pessoa={{ id: 'p1', email: 'pedro.vidal2608@gmail.com', nome: 'Pedro', sobrenome: 'Vidal', cargo: 'Diretor' }} selo={SELO_ADMIN} ehVoce subtitulo="Diretor" campos={[{ rotulo: 'Permissão', valor: 'Administrador' }]} acoes={[{ label: 'Editar cargo', onClick: noop }, { label: 'Financeiro', onClick: noop }, { label: 'Remover da equipe', onClick: noop, destrutiva: true }]} />
+        <PersonCard pessoa={{ id: 'p2', email: 'kaiodaikal@gmail.com', nome: 'Kaio', sobrenome: 'Henrique' }} selo={SELO_COLABORADOR} subtitulo="Cargo não definido" campos={[{ rotulo: 'Permissão', valor: 'Colaborador' }]} acoes={[{ label: 'Enviar redefinição de senha', onClick: noop }]} />
+        <PersonCard pessoa={{ id: 'p3', email: 'enfermeira.lima@hotmail.com', nome: 'Ana', sobrenome: 'Lima' }} selo={SELO_SEM_EMPRESA} borda="atencao" subtitulo="Conta sem cliente" acoes={[{ label: 'Remover conta', onClick: noop, destrutiva: true }]} />
+        <PersonCard pessoa={{ id: 'p4', email: 'marcioalmeida81@gmail.com', nome: 'Marcio', sobrenome: 'Almeida', cargo: 'Contato do cliente' }} selo={SELO_ATIVO} subtitulo="Contato do cliente" campos={[{ rotulo: 'Permissão', valor: 'Cliente' }]} acoes={[{ label: 'Enviar redefinição de senha', onClick: noop }]} />
+    </div>,
     andamento: <div className="p-6 bg-[#111111] min-h-screen max-w-lg"><PostTimeline empresaId="agencia-mara" eventId="ev0" userRole="cliente" /></div>,
     relatorios: <div className="p-4 bg-[#111111] min-h-screen"><ClientReportsView empresaId="agencia-mara" userRole="agencia" userName="Pedro Vidal" /></div>,
     modal: <div className="bg-[#111111] min-h-screen"><EventDetailModal event={evento} onSave={noop} onDelete={noop} onClose={noop} empresaId="agencia-mara" userEmail={profile.email} userRole="agencia" userName="Pedro Vidal" /></div>

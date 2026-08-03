@@ -47,7 +47,10 @@ const ADMIN_MOCK = ['pedro.vidal2608@gmail.com', 'briciomarketing@gmail.com'];
 const USERS = Array.from({ length: 8 }, (_, i) => ({
     id: `u${i}`,
     email: i === 0 ? ADMIN_MOCK[0] : i === 3 ? ADMIN_MOCK[1] : `usuario.numero${i}@umdominiobemlongo.com.br`,
-    role: i % 3 === 0 ? 'agencia' : 'cliente', empresaId: i % 3 === 0 ? null : (i % 4 === 1 ? 'empresa-que-nao-existe' : 'Agencia Mara'),
+    role: i % 3 === 0 ? 'agencia' : 'cliente',
+    // u2 e cliente SEM empresa de proposito: e a fila "aguardando vinculo", que
+    // sem este caso nunca era renderizada na auditoria.
+    empresaId: i % 3 === 0 ? null : i === 2 ? null : (i % 4 === 1 ? 'empresa-que-nao-existe' : 'Agencia Mara'),
     nome: ['Maria', 'João', 'Ana', 'Carlos'][i % 4], sobrenome: ['Silva', 'Almeida', 'Nogueira', 'Teixeira'][i % 4],
     // Parte com cargo e parte sem: a etiqueta nao pode quebrar o card ausente.
     cargo: i % 3 === 0 ? ['Social Media', 'Designer', 'Tráfego'][i % 3] : undefined
