@@ -112,10 +112,38 @@ const makeDoc = (path: string): any => ({
     delete: async () => registrar('delete', path)
 });
 
+/**
+ * Cloud Storage falso.
+ *
+ * Registra a subida em __writes junto das escritas do Firestore, para a auditoria
+ * conseguir provar que um upload chamou o caminho certo - e devolve uma URL
+ * https plausivel, porque isSafeImageSrc recusa qualquer coisa que nao seja
+ * https ou data URI de imagem.
+ */
+export const storage: any = {
+    ref: (caminho: string) => ({
+        fullPath: caminho,
+        put: (arquivo: any) => {
+            registrar('upload', caminho, { contentType: arquivo?.type, size: arquivo?.size });
+            const task: any = {
+                on: (_ev: string, prog: any, _err: any, done: any) => {
+                    prog?.({ bytesTransferred: arquivo?.size || 0, totalBytes: arquivo?.size || 1 });
+                    setTimeout(() => done?.(), 0);
+                },
+                snapshot: { ref: { getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(caminho)}` } },
+                then: (fn: any) => Promise.resolve(task.snapshot).then(fn)
+            };
+            return task;
+        },
+        delete: async () => registrar('delete-storage', caminho),
+        getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(caminho)}`
+    })
+};
+
 export const db: any = { collection: (name: string) => makeCollection(name), batch: () => ({ update() {}, commit: async () => {} }) };
 export const auth: any = {
     currentUser: { uid: 'u0', email: 'pedro.vidal2608@gmail.com', emailVerified: true, reload: async () => {}, getIdToken: async () => 'tok', sendEmailVerification: async () => {}, updateProfile: async () => {} },
     onAuthStateChanged: () => () => {},
     signOut: async () => {}, sendPasswordResetEmail: async () => {}
 };
-export default { db, auth };
+export default { db, auth, storage };

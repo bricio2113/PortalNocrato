@@ -6,6 +6,7 @@ import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 import "firebase/compat/analytics";
 import "firebase/compat/auth";
+import "firebase/compat/storage";
 
 // Your web app's Firebase configuration from the user prompt
 const firebaseConfig = {
@@ -24,5 +25,9 @@ if (!firebase.apps.length) {
 }
 const db = firebase.firestore();
 const auth = firebase.auth();
+// Cloud Storage. O bucket vem do proprio firebaseConfig (storageBucket).
+// As regras dele estao em storage.rules - arquivo SEPARADO de firestore.rules,
+// publicado por outro comando. Ver o cabecalho de storage.rules.
+const storage = firebase.storage();
 
-export { db, auth };
+export { db, auth, storage };

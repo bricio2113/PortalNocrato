@@ -237,6 +237,28 @@ service cloud.firestore {
       match /_meta/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+      // MINIATURAS das publicacoes: um documento por evento, com a capa em
+      // data URI de ~40 KB.
+      //
+      // Colecao propria, e nao campo dentro do evento, por causa de custo: o
+      // subscribePendingCounts le a colecao events inteira para contar
+      // pendencias, e com a miniatura la dentro cada contagem arrastaria 40 KB
+      // por post - dezenas de MB por abertura do painel com 20 clientes.
+      //
+      // Escrita e da agencia: a miniatura e derivada do material que ela produz.
+      // O cliente le, porque e o que a grade e a previa do feed exibem para ele.
+      match /covers/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow write: if isAgency()
+                     // Teto repetido aqui: o limite de 120 KB aplicado no
+                     // navegador (utils/thumbnail.ts) nao vale nada se alguem
+                     // chamar o SDK direto. O documento do Firestore aceita
+                     // 1 MiB, e 30 posts com 1 MiB cada seriam 30 MB por
+                     // abertura de tela.
+                     && request.resource.data.thumb is string
+                     && request.resource.data.thumb.size() <= 200000;
+      }
+
       // Espelho de leitura escrito pelo CalendarView.
       match /Agenciaapk/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
