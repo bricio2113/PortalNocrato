@@ -32,13 +32,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Bootstrap da agencia por e-mail. Precisa ficar igual a lista
-    // AGENCY_EMAILS em constants.ts - sem isso o primeiro admin nao
-    // conseguiria criar o proprio documento com role 'agencia'.
-    function isAgencyEmail() {
+    // ADMINISTRADORES. Precisa ficar igual a ADMIN_EMAILS em constants.ts.
+    //
+    // Duas funcoes: bootstrap (o primeiro admin precisa conseguir criar o
+    // proprio documento com role 'agencia') e poder administrativo.
+    //
+    // Por que a lista fica aqui e nao num campo do documento: um `isAdmin:
+    // true` em usuarios/{uid} exigiria uma regra protegendo esse campo
+    // especifico, e um esquecimento ali reabre a escalacao de privilegio. Esta
+    // lista nenhum SDK escreve.
+    function isAdminEmail() {
       return isSignedIn() && request.auth.token.email in [
-        'briciomarketing@gmail.com',
-        'briciomarketing@mail.com'
+        'pedro.vidal2608@gmail.com',
+        'briciomarketing@gmail.com'
       ];
     }
 
@@ -51,11 +57,24 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
     }
 
+    // EQUIPE DA AGENCIA: admin ou colaborador. Da acesso ao trabalho de
+    // conteudo em todos os clientes - calendario, producao, aprovacao,
+    // relatorios, arquivos.
+    //
     // Confiar no campo 'role' so e seguro porque as regras de
     // usuarios/{userId} impedem que o proprio usuario o altere.
     function isAgency() {
-      return isAgencyEmail()
+      return isAdminEmail()
         || (isVerified() && hasUserDoc() && myUserDoc().role == 'agencia');
+    }
+
+    // ADMINISTRADOR: gerencia PESSOAS e CLIENTES.
+    //
+    // Antes este degrau nao existia - `role: 'agencia'` dava tudo, e qualquer
+    // pessoa da equipe podia se promover, mudar o vinculo de outra ou excluir
+    // um cliente com os posts dentro.
+    function isAdmin() {
+      return isAdminEmail();
     }
 
     function belongsTo(empresaId) {
@@ -87,7 +106,11 @@ service cloud.firestore {
 
       // Auto-cadastro: apenas o proprio uid, sempre como cliente sem vinculo.
       // Impede que alguem nasca 'agencia' ou ja vinculado a uma empresa.
-      allow create: if isAgency()
+      //
+      // Criar conta para outra pessoa e privilegio de admin: um colaborador
+      // que pudesse criar documento arbitrario poderia se dar um segundo
+      // usuario 'agencia' e contornar todo o resto.
+      allow create: if isAdmin()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == 'cliente'
@@ -101,7 +124,7 @@ service cloud.firestore {
       // aplicado no cliente (utils/avatar.ts) e repetido aqui, porque validacao
       // que so existe no front nao e validacao: sem isto alguem poderia gravar
       // 1 MiB por documento chamando o SDK direto.
-      allow update: if isAgency()
+      allow update: if isAdmin()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
@@ -110,7 +133,9 @@ service cloud.firestore {
                             || request.resource.data.fotoUrl == null
                             || request.resource.data.fotoUrl.size() <= 300000));
 
-      allow delete: if isAgency();
+      // Remover conta e administrativo. O colaborador nao apaga colega nem
+      // cliente.
+      allow delete: if isAdmin();
     }
 
     // ---------------------------------------------------------------
@@ -122,8 +147,15 @@ service cloud.firestore {
       // Cliente le a propria empresa; agencia le todas.
       allow read: if isAgency() || belongsTo(empresaId);
 
-      // Criar, renomear e excluir empresa e privilegio da agencia.
-      allow write: if isAgency();
+      // Criar, renomear e excluir empresa e privilegio de ADMIN.
+      //
+      // Excluir a empresa e a acao mais destrutiva do sistema - leva o
+      // calendario, os relatorios e o historico de aprovacao com ela -, e
+      // estava liberada para qualquer conta com role 'agencia'.
+      //
+      // O cadastro do cliente (segmento, contato, contrato) mora neste
+      // documento, entao editar ficha tambem e administrativo.
+      allow write: if isAdmin();
 
       // events: o cliente le tudo, mas nao apaga nem cria publicacao. O papel
       // dele e aprovar ou pedir ajuste - a producao e da agencia. Antes tinha

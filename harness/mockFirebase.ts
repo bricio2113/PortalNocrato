@@ -31,8 +31,12 @@ const EVENTS = Array.from({ length: 14 }, (_, i) => ({
 const TASKS = EVENTS.map((e, i) => ({ id: `t${i}`, title: e.title, status: e.status, createdAt: ts(d(-i)), eventId: e.id, type: e.type, plataforma: 'Instagram' }));
 const LINKS = Array.from({ length: 5 }, (_, i) => ({ id: `l${i}`, title: `Material ${i + 1} com nome longo`, url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrS/view', category: ['Mídia', 'Contratos', 'Relatórios', 'Outros'][i % 4], createdAt: ts(d(-i)) }));
 const WEEKLY = Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, text: `Tarefa da semana ${i + 1} com texto razoavelmente longo`, completed: i % 3 === 0 }));
+// u0 e o proprio admin logado e u3 e o outro admin: os dois precisam aparecer
+// com selo "Admin" enquanto o resto da equipe aparece como "Colaborador".
+const ADMIN_MOCK = ['pedro.vidal2608@gmail.com', 'briciomarketing@gmail.com'];
 const USERS = Array.from({ length: 8 }, (_, i) => ({
-    id: `u${i}`, email: `usuario.numero${i}@umdominiobemlongo.com.br`,
+    id: `u${i}`,
+    email: i === 0 ? ADMIN_MOCK[0] : i === 3 ? ADMIN_MOCK[1] : `usuario.numero${i}@umdominiobemlongo.com.br`,
     role: i % 3 === 0 ? 'agencia' : 'cliente', empresaId: i % 3 === 0 ? null : (i % 4 === 1 ? 'empresa-que-nao-existe' : 'Agencia Mara'),
     nome: ['Maria', 'João', 'Ana', 'Carlos'][i % 4], sobrenome: ['Silva', 'Almeida', 'Nogueira', 'Teixeira'][i % 4]
 }));
@@ -73,7 +77,7 @@ const makeDoc = (path: string): any => ({
 
 export const db: any = { collection: (name: string) => makeCollection(name), batch: () => ({ update() {}, commit: async () => {} }) };
 export const auth: any = {
-    currentUser: { uid: 'u0', email: 'pedro.vidal@exemplo.com', emailVerified: true, reload: async () => {}, getIdToken: async () => 'tok', sendEmailVerification: async () => {}, updateProfile: async () => {} },
+    currentUser: { uid: 'u0', email: 'pedro.vidal2608@gmail.com', emailVerified: true, reload: async () => {}, getIdToken: async () => 'tok', sendEmailVerification: async () => {}, updateProfile: async () => {} },
     onAuthStateChanged: () => () => {},
     signOut: async () => {}, sendPasswordResetEmail: async () => {}
 };

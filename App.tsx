@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
 import { View, UserProfile } from './types';
-import { AGENCY_EMAILS } from './constants';
+import { isAdmin } from './utils/permissions';
 import { subscribePendingCounts, PendingCounts } from './utils/posts';
 
 // Componentes
@@ -150,15 +150,19 @@ const App: React.FC = () => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
             if (currentUser) {
                 await currentUser.reload();
-                const isAdmin = AGENCY_EMAILS.includes(currentUser.email || '');
+                // Bootstrap: os e-mails de ADMIN_EMAILS entram como agencia
+                // mesmo sem documento em usuarios/ - e assim que o primeiro
+                // admin consegue existir. Comparacao normalizada, para
+                // "Pedro.Vidal@..." nao ficar de fora por causa da caixa.
+                const isBootstrapAdmin = isAdmin(currentUser.email);
 
-                if (!currentUser.emailVerified && !isAdmin) {
+                if (!currentUser.emailVerified && !isBootstrapAdmin) {
                     setUser(currentUser);
                     setIsLoadingAuth(false);
                     return;
                 }
 
-                if (isAdmin) {
+                if (isBootstrapAdmin) {
                     setUser(currentUser);
                     setRole('agencia');
                     setEmpresaId(null);

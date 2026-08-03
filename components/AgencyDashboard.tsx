@@ -4,6 +4,7 @@ import { DELETE_USER_ENDPOINT } from '../constants';
 import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import { UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
+import { isAdmin, permissionLevel, PERMISSION_LABEL, PERMISSION_HINT } from '../utils/permissions';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
@@ -191,6 +192,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
     /** Card de colaborador aberto para edicao. Um por vez, de proposito. */
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
+    // Quem esta olhando: admin ou colaborador.
+    //
+    // Nao vem de estado nem do banco - e derivado do e-mail da sessao contra
+    // ADMIN_EMAILS, a mesma lista que firestore.rules usa. Se um colaborador
+    // forcar o botao pelo console, a regra recusa a escrita: a interface aqui
+    // e conveniencia, nao a trava.
+    const souAdmin = isAdmin(auth.currentUser?.email);
     const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
 
     // Pendencia por empresa: quais clientes pediram ajuste e estao esperando.
@@ -235,6 +244,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const handleDeleteUser = async (userId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         if (!window.confirm("ATENÇÃO: Deseja remover este usuário?")) return;
         try {
             // O ID token identifica quem esta pedindo a exclusao. A funcao
@@ -273,6 +286,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const handleDeleteEmpresa = async (empresaId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         const linkedUsers = users.filter(u => u.empresaId === empresaId);
         
         const msg = linkedUsers.length > 0 
@@ -325,6 +342,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const saveUserEdit = async (userId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         const novoRole = pendingRoleChanges[userId];
         const novaEmpresa = pendingEmpresaChanges[userId];
         if (novoRole === undefined && novaEmpresa === undefined) {
@@ -363,6 +384,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const handleCreateAndAssignCompany = async (userId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         const nome = newCompanyIdInput.trim();
         if (!nome) return showNotification('Informe um nome para a empresa.');
 
@@ -547,8 +572,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                         value={unlinkedUsers.length}
                                         icon={Shield}
                                         tone={unlinkedUsers.length > 0 ? 'attention' : 'positive'}
-                                        hint={unlinkedUsers.length > 0 ? 'Sem empresa, não conseguem usar o portal' : 'Todo mundo com acesso liberado'}
-                                        onClick={unlinkedUsers.length > 0 ? () => { setActiveTab('team'); setSearchTerm(''); } : undefined}
+                                        hint={
+                                            unlinkedUsers.length === 0
+                                                ? 'Todo mundo com acesso liberado'
+                                                : souAdmin
+                                                    ? 'Sem empresa, não conseguem usar o portal'
+                                                    : 'Sem empresa. Peça a um administrador para vincular'
+                                        }
+                                        onClick={unlinkedUsers.length > 0 && souAdmin ? () => { setActiveTab('team'); setSearchTerm(''); } : undefined}
                                     />
                                 </div>
 
@@ -630,9 +661,9 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                 </p>
                                                 <button
                                                     onClick={() => { setActiveTab('team'); setSearchTerm(''); }}
-                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-4 py-2 rounded-control uppercase tracking-wide transition-colors"
+                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-xs px-4 py-2 rounded-full transition-colors"
                                                 >
-                                                    Resolver agora <ArrowRight className="w-3.5 h-3.5" />
+                                                    {souAdmin ? 'Resolver agora' : 'Ver quem está sem empresa'} <ArrowRight className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
                                         </div>
@@ -681,7 +712,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                             stats={pendingByEmpresa[empresa.id]}
                                             usuarios={users.filter(u => u.empresaId === empresa.id).length}
                                             onOpen={(section) => onOpenClient(empresa.id, empresa.nome, section)}
-                                            onDelete={() => handleDeleteEmpresa(empresa.id)}
+                                            onDelete={souAdmin ? () => handleDeleteEmpresa(empresa.id) : undefined}
                                         />
                                     ))}
                                 </div>
@@ -756,8 +787,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                         // Selo de situacao. Ate agora o unico jeito de saber que uma
                                                         // conta estava sem empresa era ler o texto de aviso; um selo
                                                         // no canto responde isso varrendo a grade com o olho.
+                                                        const nivel = permissionLevel(user);
                                                         const selo = user.role === 'agencia'
-                                                            ? { texto: 'Agência', cor: 'bg-[#FABE01]/15 text-[#FABE01]' }
+                                                            ? nivel === 'admin'
+                                                                ? { texto: 'Admin', cor: 'bg-[#FABE01]/15 text-[#FABE01]' }
+                                                                : { texto: 'Colaborador', cor: 'bg-white/5 text-zinc-400' }
                                                             : semVinculo
                                                                 ? { texto: 'Sem empresa', cor: 'bg-amber-500/15 text-amber-400' }
                                                                 : vinculoOrfao
@@ -789,7 +823,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                         </div>
                                                                         <p className="text-xs text-zinc-500 truncate">
                                                                             {user.role === 'agencia'
-                                                                                ? 'Equipe da agência'
+                                                                                ? PERMISSION_HINT[nivel]
                                                                                 : empresaAtual?.nome || (vinculoOrfao ? 'Empresa não encontrada' : 'Cliente sem empresa')}
                                                                         </p>
                                                                     </div>
@@ -805,7 +839,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                 <div className="grid grid-cols-2 gap-3 mt-4">
                                                                     <div className="min-w-0">
                                                                         <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-1">Permissão</p>
-                                                                        {isEditing && !isMe ? (
+                                                                        {isEditing && !isMe && nivel !== 'admin' ? (
                                                                             <select
                                                                                 value={pendingRoleChanges[user.id] ?? user.role}
                                                                                 onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
@@ -816,7 +850,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                             </select>
                                                                         ) : (
                                                                             <p className="text-sm text-zinc-200 truncate">
-                                                                                {user.role === 'agencia' ? 'Administrador' : 'Cliente'}
+                                                                                {PERMISSION_LABEL[nivel]}
                                                                             </p>
                                                                         )}
                                                                     </div>
@@ -850,7 +884,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                                 >
                                                                                     <option value="null">— sem empresa —</option>
                                                                                     {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                                    <option value="create_new">+ Nova empresa</option>
+                                                                                    {souAdmin && <option value="create_new">+ Nova empresa</option>}
                                                                                 </select>
                                                                             )
                                                                         ) : (
@@ -878,7 +912,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                 )}
                                                                 {!isEditing && vinculoOrfao && (
                                                                     <p className="text-[11px] text-red-400/90 mt-3 leading-relaxed">
-                                                                        A empresa vinculada não existe mais. Escolha outra em Editar, ou a conta entra e não encontra nada.
+                                                                        A empresa vinculada não existe mais. {souAdmin ? 'Escolha outra em Editar' : 'Peça a um administrador para corrigir'}, ou a conta entra e não encontra nada.
                                                                     </p>
                                                                 )}
 
@@ -901,21 +935,28 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                                         </>
                                                                     ) : (
                                                                         <>
-                                                                            <button
-                                                                                onClick={() => startUserEdit(user.id)}
-                                                                                disabled={isMe && user.role === 'agencia'}
-                                                                                title={isMe ? 'Você não pode alterar a própria permissão' : undefined}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                                            >
-                                                                                Editar
-                                                                            </button>
+                                                                            {/* Nao desenhado em vez de desabilitado.
+                                                                                Oito botoes dourados apagados ainda
+                                                                                pareciam a acao principal do card e
+                                                                                convidavam ao clique; um card sem o
+                                                                                botao diz a verdade de imediato.
+                                                                                Admin nao aparece porque o nivel vem
+                                                                                de ADMIN_EMAILS, nao desta tela. */}
+                                                                            {souAdmin && nivel !== 'admin' && (
+                                                                                <button
+                                                                                    onClick={() => startUserEdit(user.id)}
+                                                                                    className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
+                                                                                >
+                                                                                    Editar
+                                                                                </button>
+                                                                            )}
                                                                             <button
                                                                                 onClick={() => handlePasswordReset(user.email)}
                                                                                 className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
                                                                             >
                                                                                 Enviar senha
                                                                             </button>
-                                                                            {!isMe && (
+                                                                            {!isMe && souAdmin && (
                                                                                 <button
                                                                                     onClick={() => handleDeleteUser(user.id)}
                                                                                     title="Remover usuário"

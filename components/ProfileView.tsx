@@ -5,6 +5,7 @@ import {
     fileToAvatarDataUrl, isSafeImageSrc, getInitials, getDisplayName,
     isProfileComplete, ACCEPTED_IMAGE_TYPES
 } from '../utils/avatar';
+import { permissionLevel, PERMISSION_LABEL, PERMISSION_HINT } from '../utils/permissions';
 import {
     UserCircle, Camera, Trash2, Save, Loader2, Check,
     AlertTriangle, Mail, Building2, Shield
@@ -228,8 +229,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
                         <div className="flex items-center gap-3 text-sm">
                             <Shield className="w-4 h-4 text-zinc-600 shrink-0" />
                             <span className="text-zinc-500 shrink-0">Permissão:</span>
-                            <span className="text-zinc-300">{profile.role === 'agencia' ? 'Agência' : 'Cliente'}</span>
+                            {/* "Agência" nao distinguia quem gerencia acessos de
+                                quem so trabalha nos clientes. */}
+                            <span className="text-zinc-300">{PERMISSION_LABEL[permissionLevel(profile)]}</span>
                         </div>
+                        <p className="text-zinc-600 text-xs leading-relaxed -mt-1 pl-7">
+                            {PERMISSION_HINT[permissionLevel(profile)]}
+                        </p>
                         {profile.empresaId && (
                             <div className="flex items-center gap-3 text-sm">
                                 <Building2 className="w-4 h-4 text-zinc-600 shrink-0" />
