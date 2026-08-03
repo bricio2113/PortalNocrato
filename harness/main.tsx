@@ -5,6 +5,7 @@ import ClientProductionView from '../components/ClientProductionView';
 import WeeklyUpdatesView from '../components/WeeklyUpdatesView';
 import IdeasHubView from '../components/IdeasHubView';
 import ClientReportsView from '../components/ClientReportsView';
+import ClientFormModal from '../components/ClientFormModal';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
 import ProfileView from '../components/ProfileView';
@@ -41,6 +42,8 @@ const SCREENS: Record<string, React.ReactNode> = {
     producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" /></div>,
     semana: <div className="p-4 bg-[#111111] min-h-screen"><WeeklyUpdatesView empresaId="agencia-mara" /></div>,
     arquivos: <div className="p-4 bg-[#111111] min-h-screen"><IdeasHubView empresaId="agencia-mara" /></div>,
+    'ficha-cliente': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
+    'ficha-cliente-colab': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin={false} autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
     relatorios: <div className="p-4 bg-[#111111] min-h-screen"><ClientReportsView empresaId="agencia-mara" userRole="agencia" userName="Pedro Vidal" /></div>,
     modal: <div className="bg-[#111111] min-h-screen"><EventDetailModal event={evento} onSave={noop} onDelete={noop} onClose={noop} empresaId="agencia-mara" userEmail={profile.email} userRole="agencia" userName="Pedro Vidal" /></div>
 };

@@ -21,6 +21,80 @@ export interface UserProfile {
   sobrenome?: string | null;
   /** Data URI da foto recortada, ou URL https. Vazio = usar iniciais. */
   fotoUrl?: string | null;
+  /**
+   * Cargo/profissao: "Social Media", "Designer", "Tráfego". Etiqueta no card.
+   *
+   * So admin altera - as regras congelam este campo para o proprio usuario,
+   * junto de role e empresaId. Cargo define como a pessoa e vista pela equipe;
+   * quem se auto-intitula "Diretor" cria confusao, nao hierarquia.
+   */
+  cargo?: string | null;
+}
+
+/** Situacao comercial do cliente. Nao confundir com estagio de conteudo. */
+export type EmpresaStatus = 'ativo' | 'pausado' | 'encerrado';
+
+/**
+ * Ficha do cliente - documento empresas/{id}.
+ *
+ * Antes tinha um campo: `nome`. Toda informacao de contato e contrato vivia na
+ * cabeca de quem atende, ou num WhatsApp.
+ *
+ * O FINANCEIRO NAO ESTA AQUI de proposito: ver DadosFinanceiros.
+ */
+export interface Empresa {
+  id: string;
+  nome: string;
+  /** @ do Instagram, sem arroba. Alimenta a previa do perfil. */
+  handle?: string | null;
+  /** Nicho: "Saude e bem-estar", "Financas". Vira etiqueta no card. */
+  segmento?: string | null;
+  status?: EmpresaStatus;
+  whatsapp?: string | null;
+  email?: string | null;
+  cidade?: string | null;
+  /** Como o cliente chegou: indicacao, trafego, prospeccao. */
+  origem?: string | null;
+  /** Observacoes da equipe. O cliente LE o proprio documento - nao escreva
+   *  aqui nada que voce nao diria na frente dele. Ver nota em firestore.rules. */
+  notasInternas?: string | null;
+  redes?: {
+    instagram?: string | null;
+    tiktok?: string | null;
+    facebook?: string | null;
+    linkedin?: string | null;
+    youtube?: string | null;
+    site?: string | null;
+  };
+  criadoEm?: Date | null;
+  criadoPor?: string | null;
+}
+
+/**
+ * Dados financeiros - vive em SUBCOLECAO, nao no documento principal.
+ *
+ * empresas/{id}/_financeiro/dados     - so admin le e escreve
+ * usuarios/{uid}/_financeiro/dados    - admin e a propria pessoa
+ *
+ * POR QUE SUBCOLECAO: o Firestore nao tem permissao por campo na leitura. Quem
+ * pode ler o documento le TODOS os campos dele. O cliente le o proprio
+ * `empresas/{id}` (precisa, para o nome aparecer no portal), e a equipe inteira
+ * le `usuarios/{uid}` (precisa, para o painel listar as pessoas). Um campo
+ * `financeiro` dentro desses documentos seria visivel para eles - "so admin ve"
+ * seria mentira da interface, com o dado trafegando no navegador de quem nao
+ * deveria. Subcolecao propria e a unica forma de esconder de verdade.
+ */
+export interface DadosFinanceiros {
+  /** Em centavos, para nao carregar erro de ponto flutuante em dinheiro. */
+  valorMensalCentavos?: number | null;
+  /** Dia do mes do vencimento, 1 a 31. */
+  diaVencimento?: number | null;
+  inicioContrato?: Date | null;
+  /** O que esta contratado: "4 reels + 8 carrosseis/mes". */
+  escopo?: string | null;
+  observacoes?: string | null;
+  atualizadoEm?: Date | null;
+  atualizadoPor?: string | null;
 }
 
 export type EventStatus = 'Pendente' | 'Em andamento' | 'Concluído' | 'Agendado' | 'Postado' | 'Cancelado' | 'Editado';

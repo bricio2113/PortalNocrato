@@ -48,9 +48,18 @@ const USERS = Array.from({ length: 8 }, (_, i) => ({
     id: `u${i}`,
     email: i === 0 ? ADMIN_MOCK[0] : i === 3 ? ADMIN_MOCK[1] : `usuario.numero${i}@umdominiobemlongo.com.br`,
     role: i % 3 === 0 ? 'agencia' : 'cliente', empresaId: i % 3 === 0 ? null : (i % 4 === 1 ? 'empresa-que-nao-existe' : 'Agencia Mara'),
-    nome: ['Maria', 'João', 'Ana', 'Carlos'][i % 4], sobrenome: ['Silva', 'Almeida', 'Nogueira', 'Teixeira'][i % 4]
+    nome: ['Maria', 'João', 'Ana', 'Carlos'][i % 4], sobrenome: ['Silva', 'Almeida', 'Nogueira', 'Teixeira'][i % 4],
+    // Parte com cargo e parte sem: a etiqueta nao pode quebrar o card ausente.
+    cargo: i % 3 === 0 ? ['Social Media', 'Designer', 'Tráfego'][i % 3] : undefined
 }));
-const EMPRESAS = ['Agencia Mara', 'Agencia Nocrato', 'Dra.SylviaFisio', 'MarcioFisio'].map(n => ({ id: n, nome: n }));
+// Ficha completa, e uma empresa DELIBERADAMENTE sem @ nem segmento: o card
+// precisa aguentar o cliente antigo que so tem nome.
+const EMPRESAS = [
+    { id: 'Agencia Mara', nome: 'Agencia Mara', handle: 'agenciamara', segmento: 'Marketing', status: 'ativo', whatsapp: '(13) 99999-9999', email: 'contato@mara.com', cidade: 'Santos / SP', origem: 'Indicação' },
+    { id: 'Dra.SylviaFisio', nome: 'Dra. Sylvia Fisio', handle: 'drasylviafisio', segmento: 'Saúde e bem-estar', status: 'ativo' },
+    { id: 'MarcioFisio', nome: 'Marcio Fisio', handle: 'marciofisio', segmento: 'Saúde e bem-estar', status: 'pausado' },
+    { id: 'Agencia Nocrato', nome: 'Agencia Nocrato' }
+];
 const RELATORIOS = [{ id: '2026-06', ano: 2026, mes: 6, resumo: 'Leitura do mês '.repeat(20), destaques: 'Reel bateu recorde\nCarrossel puxou salvamentos', alcance: 128400, interacoes: 9120, seguidores: 340, publicados: 18, criadoPor: 'Maria Silva', criadoEm: ts(hoje), atualizadoEm: ts(hoje) }];
 
 const snap = (rows: any[]) => ({
@@ -89,7 +98,15 @@ const registrar = (op: string, path: string, data?: any) => {
 
 const makeDoc = (path: string): any => ({
     collection: (name: string) => makeCollection(`${path}/${name}`),
-    get: async () => ({ exists: true, id: path.split('/').pop(), data: () => pick(path)[0] || {} }),
+    // `exists` respondia true para QUALQUER caminho, inclusive documento que nao
+    // existe. Isso escondia todo codigo que checa duplicata antes de criar: a
+    // ficha de cliente novo batia em "ja existe" e nunca chegava a gravar, e a
+    // auditoria via o formulario funcionando. Agora confere o id de verdade.
+    get: async () => {
+        const id = path.split('/').pop();
+        const achado = pick(path).find((r: any) => r.id === id);
+        return { exists: Boolean(achado), id, data: () => achado || pick(path)[0] || {} };
+    },
     set: async (data: any) => registrar('set', path, data),
     update: async (data: any) => registrar('update', path, data),
     delete: async () => registrar('delete', path)

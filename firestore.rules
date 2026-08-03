@@ -124,11 +124,15 @@ service cloud.firestore {
       // aplicado no cliente (utils/avatar.ts) e repetido aqui, porque validacao
       // que so existe no front nao e validacao: sem isto alguem poderia gravar
       // 1 MiB por documento chamando o SDK direto.
+      // `cargo` entra na lista de campos congelados junto de role e empresaId.
+      // Cargo define como a pessoa e vista pela equipe; quem se auto-intitula
+      // "Diretor" cria confusao, nao hierarquia.
       allow update: if isAdmin()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
                         && request.resource.data.empresaId == resource.data.empresaId
+                        && request.resource.data.get('cargo', null) == resource.data.get('cargo', null)
                         && (!('fotoUrl' in request.resource.data)
                             || request.resource.data.fotoUrl == null
                             || request.resource.data.fotoUrl.size() <= 300000));
@@ -136,6 +140,21 @@ service cloud.firestore {
       // Remover conta e administrativo. O colaborador nao apaga colega nem
       // cliente.
       allow delete: if isAdmin();
+
+      // DADOS FINANCEIROS DA PESSOA - subcolecao, nao campo.
+      //
+      // O documento usuarios/{uid} e lido pela EQUIPE INTEIRA (o painel precisa
+      // listar as pessoas). Um campo `financeiro` ali dentro estaria visivel
+      // para todo colaborador, e "so admin ve" seria mentira da interface: o
+      // dado chegaria no navegador de quem nao deveria. O Firestore nao filtra
+      // campo na leitura - quem le o documento le tudo.
+      //
+      // Admin ve de todos; cada pessoa ve o proprio. Escrita e so do admin:
+      // ninguem edita o proprio contrato.
+      match /_financeiro/{docId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+        allow write: if isAdmin();
+      }
     }
 
     // ---------------------------------------------------------------
@@ -145,6 +164,11 @@ service cloud.firestore {
     match /empresas/{empresaId} {
 
       // Cliente le a propria empresa; agencia le todas.
+      //
+      // ATENCAO ao que se grava neste documento: o CLIENTE LE TODOS OS CAMPOS
+      // dele. `notasInternas` tem nome enganoso - nao e escondido do cliente,
+      // porque o Firestore nao filtra campo na leitura. Segredo de verdade vai
+      // para _financeiro/ abaixo, ou para outra subcolecao restrita.
       allow read: if isAgency() || belongsTo(empresaId);
 
       // Criar, renomear e excluir empresa e privilegio de ADMIN.
@@ -216,6 +240,15 @@ service cloud.firestore {
       // Espelho de leitura escrito pelo CalendarView.
       match /Agenciaapk/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
+      }
+
+      // FINANCEIRO DO CLIENTE - so admin, nem o proprio cliente.
+      //
+      // Mesmo motivo do _financeiro do usuario: subcolecao e a unica forma de
+      // esconder do cliente, que le o documento da empresa dele por inteiro.
+      // Colaborador tambem nao ve - contrato e valor nao sao dado de producao.
+      match /_financeiro/{docId} {
+        allow read, write: if isAdmin();
       }
     }
 
