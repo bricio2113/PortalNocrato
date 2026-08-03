@@ -83,7 +83,19 @@ const HISTORICO = [
     { id: 'h7', eventId: 'ev0', tipo: 'aprovacao', para: 'aprovado', por: 'cliente@x.com', porNome: 'João Almeida', porPapel: 'cliente', em: ts(hoje) }
 ];
 
+// Ficha financeira de exemplo. Precisa vir ANTES de 'usuarios' no pick: o
+// caminho e usuarios/{uid}/_financeiro/dados, e a regra de 'usuarios' casaria
+// primeiro - a ficha abriria sempre vazia e o modo de leitura nunca apareceria
+// na auditoria.
+const FINANCEIRO = [{
+    id: 'dados', valorMensalCentavos: 250000, diaVencimento: 5,
+    inicioContrato: ts(new Date(hoje.getFullYear(), 3, 1)), escopo: '20h/semana, edição de reels e carrosséis',
+    observacoes: 'Pagamento por Pix.\nRevisar valor em janeiro.',
+    atualizadoEm: ts(d(-2)), atualizadoPor: 'pedro.vidal2608@gmail.com'
+}];
+
 const pick = (path: string) => {
+    if (path.includes('_financeiro')) return FINANCEIRO;
     if (path.includes('historico')) return HISTORICO;
     if (path.includes('covers')) return [];
     if (path.includes('kanban_tasks')) return TASKS;

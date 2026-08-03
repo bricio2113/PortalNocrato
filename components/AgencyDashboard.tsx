@@ -4,19 +4,19 @@ import { DELETE_USER_ENDPOINT } from '../constants';
 import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import { UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
-import { isAdmin, permissionLevel, PERMISSION_LABEL, PERMISSION_HINT } from '../utils/permissions';
+import { isAdmin, permissionLevel, PERMISSION_LABEL } from '../utils/permissions';
 import { Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
 import ClientFormModal from './ClientFormModal';
-import PersonFinanceModal from './PersonFinanceModal';
+import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
-    LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
+    LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, DollarSign
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil
 } from 'lucide-react';
 
 interface UserData {
@@ -29,6 +29,8 @@ interface UserData {
     fotoUrl?: string | null;
     /** Profissao: "Social Media", "Designer". So admin altera (ver regras). */
     cargo?: string | null;
+    /** Contato. A propria pessoa mantem, igual a nome e foto. */
+    telefone?: string | null;
 }
 
 // A ficha do cliente agora e um tipo compartilhado (types.ts): antes eram so
@@ -236,8 +238,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
     const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
     const [pendingCargoChanges, setPendingCargoChanges] = useState<Record<string, string>>({});
-    /** Card de colaborador aberto para edicao. Um por vez, de proposito. */
-    const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
     // FICHA DO CLIENTE. `null` fechado, `'novo'` criando, ou a empresa editada.
     //
@@ -248,8 +248,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [fichaAberta, setFichaAberta] = useState<'novo' | Empresa | null>(null);
     /** Usuario a vincular assim que o cliente for criado, se veio do select. */
     const [vincularApos, setVincularApos] = useState<string | null>(null);
-    /** Pessoa com a ficha financeira aberta. So admin abre. */
-    const [financeiroDe, setFinanceiroDe] = useState<UserData | null>(null);
+    /**
+     * Pessoa com a FICHA aberta - contato, acesso e financeiro numa tela so.
+     *
+     * Antes existiam dois modais para a mesma pessoa (financeiro) e um modo de
+     * edicao embutido no card (cargo). Um lugar so: o card abre a ficha.
+     */
+    const [fichaPessoa, setFichaPessoa] = useState<UserData | null>(null);
 
     // Quem esta olhando: admin ou colaborador.
     //
@@ -380,41 +385,30 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         }
     };
 
-    // EDICAO DE UM COLABORADOR.
-    //
-    // Antes os dois selects viviam abertos no card e cada um tinha o proprio
-    // botao de salvar, que so aparecia depois de mexer. Resultado: nada dizia
-    // se o que estava na tela era o valor atual ou uma alteracao ainda nao
-    // gravada, e trocar permissao e empresa exigia dois saves. Agora o card e
-    // leitura por padrao e a edicao e um estado explicito, com um Salvar so.
-    const startUserEdit = (userId: string) => {
-        setEditingUserId(userId);
-        descartarRascunho(userId);
-    };
-
     const descartarRascunho = (userId: string) => {
         setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
         setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
         setPendingCargoChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
     };
 
-    const cancelUserEdit = (userId: string) => {
-        setEditingUserId(null);
-        descartarRascunho(userId);
-    };
-
+    // EDICAO DE UM COLABORADOR.
+    //
+    // Toda alteracao acontece dentro da FICHA (PersonDetailModal), nunca no card
+    // da lista: os selects abertos no card nao diziam se o que estava na tela
+    // era o valor gravado ou um rascunho, e cada campo tinha o proprio Salvar.
+    // Aqui o rascunho e sempre explicito e vira uma escrita so.
     const saveUserEdit = async (userId: string) => {
         // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
         // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
         // cru de permissao do Firestore. A trava de verdade esta nas regras.
-        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
+        if (!souAdmin) {
+            showNotification('Apenas administradores podem fazer isso.');
+            return;
+        }
         const novoRole = pendingRoleChanges[userId];
         const novaEmpresa = pendingEmpresaChanges[userId];
         const novoCargo = pendingCargoChanges[userId];
-        if (novoRole === undefined && novaEmpresa === undefined && novoCargo === undefined) {
-            setEditingUserId(null);
-            return;
-        }
+        if (novoRole === undefined && novaEmpresa === undefined && novoCargo === undefined) return;
 
         // Uma escrita so: gravar em dois update() separados deixaria a conta
         // num estado meio-salvo se o segundo falhasse.
@@ -428,14 +422,39 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         try {
             await db.collection('usuarios').doc(userId).update(patch);
             setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } as UserData : u));
+            // A ficha aberta le de `fichaPessoa`, uma copia: sem isto o cargo
+            // salvo continuaria mostrando o valor antigo ate fechar e reabrir.
+            setFichaPessoa(prev => prev && prev.id === userId ? { ...prev, ...patch } as UserData : prev);
             descartarRascunho(userId);
-            setEditingUserId(null);
             showNotification('Alterações salvas.');
         } catch (e) {
             console.error(e);
-            // Mantem o modo de edicao aberto: o rascunho continua na tela para
-            // o usuario tentar de novo em vez de perder o que escolheu.
+            // O rascunho continua na tela para o usuario tentar de novo em vez
+            // de perder o que escolheu.
             showNotification('Não foi possível salvar. Tente novamente.');
+        }
+    };
+
+    /**
+     * Grava o cargo pela ficha.
+     *
+     * Nao reaproveita saveUserEdit de proposito: aquele le o rascunho do estado,
+     * e o estado ainda nao chegou no mesmo tick do clique. A ficha ja tem o
+     * valor em maos, entao escreve direto. Propaga o erro para a ficha manter o
+     * campo aberto em vez de fingir que salvou.
+     */
+    const salvarCargoDaFicha = async (userId: string, cargo: string) => {
+        try {
+            await db.collection('usuarios').doc(userId).update({ cargo: cargo.trim() || null });
+            const patch = { cargo: cargo.trim() || null };
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } : u));
+            setFichaPessoa(prev => prev && prev.id === userId ? { ...prev, ...patch } : prev);
+            descartarRascunho(userId);
+            showNotification('Cargo atualizado.');
+        } catch (e) {
+            console.error(e);
+            showNotification('Não foi possível salvar o cargo.');
+            throw e;
         }
     };
 
@@ -445,6 +464,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             // abria um input de texto solto que criava o cliente com nome e
             // mais nada.
             setVincularApos(userId);
+            setFichaPessoa(null); // Duas camadas no mesmo z-index se sobrepõem.
             setFichaAberta('novo');
             setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
             return;
@@ -468,7 +488,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             try {
                 await db.collection('usuarios').doc(paraVincular).update({ empresaId });
                 setUsers(prev => prev.map(u => u.id === paraVincular ? { ...u, empresaId } : u));
-                setEditingUserId(null);
                 descartarRascunho(paraVincular);
                 showNotification(`Cliente "${nome}" criado e vinculado.`);
             } catch (e) {
@@ -865,42 +884,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                     selo={SELO_SEM_EMPRESA}
                                                     borda="atencao"
                                                     subtitulo="Conta sem cliente"
-                                                    acoes={souAdmin ? [
-                                                        { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) },
-                                                        { label: 'Remover conta', onClick: () => handleDeleteUser(user.id), destrutiva: true }
-                                                    ] : [
-                                                        { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) }
-                                                    ]}
-                                                >
-                                                    {souAdmin ? (
-                                                        <>
-                                                            <label className="block text-[10px] text-zinc-600 mb-1.5">Vincular ao cliente</label>
-                                                            <div className="flex gap-1.5">
-                                                                <select
-                                                                    value={pendingEmpresaChanges[user.id] ?? 'null'}
-                                                                    onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                    className="min-w-0 flex-1 bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                >
-                                                                    <option value="null">— escolha —</option>
-                                                                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                    <option value="create_new">+ Novo cliente</option>
-                                                                </select>
-                                                                {pendingEmpresaChanges[user.id] && (
-                                                                    <button
-                                                                        onClick={() => saveUserEdit(user.id)}
-                                                                        className="shrink-0 px-3 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
-                                                                    >
-                                                                        Vincular
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <p className="text-[11px] text-zinc-600 leading-relaxed">
-                                                            Só administradores vinculam contas a um cliente.
-                                                        </p>
-                                                    )}
-                                                </PersonCard>
+                                                    onAbrir={() => setFichaPessoa(user)}
+                                                />
                                             ))}
                                         </div>
                                     </section>
@@ -938,7 +923,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                             {equipeFiltrada.map(user => {
                                                 const nivel = permissionLevel(user);
                                                 const isMe = user.id === auth.currentUser?.uid;
-                                                const isEditing = editingUserId === user.id;
                                                 return (
                                                     <PersonCard
                                                         key={user.id}
@@ -947,35 +931,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                                         selo={nivel === 'admin' ? SELO_ADMIN : SELO_COLABORADOR}
                                                         subtitulo={user.cargo || 'Cargo não definido'}
                                                         campos={[{ rotulo: 'Permissão', valor: PERMISSION_LABEL[nivel] }]}
-                                                        acoes={[
-                                                            ...(souAdmin ? [{ label: isEditing ? 'Fechar edição' : 'Editar cargo', onClick: () => isEditing ? cancelUserEdit(user.id) : startUserEdit(user.id) }] : []),
-                                                            { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(user.email) },
-                                                            ...(souAdmin ? [{ label: 'Financeiro', onClick: () => setFinanceiroDe(user) }] : []),
-                                                            ...(souAdmin && !isMe ? [{ label: 'Remover da equipe', onClick: () => handleDeleteUser(user.id), destrutiva: true }] : [])
-                                                        ]}
-                                                    >
-                                                        {isEditing && souAdmin && (
-                                                            <>
-                                                                <label className="block text-[10px] text-zinc-600 mb-1.5">Cargo</label>
-                                                                <div className="flex gap-1.5">
-                                                                    <input
-                                                                        autoFocus
-                                                                        value={pendingCargoChanges[user.id] ?? user.cargo ?? ''}
-                                                                        onChange={(e) => setPendingCargoChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                        onKeyDown={(e) => { if (e.key === 'Enter') saveUserEdit(user.id); }}
-                                                                        placeholder="Ex: Social Media"
-                                                                        className="min-w-0 flex-1 bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                    />
-                                                                    <button
-                                                                        onClick={() => saveUserEdit(user.id)}
-                                                                        className="shrink-0 px-3 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
-                                                                    >
-                                                                        Salvar
-                                                                    </button>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </PersonCard>
+                                                        onAbrir={() => setFichaPessoa(user)}
+                                                    />
                                                 );
                                             })}
                                         </div>
@@ -989,15 +946,85 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 </div>
             </main>
 
-            {financeiroDe && (
-                <PersonFinanceModal
-                    uid={financeiroDe.id}
-                    nome={getDisplayName(financeiroDe)}
-                    ehColaborador={financeiroDe.role === 'agencia'}
-                    autorEmail={auth.currentUser?.email}
-                    onClose={() => setFinanceiroDe(null)}
-                />
-            )}
+            {/* FICHA DA PESSOA. Uma tela para colaborador e para conta sem
+                vinculo: o que muda e o que a ficha oferece fazer, nao o layout.
+                Cliente vinculado nao abre por aqui - ele vive dentro do cliente,
+                na aba Acessos. */}
+            {fichaPessoa && (() => {
+                const pessoa = fichaPessoa;
+                const isMe = pessoa.id === auth.currentUser?.uid;
+                const daEquipe = pessoa.role === 'agencia';
+                const acoes: PersonDetailAcao[] = [
+                    { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(pessoa.email) }
+                ];
+                if (souAdmin && !isMe) {
+                    acoes.push({
+                        label: daEquipe ? 'Remover da equipe' : 'Remover conta',
+                        destrutiva: true,
+                        onClick: async () => {
+                            await handleDeleteUser(pessoa.id);
+                            setFichaPessoa(null);
+                        }
+                    });
+                }
+                return (
+                    <PersonDetailModal
+                        pessoa={pessoa}
+                        selo={daEquipe
+                            ? (permissionLevel(pessoa) === 'admin' ? SELO_ADMIN : SELO_COLABORADOR)
+                            : SELO_SEM_EMPRESA}
+                        empresaNome={empresas.find(e => e.id === pessoa.empresaId)?.nome}
+                        ehVoce={isMe}
+                        souAdmin={souAdmin}
+                        autorEmail={auth.currentUser?.email}
+                        onSalvarCargo={souAdmin ? (cargo) => salvarCargoDaFicha(pessoa.id, cargo) : undefined}
+                        acoes={acoes}
+                        onClose={() => setFichaPessoa(null)}
+                    >
+                        {/* VINCULO. So aparece para conta sem cliente, que e o
+                            unico caso em que ele esta faltando - depois de
+                            vinculada, mudar de empresa nao e rotina. */}
+                        {!daEquipe && !pessoa.empresaId && (
+                            <section>
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <Building2 className="w-3.5 h-3.5 text-zinc-600" />
+                                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Vínculo</h3>
+                                </div>
+                                {souAdmin ? (
+                                    <div className="bg-[#111111] border border-white/5 rounded-control p-3.5">
+                                        <p className="text-xs text-amber-400/90 mb-3 leading-relaxed">
+                                            Esta conta entra no portal e vê apenas um aviso. Vincule a um cliente para liberar o acesso.
+                                        </p>
+                                        <div className="flex gap-1.5">
+                                            <select
+                                                value={pendingEmpresaChanges[pessoa.id] ?? 'null'}
+                                                onChange={(e) => handleEmpresaSelection(pessoa.id, e.target.value)}
+                                                className="min-w-0 flex-1 bg-[#0D0D0D] border border-zinc-700 text-zinc-200 text-sm rounded-control px-2.5 py-2 outline-none focus:border-[#FABE01]"
+                                            >
+                                                <option value="null">— escolha o cliente —</option>
+                                                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                <option value="create_new">+ Novo cliente</option>
+                                            </select>
+                                            {pendingEmpresaChanges[pessoa.id] && (
+                                                <button
+                                                    onClick={async () => { await saveUserEdit(pessoa.id); setFichaPessoa(null); }}
+                                                    className="shrink-0 px-3.5 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
+                                                >
+                                                    Vincular
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-zinc-500 px-1 leading-relaxed">
+                                        Só administradores vinculam contas a um cliente.
+                                    </p>
+                                )}
+                            </section>
+                        )}
+                    </PersonDetailModal>
+                );
+            })()}
 
             {fichaAberta && (
                 <ClientFormModal

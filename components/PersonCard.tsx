@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
-import { Mail, MoreVertical, Building2 } from 'lucide-react';
+import { Mail, ChevronRight, Building2 } from 'lucide-react';
 
 export interface PersonCardData {
     id: string;
@@ -9,13 +9,6 @@ export interface PersonCardData {
     sobrenome?: string | null;
     fotoUrl?: string | null;
     cargo?: string | null;
-}
-
-export interface PersonCardAcao {
-    label: string;
-    onClick: () => void;
-    /** Vermelho e separado das outras, para acao destrutiva. */
-    destrutiva?: boolean;
 }
 
 interface PersonCardProps {
@@ -28,12 +21,12 @@ interface PersonCardProps {
     campos?: { rotulo: string; valor: string; alerta?: boolean }[];
     /** Marca "você" no proprio cartao. */
     ehVoce?: boolean;
-    acoes?: PersonCardAcao[];
+    /** Abre a ficha da pessoa. O cartao INTEIRO e a area de clique. */
+    onAbrir: () => void;
     /** Aviso em destaque, tipo vinculo quebrado. */
     aviso?: { texto: string; tom: 'atencao' | 'erro' };
     /** Contorno destacado quando algo exige acao. */
     borda?: 'normal' | 'atencao' | 'erro';
-    children?: React.ReactNode;
 }
 
 const BORDAS = {
@@ -45,85 +38,40 @@ const BORDAS = {
 /**
  * Cartao de PESSOA - equipe ou acesso de cliente.
  *
- * Substitui o cartao anterior, que tinha dois problemas somados:
+ * E PORTA DE ENTRADA, nao ficha. Nove cartoes precisam caber na tela, e cada
+ * campo acrescentado aqui encolhe os outros - foi assim que o cartao anterior
+ * acumulou "Permissão: Cliente" embaixo do titulo "Clientes" e o nome da
+ * empresa duas vezes. Aqui ficam rosto, nome e situacao; o resto vive em
+ * PersonDetailModal.
  *
- * 1. REPETIA informacao que a secao ja dizia. No cartao de um cliente aparecia
- *    "Permissão: Cliente" embaixo do titulo "Clientes", e o nome da empresa
- *    saia duas vezes - no subtitulo e no campo Empresa.
- *
- * 2. PAREDE DE AMARELO. Cada cartao trazia um botao dourado "Editar", e nove
- *    cartoes na tela viravam nove blocos gritando com o mesmo peso. Acao
- *    secundaria com peso de acao primaria e ruido.
- *
- * As acoes agora vivem num menu de tres pontos. O cartao fica limpo e o que se
- * le e a PESSOA, nao os botoes. Quem procura acao vai no menu; quem esta
- * varrendo a lista nao e atrapalhado por ela.
+ * O MENU DE TRES PONTOS SAIU. Ele escondia "redefinir senha" atras de um clique
+ * sem rotulo e disputava o clique com o proprio cartao - dois alvos no mesmo
+ * canto, um deles invisivel. As acoes agora ficam no rodape da ficha, escritas.
  */
 const PersonCard: React.FC<PersonCardProps> = ({
-    pessoa, selo, subtitulo, campos = [], ehVoce, acoes = [], aviso, borda = 'normal', children
+    pessoa, selo, subtitulo, campos = [], ehVoce, onAbrir, aviso, borda = 'normal'
 }) => {
-    const [menuAberto, setMenuAberto] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-
-    // Fecha ao clicar fora e no Esc. Sem isto o menu fica aberto para sempre
-    // enquanto o usuario clica em outro lugar da tela - e com nove cartoes,
-    // varios menus abertos ao mesmo tempo.
-    useEffect(() => {
-        if (!menuAberto) return;
-        const fora = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuAberto(false);
-        };
-        const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuAberto(false); };
-        document.addEventListener('mousedown', fora);
-        document.addEventListener('keydown', esc);
-        return () => {
-            document.removeEventListener('mousedown', fora);
-            document.removeEventListener('keydown', esc);
-        };
-    }, [menuAberto]);
-
     const temFoto = isSafeImageSrc(pessoa.fotoUrl);
     const nome = getDisplayName(pessoa);
 
     return (
-        <div className={`relative bg-[#1A1A1A] border rounded-card p-5 flex flex-col transition-colors ${BORDAS[borda]}`}>
-            {/* TOPO: selo a esquerda, menu a direita. O nome fica no centro, e
-                nao disputa espaco horizontal com nada. */}
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={onAbrir}
+            onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAbrir(); }
+            }}
+            aria-label={`Abrir ficha de ${nome}`}
+            className={`group relative bg-[#1A1A1A] border rounded-card p-5 flex flex-col text-left cursor-pointer transition-colors outline-none focus-visible:border-[#FABE01] ${BORDAS[borda]}`}
+        >
+            {/* TOPO: selo a esquerda, seta a direita. A seta e o unico sinal de que
+                o cartao abre algo - sem ela o clique e adivinhacao. */}
             <div className="flex items-start justify-between gap-2 mb-3">
                 <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${selo.cor}`}>
                     {selo.texto}
                 </span>
-
-                {acoes.length > 0 && (
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            onClick={() => setMenuAberto(v => !v)}
-                            aria-label={`Ações de ${nome}`}
-                            aria-expanded={menuAberto}
-                            className="p-1.5 -m-1.5 rounded-full text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
-                        >
-                            <MoreVertical className="w-4 h-4" />
-                        </button>
-
-                        {menuAberto && (
-                            <div className="absolute right-0 top-8 z-20 w-48 bg-[#1A1A1A] border border-white/10 rounded-control shadow-card overflow-hidden py-1">
-                                {acoes.map((acao, i) => (
-                                    <button
-                                        key={acao.label}
-                                        onClick={() => { setMenuAberto(false); acao.onClick(); }}
-                                        className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors ${
-                                            acao.destrutiva
-                                                ? 'text-red-400 hover:bg-red-400/10'
-                                                : 'text-zinc-300 hover:bg-white/5 hover:text-white'
-                                        } ${acao.destrutiva && i > 0 ? 'border-t border-white/5 mt-1 pt-2.5' : ''}`}
-                                    >
-                                        {acao.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
+                <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-[#FABE01] transition-colors shrink-0" />
             </div>
 
             {/* IDENTIDADE centralizada. Avatar de 64px em vez de 44: numa lista de
@@ -172,9 +120,6 @@ const PersonCard: React.FC<PersonCardProps> = ({
                     {aviso.texto}
                 </p>
             )}
-
-            {/* Espaco para controles em modo de edicao. */}
-            {children && <div className="mt-3 pt-3 border-t border-white/5">{children}</div>}
         </div>
     );
 };

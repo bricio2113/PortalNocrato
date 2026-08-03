@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { CalendarEvent } from '../types';
+import { CalendarEvent, UserProfile } from '../types';
 import { getClientStage, CLIENT_STAGES, needsClientAction, needsAgencyAction } from '../utils/eventState';
 import { summarizeSla } from '../utils/sla';
 import CalendarView from './CalendarView';
@@ -12,6 +12,7 @@ import MateriaisView from './MateriaisView';
 import ClientReportsView from './ClientReportsView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import PersonCard, { SELO_ATIVO } from './PersonCard';
+import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
 import { PERMISSION_LABEL } from '../utils/permissions';
 import { auth } from '../utils/firebase';
 import { isAdmin } from '../utils/permissions';
@@ -68,16 +69,18 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     // leitura da colecao usuarios inteira, e nao faz sentido paga-la em toda
     // visita ao espaco de trabalho.
     const souAdmin = isAdmin(auth.currentUser?.email);
-    const [acessos, setAcessos] = useState<{ id: string; email: string; nome?: string | null; sobrenome?: string | null; fotoUrl?: string | null; cargo?: string | null }[]>([]);
+    const [acessos, setAcessos] = useState<UserProfile[]>([]);
     const [carregandoAcessos, setCarregandoAcessos] = useState(false);
     const [avisoAcesso, setAvisoAcesso] = useState('');
+    /** Contato com a ficha aberta. O card da lista e so a porta de entrada. */
+    const [fichaPessoa, setFichaPessoa] = useState<UserProfile | null>(null);
 
     const carregarAcessos = React.useCallback(async () => {
         setCarregandoAcessos(true);
         setAvisoAcesso('');
         try {
             const snap = await db.collection('usuarios').where('empresaId', '==', empresaId).get();
-            setAcessos(snap.docs.map(d => ({ id: d.id, ...d.data() } as typeof acessos[number])));
+            setAcessos(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
         } catch (e) {
             console.error(e);
             setAvisoAcesso('Não foi possível carregar os acessos.');
@@ -208,38 +211,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                             selo={SELO_ATIVO}
                             subtitulo={pessoa.cargo || 'Contato do cliente'}
                             campos={[{ rotulo: 'Permissão', valor: PERMISSION_LABEL.cliente }]}
-                            acoes={[
-                                {
-                                    label: 'Enviar redefinição de senha',
-                                    onClick: async () => {
-                                        try {
-                                            await auth.sendPasswordResetEmail(pessoa.email);
-                                            setAvisoAcesso('');
-                                            window.alert(`E-mail de redefinição enviado para ${pessoa.email}.`);
-                                        } catch (e) {
-                                            console.error(e);
-                                            setAvisoAcesso('Não foi possível enviar o e-mail.');
-                                        }
-                                    }
-                                },
-                                ...(souAdmin ? [{
-                                    label: 'Remover acesso',
-                                    destrutiva: true,
-                                    onClick: async () => {
-                                        if (!window.confirm(`Remover o acesso de ${pessoa.email}? A conta deixa de entrar no portal.`)) return;
-                                        try {
-                                            // Desvincula em vez de apagar a conta: apagar e
-                                            // irreversivel e nem sempre e o que se quer - o
-                                            // contato pode ter saido da empresa e voltar.
-                                            await db.collection('usuarios').doc(pessoa.id).update({ empresaId: null });
-                                            await carregarAcessos();
-                                        } catch (e) {
-                                            console.error(e);
-                                            setAvisoAcesso('Não foi possível remover. Só administradores fazem isso.');
-                                        }
-                                    }
-                                }] : [])
-                            ]}
+                            onAbrir={() => setFichaPessoa(pessoa)}
                         />
                     ))}
                 </div>
@@ -416,6 +388,58 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                     {renderSection()}
                 </div>
             </main>
+
+            {/* FICHA DO CONTATO. Mesma tela da equipe, com as acoes deste
+                contexto: aqui remover significa TIRAR O ACESSO, nao apagar a
+                conta - o contato pode sair da empresa e voltar. */}
+            {fichaPessoa && (() => {
+                const pessoa = fichaPessoa;
+                const acoes: PersonDetailAcao[] = [
+                    {
+                        label: 'Enviar redefinição de senha',
+                        onClick: async () => {
+                            try {
+                                await auth.sendPasswordResetEmail(pessoa.email);
+                                setAvisoAcesso('');
+                                window.alert(`E-mail de redefinição enviado para ${pessoa.email}.`);
+                            } catch (e) {
+                                console.error(e);
+                                setAvisoAcesso('Não foi possível enviar o e-mail.');
+                                setFichaPessoa(null);
+                            }
+                        }
+                    }
+                ];
+                if (souAdmin) {
+                    acoes.push({
+                        label: 'Remover acesso',
+                        destrutiva: true,
+                        onClick: async () => {
+                            if (!window.confirm(`Remover o acesso de ${pessoa.email}? A conta deixa de entrar no portal.`)) return;
+                            try {
+                                await db.collection('usuarios').doc(pessoa.id).update({ empresaId: null });
+                                setFichaPessoa(null);
+                                await carregarAcessos();
+                            } catch (e) {
+                                console.error(e);
+                                setAvisoAcesso('Não foi possível remover. Só administradores fazem isso.');
+                                setFichaPessoa(null);
+                            }
+                        }
+                    });
+                }
+                return (
+                    <PersonDetailModal
+                        pessoa={pessoa}
+                        selo={SELO_ATIVO}
+                        empresaNome={empresaNome}
+                        souAdmin={souAdmin}
+                        autorEmail={auth.currentUser?.email}
+                        acoes={acoes}
+                        onClose={() => setFichaPessoa(null)}
+                    />
+                );
+            })()}
         </div>
     );
 };

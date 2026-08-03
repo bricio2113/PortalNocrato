@@ -24,6 +24,13 @@ export interface UserProfile {
   /** Data URI da foto recortada, ou URL https. Vazio = usar iniciais. */
   fotoUrl?: string | null;
   /**
+   * Telefone/WhatsApp. NAO congelado nas regras: a propria pessoa atualiza o
+   * contato dela, igual a nome e foto. So cargo, papel e empresa sao decisao da
+   * agencia.
+   */
+  telefone?: string | null;
+
+  /**
    * Cargo/profissao: "Social Media", "Designer", "Tráfego". Etiqueta no card.
    *
    * So admin altera - as regras congelam este campo para o proprio usuario,
