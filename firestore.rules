@@ -292,6 +292,25 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------
+    // CONFIGURACOES GERAIS DO APP - configuracoes/{doc}
+    //
+    // Hoje: configuracoes/cargos { lista: [string], atualizadoEm, atualizadoPor }
+    //
+    // LEITURA para qualquer pessoa autenticada, inclusive cliente. A lista de
+    // cargos nao e segredo - e um vocabulario - e o portal do cliente exibe o
+    // cargo de quem atende. Restringir a agencia so produziria erro de permissao
+    // no console de uma tela que apenas mostra a palavra "Designer".
+    //
+    // ESCRITA so de admin: quem muda o vocabulario da equipe muda o significado
+    // de todo cargo ja gravado nas pessoas.
+    // ---------------------------------------------------------------
+
+    match /configuracoes/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------
     // Negacao explicita para qualquer caminho nao previsto acima.
     // ---------------------------------------------------------------
 

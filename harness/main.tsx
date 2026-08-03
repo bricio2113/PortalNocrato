@@ -11,6 +11,7 @@ import ClientHomeView from '../components/ClientHomeView';
 import PostTimeline from '../components/PostTimeline';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA, SELO_ATIVO } from '../components/PersonCard';
 import PersonDetailModal from '../components/PersonDetailModal';
+import SettingsView from '../components/SettingsView';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
 import ProfileView from '../components/ProfileView';
@@ -88,6 +89,10 @@ const SCREENS: Record<string, React.ReactNode> = {
         acoes={[{ label: 'Enviar redefinição de senha', onClick: noop }, { label: 'Remover acesso', onClick: noop, destrutiva: true }]}
         onClose={noop}
     />,
+    // Configuracoes vistas por ADMIN (edita) e por COLABORADOR (so le): a
+    // diferenca entre as duas e a razao de a tela existir.
+    configuracoes: <div className="p-4 sm:p-8 bg-[#111111] min-h-screen"><SettingsView souAdmin autorEmail={profile.email} cargosEmUso={['Social Media', 'Designer', 'Cargo Antigo']} /></div>,
+    'configuracoes-colab': <div className="p-4 sm:p-8 bg-[#111111] min-h-screen"><SettingsView souAdmin={false} cargosEmUso={['Designer']} /></div>,
     andamento: <div className="p-6 bg-[#111111] min-h-screen max-w-lg"><PostTimeline empresaId="agencia-mara" eventId="ev0" userRole="cliente" /></div>,
     relatorios: <div className="p-4 bg-[#111111] min-h-screen"><ClientReportsView empresaId="agencia-mara" userRole="agencia" userName="Pedro Vidal" /></div>,
     modal: <div className="bg-[#111111] min-h-screen"><EventDetailModal event={evento} onSave={noop} onDelete={noop} onClose={noop} empresaId="agencia-mara" userEmail={profile.email} userRole="agencia" userName="Pedro Vidal" /></div>

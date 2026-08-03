@@ -7,6 +7,7 @@ import {
     centavosParaTexto, textoParaCentavos
 } from '../utils/empresas';
 import { lerAtividadeDaPessoa, AtividadeDaPessoa, descreverHistorico } from '../utils/historico';
+import { subscribeCargos, mesmoCargo } from '../utils/cargos';
 import { ICONES_HISTORICO } from './PostTimeline';
 import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import {
@@ -191,6 +192,12 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     const [rascunhoCargo, setRascunhoCargo] = useState(pessoa.cargo || '');
     const [salvandoCargo, setSalvandoCargo] = useState(false);
 
+    /**
+     * Cargos disponiveis. Vem das configuracoes, nao de um array no codigo: o
+     * admin muda a lista em Gestao > Configuracoes e a ficha acompanha.
+     */
+    const [cargos, setCargos] = useState<string[]>([]);
+
     const [atividade, setAtividade] = useState<AtividadeDaPessoa[]>([]);
     const [carregandoAtiv, setCarregandoAtiv] = useState(empresasParaAtividade.length > 0);
 
@@ -201,6 +208,13 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
         document.addEventListener('keydown', esc);
         return () => document.removeEventListener('keydown', esc);
     }, [onClose]);
+
+    // So assina a lista quem pode editar - para quem so le, a lista nao muda
+    // nada na tela e seria uma assinatura paga a toa.
+    useEffect(() => {
+        if (!onSalvarCargo) return;
+        return subscribeCargos(setCargos);
+    }, [onSalvarCargo]);
 
     useEffect(() => {
         if (!mostrarFinanceiro) return;
@@ -446,24 +460,38 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                                     <div className="py-2.5 min-w-0">
                                         <p className="text-[11px] text-zinc-400 mb-1">Cargo</p>
                                         {editandoCargo ? (
-                                            <div className="flex gap-1.5">
-                                                <input
-                                                    autoFocus
-                                                    value={rascunhoCargo}
-                                                    onChange={e => setRascunhoCargo(e.target.value)}
-                                                    onKeyDown={e => { if (e.key === 'Enter') salvarCargo(); }}
-                                                    placeholder="Ex: Social Media"
-                                                    className="min-w-0 flex-1 bg-black/40 border border-white/10 text-white text-sm rounded-control px-2.5 py-1.5 outline-none focus:border-[#FABE01]"
-                                                />
-                                                <button
-                                                    onClick={salvarCargo}
-                                                    disabled={salvandoCargo}
-                                                    aria-label="Salvar cargo"
-                                                    className="shrink-0 px-2.5 rounded-control bg-[#FABE01] text-black disabled:opacity-40"
-                                                >
-                                                    {salvandoCargo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                                </button>
-                                            </div>
+                                            <>
+                                                {/* ESCOLHA, nao digitacao. Cargo digitado a mao
+                                                    produzia "Social Media", "social midia" e "SM"
+                                                    como tres cargos distintos para o banco. A lista
+                                                    e mantida em Gestao > Configuracoes. */}
+                                                <div className="flex gap-1.5">
+                                                    <select
+                                                        autoFocus
+                                                        value={rascunhoCargo}
+                                                        onChange={e => setRascunhoCargo(e.target.value)}
+                                                        className="min-w-0 flex-1 bg-black/40 border border-white/10 text-white text-sm rounded-control px-2.5 py-1.5 outline-none focus:border-[#FABE01]"
+                                                    >
+                                                        <option value="">— sem cargo —</option>
+                                                        {/* O cargo atual entra na lista mesmo se
+                                                            tiver saido das configuracoes: sem isto o
+                                                            select abriria em branco e um salvar
+                                                            distraido apagaria o cargo da pessoa. */}
+                                                        {rascunhoCargo && !cargos.some(c => mesmoCargo(c, rascunhoCargo)) && (
+                                                            <option value={rascunhoCargo}>{rascunhoCargo} (fora da lista)</option>
+                                                        )}
+                                                        {cargos.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                    <button
+                                                        onClick={salvarCargo}
+                                                        disabled={salvandoCargo}
+                                                        aria-label="Salvar cargo"
+                                                        className="shrink-0 px-2.5 rounded-control bg-[#FABE01] text-black disabled:opacity-40"
+                                                    >
+                                                        {salvandoCargo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+                                            </>
                                         ) : (
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <Briefcase className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
@@ -473,9 +501,11 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                                             </div>
                                         )}
                                         <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
-                                            {ehColaborador
-                                                ? 'Só administrador altera — a pessoa não muda o próprio cargo.'
-                                                : 'Cliente é sempre cliente: o nível não muda por esta tela.'}
+                                            {editandoCargo
+                                                ? 'A lista é mantida em Gestão › Configurações.'
+                                                : ehColaborador
+                                                    ? 'Só administrador altera — a pessoa não muda o próprio cargo.'
+                                                    : 'Cliente é sempre cliente: o nível não muda por esta tela.'}
                                         </p>
                                     </div>
                                     {empresaNome && (

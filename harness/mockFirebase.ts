@@ -94,7 +94,16 @@ const FINANCEIRO = [{
     atualizadoEm: ts(d(-2)), atualizadoPor: 'pedro.vidal2608@gmail.com'
 }];
 
+// Lista de cargos gravada. A tela precisa exercitar o caminho "ja existe
+// documento"; o caminho "nao existe, usa o padrao" e o do doc `cargos-vazio`.
+const CONFIGURACOES = [{
+    id: 'cargos',
+    lista: ['Gestor de Tráfego', 'Designer', 'Social Mídia', 'Editor', 'Dev', 'Administrador', 'Financeiro', 'Vendedor'],
+    atualizadoEm: ts(d(-1)), atualizadoPor: 'pedro.vidal2608@gmail.com'
+}];
+
 const pick = (path: string) => {
+    if (path.includes('configuracoes')) return CONFIGURACOES;
     // u1 fica DELIBERADAMENTE sem ficha financeira: e o caso "nada cadastrado",
     // onde a ficha mostra os valores padrao com a etiqueta. Sem um uid sem dados,
     // esse caminho nunca aparecia na auditoria - e ele e a metade que da errado.
@@ -157,6 +166,12 @@ const makeDoc = (path: string): any => ({
         const id = path.split('/').pop();
         const achado = pick(path).find((r: any) => r.id === id);
         return { exists: Boolean(achado), id, data: () => achado || pick(path)[0] || {} };
+    },
+    onSnapshot: (cb: any, _err?: any) => {
+        const id = path.split('/').pop();
+        const achado = pick(path).find((r: any) => r.id === id);
+        setTimeout(() => cb({ exists: Boolean(achado), id, data: () => achado || {} }), 0);
+        return () => {};
     },
     set: async (data: any) => registrar('set', path, data),
     update: async (data: any) => registrar('update', path, data),

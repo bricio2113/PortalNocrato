@@ -10,13 +10,14 @@ import { parseEmpresa, statusLabel } from '../utils/empresas';
 import ClientFormModal from './ClientFormModal';
 import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
+import SettingsView from './SettingsView';
 import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, SlidersHorizontal
 } from 'lucide-react';
 
 interface UserData {
@@ -232,7 +233,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
-    const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team' | 'settings'>('overview');
     const [isNavOpen, setIsNavOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
@@ -556,6 +557,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         team: {
             title: 'Equipe',
             subtitle: 'Quem trabalha na agência. O acesso de cada cliente fica dentro do próprio cliente.'
+        },
+        settings: {
+            title: 'Configurações',
+            subtitle: 'O que vale para a agência inteira: cargos, prazos e padrões do sistema.'
         }
     };
 
@@ -571,7 +576,11 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         {
             title: 'Gestão',
             items: [
-                { id: 'team', label: 'Equipe', icon: Users, badge: unlinkedUsers.length, badgeTone: 'amber' as const }
+                { id: 'team', label: 'Equipe', icon: Users, badge: unlinkedUsers.length, badgeTone: 'amber' as const },
+                // Visivel para a equipe inteira, editavel so por admin. Esconder
+                // do colaborador faria ele procurar onde muda o cargo em vez de
+                // ver, escrito, que a decisao nao e dele.
+                { id: 'settings', label: 'Configurações', icon: SlidersHorizontal }
             ]
         }
     ];
@@ -827,6 +836,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                     ))}
                                 </div>
                             </div>
+                        )}
+
+                        {activeTab === 'settings' && (
+                            <SettingsView
+                                souAdmin={souAdmin}
+                                autorEmail={auth.currentUser?.email}
+                                cargosEmUso={users.map(u => u.cargo || '').filter(Boolean)}
+                            />
                         )}
 
                         {activeTab === 'team' && (
