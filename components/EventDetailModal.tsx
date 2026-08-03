@@ -3,7 +3,7 @@ import { ApprovalState, CalendarEvent, EventMetrics } from '../types';
 import { PLATAFORMA_OPTIONS, STATUS_OPTIONS, FORMATO_OPTIONS } from '../constants';
 import { toSafeHref } from '../utils/url';
 import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTime } from '../utils/date';
-import { deadlineState, deadlineClasses } from '../utils/deadline';
+import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState';
 import { setApproval, saveMetrics } from '../utils/posts';
@@ -66,6 +66,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     const titleRef = useRef<HTMLTextAreaElement>(null);
 
     const isClient = userRole === 'cliente';
+    // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
+    // gravado: um campo teria que ser recalculado a cada mudanca de data ou de
+    // formato, e um esquecimento ali mentiria na tela.
+    const janela = janelaRevisao(event);
     // Aprovacao e comentarios exigem um post ja gravado: sem id nao ha o que
     // referenciar.
     const canReview = Boolean(empresaId && event.id);
@@ -287,25 +291,67 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                         </p>
                                     )}
 
+                                    {/* JANELA DE REVISAO.
+                                        Aparece SEMPRE que ainda esta aberta, e nao
+                                        so quando fecha. Uma janela que o cliente
+                                        descobre no momento em que perde o direito
+                                        parece punicao; anunciada antes, e combinado.
+                                        Video pede 2 dias porque reeditar e renderizar
+                                        nao cabe em um. */}
+                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && janela.aberta && (
+                                        <p className="text-[11px] text-zinc-400 mt-3 flex items-center gap-1.5 leading-relaxed">
+                                            <Clock className="w-3.5 h-3.5 shrink-0" />
+                                            Ajuste pode ser pedido até <strong className="text-white">{janela.limite.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</strong>
+                                            {janela.dias === 0 ? ' — hoje é o último dia.' : ` (${janela.dias} dia${janela.dias === 1 ? '' : 's'}).`}
+                                        </p>
+                                    )}
+
                                     {/* Só o cliente decide. A agência vê o estado, não vota. */}
                                     {isClient && stage !== 'publicado' && stage !== 'cancelado' && (
                                         <div className="flex flex-col sm:flex-row gap-2 mt-4">
                                             <button
                                                 onClick={() => handleApproval('aprovado')}
                                                 disabled={approvalBusy !== null || localApproval === 'aprovado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm rounded-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 {approvalBusy === 'aprovado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                                                 {localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar'}
                                             </button>
-                                            <button
-                                                onClick={() => handleApproval('ajuste_solicitado')}
-                                                disabled={approvalBusy !== null || localApproval === 'ajuste_solicitado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {approvalBusy === 'ajuste_solicitado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareWarning className="w-4 h-4" />}
-                                                Pedir ajuste
-                                            </button>
+                                            {/* Fora da janela o botao SAI, em vez de
+                                                ficar apagado: um botao desabilitado sem
+                                                explicacao vira reclamacao no WhatsApp. */}
+                                            {janela.aberta && (
+                                                <button
+                                                    onClick={() => handleApproval('ajuste_solicitado')}
+                                                    disabled={approvalBusy !== null || localApproval === 'ajuste_solicitado'}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-semibold text-sm rounded-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                >
+                                                    {approvalBusy === 'ajuste_solicitado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareWarning className="w-4 h-4" />}
+                                                    Pedir ajuste
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* JANELA FECHADA.
+                                        O prazo de pedir ajuste passou. Nao ha botao de
+                                        ajuste, e as tres saidas viram CONVERSA, nao
+                                        escrita direta: renegociar data, cancelar ou
+                                        substituir mexem no calendario, e quem produziu
+                                        a peca precisa participar da decisao. As regras
+                                        do Firestore tambem nao deixam o cliente mudar
+                                        data nem status - so os campos de aprovacao. */}
+                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && !janela.aberta && (
+                                        <div className="mt-4 border border-white/10 bg-black/20 rounded-control p-3">
+                                            <p className="text-xs text-zinc-300 font-semibold flex items-center gap-1.5">
+                                                <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                                                Prazo de ajuste encerrado
+                                            </p>
+                                            <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                                                {ehVideo(event.type) ? 'Vídeo' : 'Conteúdo de imagem'} precisa de {janela.antecedencia} dia
+                                                {janela.antecedencia === 1 ? '' : 's'} de antecedência, e a publicação é {event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}.
+                                                Ainda dá para <strong className="text-zinc-300">remarcar</strong>, <strong className="text-zinc-300">cancelar</strong> ou <strong className="text-zinc-300">trocar por outro conteúdo</strong> — peça na conversa abaixo e a equipe ajusta o calendário.
+                                            </p>
                                         </div>
                                     )}
 
@@ -440,16 +486,31 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     />
                                     <Clock className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
+                                {/* O selo mostra o SLA QUE VALE AGORA e de quem e a
+                                    bola, nao o prazo deste campo. Sem o rotulo do
+                                    tipo, um "3 dias atrasado" que na verdade e do
+                                    cliente aparecia embaixo de "Prazo de producao" e
+                                    culpava a equipe. */}
                                 {(() => {
-                                    const prazo = deadlineState(editableEvent);
-                                    return prazo ? (
-                                        <span className={`inline-block mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${deadlineClasses(prazo.tone)}`}>
-                                            {prazo.label}
-                                        </span>
-                                    ) : (
-                                        <p className="text-[11px] text-zinc-600 mt-2 leading-snug">
-                                            Sem prazo definido. Interno — o cliente não vê.
-                                        </p>
+                                    const sla = slaAtual(editableEvent);
+                                    if (!sla) {
+                                        return (
+                                            <p className="text-[11px] text-zinc-600 mt-2 leading-snug">
+                                                Fora do fluxo — sem prazo corrente.
+                                            </p>
+                                        );
+                                    }
+                                    return (
+                                        <div className="mt-2 space-y-1">
+                                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(sla.tone)}`}>
+                                                {slaTipoLabel(sla.tipo)} · {sla.label}
+                                            </span>
+                                            <p className="text-[10px] text-zinc-600 leading-snug">
+                                                {sla.dono === 'agencia'
+                                                    ? 'Bola com a equipe. Interno — o cliente não vê.'
+                                                    : 'Bola com o cliente. Aguardando a decisão dele.'}
+                                            </p>
+                                        </div>
                                     );
                                 })()}
                             </div>

@@ -4,7 +4,7 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { CalendarEvent } from '../types';
 import { getClientStage, CLIENT_STAGES, needsClientAction, needsAgencyAction } from '../utils/eventState';
-import { summarizeDeadlines } from '../utils/deadline';
+import { summarizeSla } from '../utils/sla';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
 import WeeklyUpdatesView from './WeeklyUpdatesView';
@@ -99,7 +99,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
             semCapa: events.filter(e => !e.previewUrl && !e.coverUrl).length,
             // Prazo de PRODUCAO. Este espaco de trabalho e da agencia, entao
             // pode aparecer aqui; no portal do cliente, nao.
-            prazos: summarizeDeadlines(events)
+            prazos: summarizeSla(events)
         };
     }, [events]);
 
@@ -172,20 +172,35 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                 interno · o cliente não vê
                             </span>
                         </div>
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                            {/* Dois atrasos separados, porque o dono e diferente.
+                                Somar os dois num numero so escondia de quem e a
+                                bola - e era exatamente o erro da versao anterior,
+                                que cobrava da agencia a demora do cliente. */}
                             <StatTile
-                                label="Atrasados"
-                                value={stats.prazos.atrasados}
+                                label="Atrasado com a equipe"
+                                value={stats.prazos.atrasadoAgencia}
                                 icon={AlertTriangle}
-                                tone={stats.prazos.atrasados > 0 ? 'attention' : 'positive'}
-                                hint={stats.prazos.atrasados > 0 ? 'Prazo de produção vencido' : 'Nenhum prazo vencido'}
-                                onClick={stats.prazos.atrasados > 0 ? () => setSection('calendar') : undefined}
+                                tone={stats.prazos.atrasadoAgencia > 0 ? 'attention' : 'positive'}
+                                hint={stats.prazos.atrasadoAgencia > 0
+                                    ? 'Produção vencida ou ajuste passado de 2 dias úteis'
+                                    : 'Nenhum SLA da equipe estourado'}
+                                onClick={stats.prazos.atrasadoAgencia > 0 ? () => setSection('calendar') : undefined}
+                            />
+                            <StatTile
+                                label="Atrasado com o cliente"
+                                value={stats.prazos.atrasadoCliente}
+                                icon={Clock}
+                                tone={stats.prazos.atrasadoCliente > 0 ? 'attention' : 'positive'}
+                                hint={stats.prazos.atrasadoCliente > 0
+                                    ? 'Janela de revisão fechou sem decisão'
+                                    : 'Cliente em dia com as aprovações'}
                             />
                             <StatTile
                                 label="Vencem em até 2 dias"
-                                value={stats.prazos.hoje + stats.prazos.proximos}
-                                icon={Clock}
-                                hint={stats.prazos.hoje > 0 ? `${stats.prazos.hoje} vence(m) hoje` : undefined}
+                                value={stats.prazos.proximos}
+                                icon={CalendarClock}
+                                hint={stats.prazos.ajustesAbertos > 0 ? `${stats.prazos.ajustesAbertos} ajuste(s) em aberto` : undefined}
                             />
                             <StatTile
                                 label="Sem prazo definido"

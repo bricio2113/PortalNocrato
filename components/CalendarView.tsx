@@ -11,7 +11,7 @@ import { getMediaPreview } from '../utils/media';
 import { PageHeader, SegmentedTabs, EmptyState } from './ui';
 import FeedPreview from './FeedPreview';
 import { formatTime } from '../utils/date';
-import { deadlineState, deadlineClasses } from '../utils/deadline';
+import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
     Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
@@ -557,8 +557,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         )}
                                                                         {/* Atraso de producao: so a agencia. */}
                                                                         {podeEditar && (() => {
-                                                                            const prazo = deadlineState(event);
-                                                                            return prazo?.atrasado ? (
+                                                                            const prazo = slaAtual(event);
+                                                                            return prazo?.estourado ? (
                                                                                 <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full">
                                                                                     <AlertTriangle className="w-2.5 h-2.5" />{Math.abs(prazo.dias)}d
                                                                                 </span>
@@ -692,9 +692,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         )}
                                                                         {/* Prazo de producao: interno. */}
                                                                         {podeEditar && (() => {
-                                                                            const prazo = deadlineState(event);
-                                                                            return prazo && prazo.tone !== 'tranquilo' && prazo.tone !== 'concluido' ? (
-                                                                                <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${deadlineClasses(prazo.tone)}`}>
+                                                                            const prazo = slaAtual(event);
+                                                                            return prazo && prazo.tone !== 'tranquilo' && prazo.tone !== 'sem_prazo' ? (
+                                                                                <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(prazo.tone)}`}>
                                                                                     <Clock className="w-3 h-3" /> {prazo.label}
                                                                                 </span>
                                                                             ) : null;
@@ -770,9 +770,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                     {CLIENT_STAGES[stageOf(hover.event)].label}
                                 </span>
                                 {podeEditar && (() => {
-                                    const prazo = deadlineState(hover.event);
+                                    const prazo = slaAtual(hover.event);
                                     return prazo ? (
-                                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${deadlineClasses(prazo.tone)}`}>
+                                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(prazo.tone)}`}>
                                             {prazo.label}
                                         </span>
                                     ) : null;

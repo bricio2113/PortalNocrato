@@ -12,7 +12,7 @@ import 'firebase/compat/firestore';
 import { db } from './firebase';
 import { ApprovalState, EventMetrics, PostComment } from '../types';
 import { needsClientAction, needsAgencyAction } from './eventState';
-import { deadlineState, isProducaoEncerrada } from './deadline';
+import { slaAtual } from './sla';
 
 const empresaRef = (empresaId: string) => db.collection('empresas').doc(empresaId);
 
@@ -129,11 +129,13 @@ export interface PendingCounts {
     /** Sem capa manual nem resolvida: a previa do feed fica vazia. */
     semCapa: number;
     /**
-     * Producao com prazo vencido e ainda em aberto. INTERNO DA AGENCIA - nao
-     * exibir no portal do cliente (ver utils/deadline.ts).
+     * SLA estourado com a bola na AGENCIA - producao vencida ou ajuste passado
+     * de 2 dias uteis. INTERNO: nao exibir no portal do cliente (ver utils/sla).
      */
     atrasados: number;
-    /** Producao em aberto sem prazo definido: nunca aparece como atrasada. */
+    /** SLA estourado com a bola no CLIENTE: janela de revisao fechou sem decisao. */
+    atrasadosCliente: number;
+    /** Em producao sem prazo definido: nunca aparece como atrasado. Ponto cego. */
     semPrazo: number;
 }
 
@@ -158,6 +160,7 @@ export function subscribePendingCounts(
             let publicados = 0;
             let semCapa = 0;
             let atrasados = 0;
+            let atrasadosCliente = 0;
             let semPrazo = 0;
 
             snapshot.docs.forEach(doc => {
@@ -173,19 +176,31 @@ export function subscribePendingCounts(
                     noMes++;
                 }
 
-                // Prazo de producao. Contado aqui, e nao numa segunda leitura,
-                // porque a colecao ja esta na mao.
-                const prazo = (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null;
-                if (!isProducaoEncerrada(event)) {
-                    if (!prazo) semPrazo++;
-                    else if (deadlineState({ ...event, prazoProducao: prazo }, agora)?.atrasado) atrasados++;
+                // SLA. Contado aqui, e nao numa segunda leitura, porque a
+                // colecao ja esta na mao. O relogio que vale depende do estagio:
+                // ajuste vence producao, e producao para quando o post esta com
+                // o cliente - ver utils/sla.ts.
+                const sla = slaAtual({
+                    status: data.status,
+                    approval: data.approval,
+                    approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                    date: date || new Date(),
+                    type: data.type,
+                    prazoProducao: (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                }, agora);
+                if (sla) {
+                    if (sla.tone === 'sem_prazo') semPrazo++;
+                    else if (sla.estourado) {
+                        if (sla.dono === 'agencia') atrasados++;
+                        else atrasadosCliente++;
+                    }
                 }
             });
 
             onData({
                 aguardandoCliente, aguardandoAgencia,
                 total: snapshot.size, noMes, publicados, semCapa,
-                atrasados, semPrazo
+                atrasados, atrasadosCliente, semPrazo
             });
         },
         error => console.error('Erro ao contar pendências:', error)
