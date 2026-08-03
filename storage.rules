@@ -1,0 +1,149 @@
+rules_version = '2';
+
+// Regras do Cloud Storage - Portal do Cliente, Agencia Nocrato.
+//
+// ARQUIVO SEPARADO DE firestore.rules, E ISSO IMPORTA.
+// As duas regras nao se conversam e sao publicadas em comandos diferentes:
+//   firebase deploy --only firestore:rules
+//   firebase deploy --only storage
+// Nao existe heranca. O que esta protegido no Firestore nao esta protegido aqui.
+//
+// O padrao que o console do Firebase oferece e:
+//     allow read, write: if request.auth != null;
+// que significa "qualquer conta logada le e escreve QUALQUER arquivo". Um
+// cliente baixaria a midia de outro cliente trocando o caminho na URL. Este
+// arquivo existe para nao deixar isso no ar.
+//
+// ESTRUTURA DE CAMINHOS (uma pasta por cliente, sempre no primeiro nivel):
+//   empresas/{empresaId}/posts/{eventId}/{arquivo}       midia de uma publicacao
+//   empresas/{empresaId}/materiais/{pasta}/{arquivo}     materiais do cliente
+//
+// O empresaId vindo PRIMEIRO no caminho nao e estetica: e o que permite decidir
+// o acesso lendo o proprio caminho. Se a pasta do cliente estivesse embaixo de
+// um id de arquivo, nao haveria como escrever esta regra.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ---------------------------------------------------------------
+    // Helpers - espelham o modelo de firestore.rules
+    // ---------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Mesma lista de ADMIN_EMAILS em constants.ts e de isAdminEmail em
+    // firestore.rules. Mexer em uma exige mexer nas tres.
+    function isAdminEmail() {
+      return isSignedIn() && request.auth.token.email in [
+        'pedro.vidal2608@gmail.com',
+        'briciomarketing@gmail.com'
+      ];
+    }
+
+    // As regras do Storage CONSEGUEM ler o Firestore. E como o papel e o vinculo
+    // de empresa continuam morando em usuarios/{uid}, sem duplicar nada.
+    //
+    // Custo: cada firestore.get() aqui e uma leitura cobrada no Firestore. No
+    // volume de um portal de agencia isso e irrelevante, e o alternativo -
+    // duplicar papel e vinculo dentro do Storage - criaria duas fontes de
+    // verdade que divergem no dia em que alguem troca de empresa.
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isAgency() {
+      return isAdminEmail()
+        || (isSignedIn()
+            && request.auth.token.email_verified == true
+            && userDoc().role == 'agencia');
+    }
+
+    function belongsTo(empresaId) {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && userDoc().empresaId == empresaId;
+    }
+
+    // ---------------------------------------------------------------
+    // Limites de arquivo
+    // ---------------------------------------------------------------
+    //
+    // Validados AQUI, e nao apenas no navegador: limite que existe so no front
+    // nao e limite. Sem isto alguem sobe 4 GB chamando o SDK direto, e a fatura
+    // do mes seguinte explica o resto.
+
+    function isImagem() {
+      return request.resource.contentType.matches('image/.*')
+             && request.resource.size <= 15 * 1024 * 1024;   // 15 MB
+    }
+
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*')
+             && request.resource.size <= 300 * 1024 * 1024;  // 300 MB
+    }
+
+    // Contrato, briefing, PDF de referencia.
+    function isDocumento() {
+      return request.resource.contentType in [
+               'application/pdf',
+               'application/msword',
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+               'text/plain'
+             ]
+             && request.resource.size <= 25 * 1024 * 1024;   // 25 MB
+    }
+
+    function tipoPermitido() {
+      return isImagem() || isVideo() || isDocumento();
+    }
+
+    // ---------------------------------------------------------------
+    // Midia das publicacoes
+    // ---------------------------------------------------------------
+
+    match /empresas/{empresaId}/posts/{eventId}/{arquivo=**} {
+
+      // O cliente LE a midia da propria empresa - e o material que ele aprova.
+      allow read: if isAgency() || belongsTo(empresaId);
+
+      // Escrita e da equipe. O cliente aprova ou pede ajuste; produzir e
+      // substituir peca e trabalho da agencia, igual ao que as regras do
+      // Firestore fazem com a colecao events.
+      allow write: if isAgency() && tipoPermitido();
+
+      // Apagar midia de post e da equipe.
+      allow delete: if isAgency();
+    }
+
+    // ---------------------------------------------------------------
+    // Materiais do cliente (pastas)
+    // ---------------------------------------------------------------
+
+    match /empresas/{empresaId}/materiais/{arquivo=**} {
+      allow read: if isAgency() || belongsTo(empresaId);
+
+      // O cliente PODE subir material aqui - foto de produto, logo, referencia.
+      // E o unico lugar em que ele escreve, e o teto de tamanho e de tipo vale
+      // igual para os dois lados.
+      allow write: if (isAgency() || belongsTo(empresaId)) && tipoPermitido();
+
+      // Apagar so a equipe: o cliente nao remove o material que a producao
+      // esta usando.
+      allow delete: if isAgency();
+    }
+
+    // ---------------------------------------------------------------
+    // Negacao explicita para qualquer caminho nao previsto acima.
+    // ---------------------------------------------------------------
+    //
+    // Sem este bloco final, um caminho novo criado por engano - ou por codigo
+    // futuro que esqueca a convencao - nasceria sem regra. Aqui ele nasce
+    // negado, e a falha aparece como erro de permissao em vez de vazamento.
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
