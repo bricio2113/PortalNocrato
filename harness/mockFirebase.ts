@@ -74,13 +74,13 @@ const snap = (rows: any[]) => ({
 // Historico de exemplo: um de cada tipo, para a linha do tempo mostrar todas as
 // frases e nao so a mais comum.
 const HISTORICO = [
-    { id: 'h1', eventId: 'ev0', tipo: 'criado', para: 'Carrossel institucional', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-6)) },
-    { id: 'h2', eventId: 'ev0', tipo: 'status', de: 'Pendente', para: 'Em andamento', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-4)) },
-    { id: 'h3', eventId: 'ev0', tipo: 'midia', de: '0', para: '3', por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-3)) },
-    { id: 'h4', eventId: 'ev0', tipo: 'data', de: d(-1).toISOString(), para: d(2).toISOString(), por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-2)) },
-    { id: 'h5', eventId: 'ev0', tipo: 'aprovacao', para: 'ajuste_solicitado', por: 'cliente@x.com', porNome: 'João Almeida', porPapel: 'cliente', em: ts(d(-1)) },
-    { id: 'h6', eventId: 'ev0', tipo: 'prazo', para: d(3).toISOString(), por: 'maria@x.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-1)) },
-    { id: 'h7', eventId: 'ev0', tipo: 'aprovacao', para: 'aprovado', por: 'cliente@x.com', porNome: 'João Almeida', porPapel: 'cliente', em: ts(hoje) }
+    { id: 'h1', eventId: 'ev0', tipo: 'criado', para: 'Carrossel institucional', por: 'pedro.vidal2608@gmail.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-6)) },
+    { id: 'h2', eventId: 'ev0', tipo: 'status', de: 'Pendente', para: 'Em andamento', por: 'pedro.vidal2608@gmail.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-4)) },
+    { id: 'h3', eventId: 'ev0', tipo: 'midia', de: '0', para: '3', por: 'pedro.vidal2608@gmail.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-3)) },
+    { id: 'h4', eventId: 'ev0', tipo: 'data', de: d(-1).toISOString(), para: d(2).toISOString(), por: 'pedro.vidal2608@gmail.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-2)) },
+    { id: 'h5', eventId: 'ev0', tipo: 'aprovacao', para: 'ajuste_solicitado', por: 'usuario.numero1@umdominiobemlongo.com.br', porNome: 'João Almeida', porPapel: 'cliente', em: ts(d(-1)) },
+    { id: 'h6', eventId: 'ev0', tipo: 'prazo', para: d(3).toISOString(), por: 'pedro.vidal2608@gmail.com', porNome: 'Maria Silva', porPapel: 'agencia', em: ts(d(-1)) },
+    { id: 'h7', eventId: 'ev0', tipo: 'aprovacao', para: 'aprovado', por: 'usuario.numero1@umdominiobemlongo.com.br', porNome: 'João Almeida', porPapel: 'cliente', em: ts(hoje) }
 ];
 
 // Ficha financeira de exemplo. Precisa vir ANTES de 'usuarios' no pick: o
@@ -95,7 +95,10 @@ const FINANCEIRO = [{
 }];
 
 const pick = (path: string) => {
-    if (path.includes('_financeiro')) return FINANCEIRO;
+    // u1 fica DELIBERADAMENTE sem ficha financeira: e o caso "nada cadastrado",
+    // onde a ficha mostra os valores padrao com a etiqueta. Sem um uid sem dados,
+    // esse caminho nunca aparecia na auditoria - e ele e a metade que da errado.
+    if (path.includes('_financeiro')) return path.includes('/u1/') ? [] : FINANCEIRO;
     if (path.includes('historico')) return HISTORICO;
     if (path.includes('covers')) return [];
     if (path.includes('kanban_tasks')) return TASKS;
@@ -109,13 +112,32 @@ const pick = (path: string) => {
     return [];
 };
 
-const makeCollection = (path: string): any => ({
+/**
+ * `where` FILTRA DE VERDADE (igualdade e `in`).
+ *
+ * Antes era `where: () => makeCollection(path)` - devolvia a colecao inteira. Uma
+ * consulta filtrada mostrava na tela linhas que a consulta real nao traria, e o
+ * caminho "nao achou nada" nunca era exercitado: a auditoria via lista cheia em
+ * todo lugar e aprovava telas que em producao vem vazias.
+ */
+const aplicarFiltros = (rows: any[], filtros: [string, string, any][]) =>
+    filtros.reduce((atual, [campo, op, valor]) => atual.filter(r => {
+        if (op === 'in') return Array.isArray(valor) && valor.includes(r[campo]);
+        if (op === '!=') return r[campo] !== valor;
+        return r[campo] === valor;
+    }), rows);
+
+const makeCollection = (path: string, filtros: [string, string, any][] = []): any => ({
     doc: (id: string) => makeDoc(`${path}/${id}`),
-    add: async () => ({ id: 'novo' }),
-    where: () => makeCollection(path),
-    orderBy: () => makeCollection(path),
-    get: async () => snap(pick(path)),
-    onSnapshot: (cb: any) => { setTimeout(() => cb(snap(pick(path))), 0); return () => {}; }
+    add: async (data: any) => { registrar('add', path, data); return { id: 'novo' }; },
+    where: (campo: string, op: string, valor: any) => makeCollection(path, [...filtros, [campo, op, valor]]),
+    orderBy: () => makeCollection(path, filtros),
+    limit: (n: number) => makeCollection(path, [...filtros, ['__limite', 'limit', n]]),
+    get: async () => snap(aplicarFiltros(pick(path), filtros.filter(f => f[1] !== 'limit'))),
+    onSnapshot: (cb: any) => {
+        setTimeout(() => cb(snap(aplicarFiltros(pick(path), filtros.filter(f => f[1] !== 'limit')))), 0);
+        return () => {};
+    }
 });
 // Registro das escritas, para a auditoria PROVAR que uma interacao gravou em
 // vez de apenas nao ter dado erro. Foi o que faltava para verificar o arraste do

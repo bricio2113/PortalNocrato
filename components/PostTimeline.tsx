@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { HistoricoEntrada, HistoricoTipo, subscribeHistorico } from '../utils/historico';
+import { HistoricoEntrada, HistoricoTipo, subscribeHistorico, descreverHistorico } from '../utils/historico';
 import { getInitials } from '../utils/avatar';
-import { formatTime } from '../utils/date';
 import {
     History, Loader2, AlertTriangle, Sparkles, ArrowRight,
     CalendarClock, ThumbsUp, MessageSquareWarning, ImagePlus, Clock
@@ -13,7 +12,8 @@ interface PostTimelineProps {
     userRole: 'agencia' | 'cliente';
 }
 
-const ICONES: Record<HistoricoTipo, React.ElementType> = {
+/** Icone por tipo. Exportado: a ficha da pessoa lista as mesmas entradas. */
+export const ICONES_HISTORICO: Record<HistoricoTipo, React.ElementType> = {
     criado: Sparkles,
     status: ArrowRight,
     data: CalendarClock,
@@ -21,49 +21,6 @@ const ICONES: Record<HistoricoTipo, React.ElementType> = {
     midia: ImagePlus,
     prazo: Clock
 };
-
-const formatarData = (iso?: string | null) => {
-    if (!iso) return 'sem data';
-    const d = new Date(iso);
-    const hora = formatTime(d);
-    return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}${hora ? ` às ${hora}` : ''}`;
-};
-
-/**
- * Frase de cada entrada.
- *
- * Texto pronto, e nao "campo X: de A para B". O historico e lido pelo CLIENTE, e
- * nome de campo do banco na tela dele nao comunica nada.
- */
-function descrever(e: HistoricoEntrada): { texto: string; destaque?: string } {
-    switch (e.tipo) {
-        case 'criado':
-            return { texto: 'Publicação criada', destaque: e.para || undefined };
-        case 'status':
-            return { texto: `Status: ${e.de || '—'} → ${e.para || '—'}` };
-        case 'data':
-            return { texto: `Publicação remarcada de ${formatarData(e.de)} para ${formatarData(e.para)}` };
-        case 'prazo':
-            return {
-                texto: e.para
-                    ? `Prazo de produção: ${formatarData(e.para)}`
-                    : 'Prazo de produção removido'
-            };
-        case 'midia': {
-            const antes = Number(e.de || 0);
-            const agora = Number(e.para || 0);
-            return {
-                texto: agora > antes
-                    ? `${agora - antes} arquivo(s) enviado(s)`
-                    : `${antes - agora} arquivo(s) removido(s)`
-            };
-        }
-        case 'aprovacao':
-            if (e.para === 'aprovado') return { texto: 'Aprovado' };
-            if (e.para === 'ajuste_solicitado') return { texto: 'Ajuste solicitado' };
-            return { texto: 'Voltou para aprovação' };
-    }
-}
 
 const TOM: Partial<Record<string, string>> = {
     aprovado: 'text-emerald-400',
@@ -125,8 +82,8 @@ const PostTimeline: React.FC<PostTimelineProps> = ({ empresaId, eventId, userRol
                     <span className="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-white/10" aria-hidden="true" />
 
                     {entradas.map(entrada => {
-                        const Icone = ICONES[entrada.tipo];
-                        const { texto, destaque } = descrever(entrada);
+                        const Icone = ICONES_HISTORICO[entrada.tipo];
+                        const { texto, destaque } = descreverHistorico(entrada);
                         const tom = TOM[entrada.para || ''] || 'text-zinc-300';
                         return (
                             <li key={entrada.id} className="relative">

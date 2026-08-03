@@ -124,6 +124,116 @@ export async function registrarMudancas(
     }
 }
 
+const formatarDataCurta = (iso?: string | null) => {
+    if (!iso) return 'sem data';
+    const d = new Date(iso);
+    const hora = d.getHours() || d.getMinutes()
+        ? ` às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        : '';
+    return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}${hora}`;
+};
+
+/**
+ * Frase de uma entrada do historico.
+ *
+ * Vive AQUI, junto do tipo que ela descreve, e nao dentro de um componente: a
+ * mesma entrada e lida na linha do tempo do post e na ficha da pessoa. Enquanto
+ * a frase morava na tela, a segunda leitora teria que reescrever as seis frases
+ * - e elas passariam a divergir na primeira mudanca de texto.
+ *
+ * Texto pronto, e nao "campo X: de A para B". O historico e lido pelo CLIENTE, e
+ * nome de campo do banco na tela dele nao comunica nada.
+ */
+export function descreverHistorico(e: HistoricoEntrada): { texto: string; destaque?: string } {
+    switch (e.tipo) {
+        case 'criado':
+            return { texto: 'Publicação criada', destaque: e.para || undefined };
+        case 'status':
+            return { texto: `Status: ${e.de || '—'} → ${e.para || '—'}` };
+        case 'data':
+            return { texto: `Publicação remarcada de ${formatarDataCurta(e.de)} para ${formatarDataCurta(e.para)}` };
+        case 'prazo':
+            return {
+                texto: e.para
+                    ? `Prazo de produção: ${formatarDataCurta(e.para)}`
+                    : 'Prazo de produção removido'
+            };
+        case 'midia': {
+            const antes = Number(e.de || 0);
+            const agora = Number(e.para || 0);
+            return {
+                texto: agora > antes
+                    ? `${agora - antes} arquivo(s) enviado(s)`
+                    : `${antes - agora} arquivo(s) removido(s)`
+            };
+        }
+        case 'aprovacao':
+            if (e.para === 'aprovado') return { texto: 'Aprovado' };
+            if (e.para === 'ajuste_solicitado') return { texto: 'Ajuste solicitado' };
+            return { texto: 'Voltou para aprovação' };
+    }
+}
+
+/** Entrada com o cliente de onde ela veio - a ficha varre varios. */
+export interface AtividadeDaPessoa extends HistoricoEntrada {
+    empresaId: string;
+    empresaNome: string;
+}
+
+/**
+ * Teto de clientes varridos de uma vez.
+ *
+ * O historico e por cliente (empresas/{id}/historico), entao "o que esta pessoa
+ * fez" custa UMA CONSULTA POR CLIENTE. Com a carteira de uma agencia pequena
+ * isso e barato e nao exige indice nenhum; a partir de algumas dezenas de
+ * clientes o certo passa a ser um feed denormalizado por usuario, gravado junto
+ * da entrada. O teto existe para o custo nao crescer calado ate la.
+ */
+export const LIMITE_CLIENTES_ATIVIDADE = 12;
+
+/**
+ * O que uma pessoa fez, mais recente primeiro, somando os clientes informados.
+ *
+ * Ordena no cliente: `where('por')` + `orderBy('em')` sao campos diferentes e
+ * exigiriam indice composto - sem ele a consulta falha em producao, e falha
+ * apenas em producao, que e o pior lugar para descobrir.
+ */
+export async function lerAtividadeDaPessoa(
+    empresas: { id: string; nome: string }[],
+    email: string,
+    limite = 8
+): Promise<AtividadeDaPessoa[]> {
+    if (!email) return [];
+    const alvos = empresas.slice(0, LIMITE_CLIENTES_ATIVIDADE);
+
+    const porCliente = await Promise.all(alvos.map(async empresa => {
+        try {
+            const snap = await ref(empresa.id).where('por', '==', email).get();
+            return snap.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    ...data,
+                    id: doc.id,
+                    empresaId: empresa.id,
+                    empresaNome: empresa.nome,
+                    em: (data.em as firebase.firestore.Timestamp | undefined)?.toDate() || new Date()
+                } as AtividadeDaPessoa;
+            });
+        } catch (erro) {
+            // Um cliente ilegivel nao derruba a lista: a ficha mostra o que deu
+            // para ler. Promise.all com um reject devolveria lista vazia e
+            // pareceria "essa pessoa nunca fez nada".
+            console.error(`Falha ao ler histórico de ${empresa.id}:`, erro);
+            return [];
+        }
+    }));
+
+    return porCliente
+        .flat()
+        .sort((a, b) => b.em.getTime() - a.em.getTime())
+        .slice(0, limite);
+}
+
 /** Tipos que o CLIENTE nao ve: prazo de producao e assunto interno. */
 const OCULTOS_DO_CLIENTE: HistoricoTipo[] = ['prazo'];
 

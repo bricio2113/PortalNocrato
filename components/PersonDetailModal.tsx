@@ -6,10 +6,13 @@ import {
     lerFinanceiroUsuario, salvarFinanceiroUsuario, formatarMoeda,
     centavosParaTexto, textoParaCentavos
 } from '../utils/empresas';
+import { lerAtividadeDaPessoa, AtividadeDaPessoa, descreverHistorico } from '../utils/historico';
+import { ICONES_HISTORICO } from './PostTimeline';
 import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import {
     X, Mail, Phone, Building2, ShieldCheck, Briefcase, Lock, Loader2, Save,
-    AlertTriangle, Pencil, Check, Wallet, CalendarClock, FileText
+    AlertTriangle, Pencil, Check, Wallet, CalendarClock, FileText, History,
+    Activity, Layers, BadgeCheck
 } from 'lucide-react';
 
 export interface PersonDetailAcao {
@@ -24,6 +27,11 @@ interface PersonDetailModalProps {
     selo: { texto: string; cor: string };
     /** Nome do cliente ao qual a pessoa pertence. Equipe da agencia nao tem. */
     empresaNome?: string | null;
+    /**
+     * Clientes onde procurar o que esta pessoa fez. O historico e por cliente,
+     * entao sem esta lista a ficha nao tem onde olhar. Vazio = sem atividade.
+     */
+    empresasParaAtividade?: { id: string; nome: string }[];
     ehVoce?: boolean;
     souAdmin: boolean;
     autorEmail?: string | null;
@@ -35,17 +43,21 @@ interface PersonDetailModalProps {
     onClose: () => void;
 }
 
-const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600";
-const labelStyle = "block text-[11px] font-semibold text-zinc-500 mb-1.5";
+const inputStyle = "w-full bg-black/40 border border-white/10 rounded-control px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-500";
+const labelStyle = "block text-[11px] font-semibold text-zinc-400 mb-1.5";
 
-/** Titulo de secao. Pequeno de proposito: separa sem competir com o conteudo. */
-const Secao: React.FC<{ titulo: string; icone: React.ElementType; children: React.ReactNode; acao?: React.ReactNode }> = ({
-    titulo, icone: Icone, children, acao
-}) => (
-    <section>
-        <div className="flex items-center gap-2 mb-2.5">
-            <Icone className="w-3.5 h-3.5 text-zinc-600" />
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">{titulo}</h3>
+/** Cartao interno da ficha. Vidro dentro do vidro, um degrau mais escuro. */
+const Bloco: React.FC<{
+    titulo: string;
+    icone: React.ElementType;
+    acao?: React.ReactNode;
+    children: React.ReactNode;
+    className?: string;
+}> = ({ titulo, icone: Icone, acao, children, className = '' }) => (
+    <section className={`bg-black/25 border border-white/10 rounded-card p-4 sm:p-5 ${className}`}>
+        <div className="flex items-center gap-2 mb-4">
+            <Icone className="w-4 h-4 text-[#FABE01]" />
+            <h3 className="text-sm font-bold text-white tracking-tight">{titulo}</h3>
             {acao && <div className="ml-auto">{acao}</div>}
         </div>
         {children}
@@ -53,39 +65,92 @@ const Secao: React.FC<{ titulo: string; icone: React.ElementType; children: Reac
 );
 
 /**
- * Uma linha rotulo/valor. Rotulo acima, valor abaixo: em telefone estreito o
- * par lado a lado quebrava o valor em duas linhas e desalinhava a lista.
+ * Par rotulo/valor do cabecalho - rotulo pequeno acima, valor grande abaixo.
+ * O mesmo desenho da referencia: a linha de identidade se le de uma vez, sem
+ * icone competindo com o texto.
  */
-const Linha: React.FC<{ rotulo: string; valor?: string | null; icone?: React.ElementType; dica?: string }> = ({
-    rotulo, valor, icone: Icone, dica
+const Dado: React.FC<{ rotulo: string; valor?: string | null; vazio?: string }> = ({
+    rotulo, valor, vazio = 'não informado'
 }) => (
-    <div className="bg-[#111111] px-3.5 py-3 min-w-0">
-        <p className="text-[10px] text-zinc-600 mb-1">{rotulo}</p>
-        <div className="flex items-center gap-2 min-w-0">
-            {Icone && <Icone className="w-3.5 h-3.5 text-zinc-600 shrink-0" />}
-            <p className={`text-sm truncate ${valor ? 'text-zinc-100' : 'text-zinc-600 italic'}`} title={valor || undefined}>
-                {valor || 'não informado'}
-            </p>
-        </div>
-        {dica && <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">{dica}</p>}
+    <div className="min-w-0">
+        <p className="text-[11px] text-zinc-400 mb-1">{rotulo}</p>
+        <p
+            className={`text-[15px] font-semibold truncate ${valor ? 'text-white' : 'text-zinc-500 font-normal italic'}`}
+            title={valor || undefined}
+        >
+            {valor || vazio}
+        </p>
     </div>
 );
 
-/** Moldura das linhas: fundo claro vazando entre elas cria a divisao sem borda. */
-const Grupo: React.FC<{ children: React.ReactNode; colunas?: 1 | 2 }> = ({ children, colunas = 1 }) => (
-    <div className={`grid gap-px bg-white/5 rounded-control overflow-hidden ${colunas === 2 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
-        {children}
+/** Tile de numero com icone em circulo, como na referencia. */
+const Tile: React.FC<{
+    icone: React.ElementType;
+    valor: string;
+    rotulo: string;
+    destaque?: boolean;
+}> = ({ icone: Icone, valor, rotulo, destaque }) => (
+    <div className="flex items-center gap-3 bg-black/25 border border-white/10 rounded-card px-4 py-3.5 min-w-0">
+        <span className={`w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center ${
+            destaque ? 'bg-[#FABE01]/15 text-[#FABE01]' : 'bg-white/[0.07] text-zinc-300'
+        }`}>
+            <Icone className="w-[18px] h-[18px]" />
+        </span>
+        {/* Nada de truncate aqui: em dois tiles por linha no celular, "Ações
+            registradas" virava "Ações registrad..." e "Administrador" virava
+            "Administ...". Numero e rotulo QUEBRAM em duas linhas - o tile cresce,
+            que e melhor que esconder a palavra que da sentido ao numero. */}
+        <div className="min-w-0">
+            <p className={`font-bold leading-tight ${destaque ? 'text-[#FABE01] text-sm sm:text-base' : 'text-white text-lg'}`}>
+                {valor}
+            </p>
+            <p className="text-[11px] text-zinc-400 leading-tight mt-0.5">{rotulo}</p>
+        </div>
     </div>
 );
+
+/** Linha de dado dentro de um bloco. */
+const Linha: React.FC<{
+    rotulo: string;
+    valor: string;
+    icone?: React.ElementType;
+    /** Marca que o valor e um padrao, nao algo que alguem cadastrou. */
+    padrao?: boolean;
+    dica?: string;
+}> = ({ rotulo, valor, icone: Icone, padrao, dica }) => (
+    <div className="py-2.5 min-w-0">
+        <p className="text-[11px] text-zinc-400 mb-1">{rotulo}</p>
+        <div className="flex items-center gap-2 min-w-0">
+            {Icone && <Icone className="w-3.5 h-3.5 text-zinc-500 shrink-0" />}
+            <p className={`text-sm truncate ${padrao ? 'text-zinc-400' : 'text-white font-medium'}`} title={valor}>
+                {valor}
+            </p>
+            {padrao && (
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded-full shrink-0">
+                    padrão
+                </span>
+            )}
+        </div>
+        {dica && <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">{dica}</p>}
+    </div>
+);
+
+const relativo = (data: Date) => {
+    const dias = Math.floor((Date.now() - data.getTime()) / 86400000);
+    if (dias <= 0) return 'hoje';
+    if (dias === 1) return 'ontem';
+    if (dias < 30) return `há ${dias} dias`;
+    const meses = Math.floor(dias / 30);
+    return meses === 1 ? 'há 1 mês' : `há ${meses} meses`;
+};
 
 /**
- * FICHA DA PESSOA - tudo que se sabe de um colaborador ou de um contato do
- * cliente, numa tela so.
+ * FICHA DA PESSOA - identidade, numeros, o que ela fez por ultimo e o
+ * financeiro, numa folha de vidro sobre a tela.
  *
- * POR QUE ELA EXISTE: o cartao da lista precisa caber nove vezes na tela, e
- * cada campo que se acrescenta ali encolhe os outros - foi assim que o cartao
- * antigo virou uma parede de rotulos. O cartao passa a ser PORTA DE ENTRADA:
- * mostra rosto, nome e situacao; o resto mora aqui.
+ * POR QUE ELA EXISTE: o cartao da lista precisa caber nove vezes na tela, e cada
+ * campo que se acrescenta ali encolhe os outros - foi assim que o cartao antigo
+ * virou uma parede de rotulos. O cartao e PORTA DE ENTRADA; o resto mora aqui.
  *
  * ISSO SUBSTITUI O MODAL SO-DE-FINANCEIRO. Existiam duas telas para a mesma
  * pessoa, alcancadas por dois itens do mesmo menu - o financeiro nao e um
@@ -97,7 +162,8 @@ const Grupo: React.FC<{ children: React.ReactNode; colunas?: 1 | 2 }> = ({ child
  * levaria erro de permissao no console em cada abertura de ficha.
  */
 const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
-    pessoa, selo, empresaNome, ehVoce, souAdmin, autorEmail, onSalvarCargo, acoes = [], children, onClose
+    pessoa, selo, empresaNome, empresasParaAtividade = [], ehVoce, souAdmin, autorEmail,
+    onSalvarCargo, acoes = [], children, onClose
 }) => {
     const nivel = permissionLevel(pessoa);
     const ehColaborador = nivel !== 'cliente';
@@ -125,8 +191,11 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     const [rascunhoCargo, setRascunhoCargo] = useState(pessoa.cargo || '');
     const [salvandoCargo, setSalvandoCargo] = useState(false);
 
-    // Esc fecha. Sem isto a unica saida e o X, e num modal alto ele fica fora
-    // da vista depois de rolar.
+    const [atividade, setAtividade] = useState<AtividadeDaPessoa[]>([]);
+    const [carregandoAtiv, setCarregandoAtiv] = useState(empresasParaAtividade.length > 0);
+
+    // Esc fecha. Sem isto a unica saida e o X, e numa ficha alta ele fica fora da
+    // vista depois de rolar.
     useEffect(() => {
         const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', esc);
@@ -150,6 +219,19 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
             .finally(() => { if (vivo) setCarregandoFin(false); });
         return () => { vivo = false; };
     }, [pessoa.id, mostrarFinanceiro]);
+
+    // Atividade: uma leitura por cliente, so na abertura da ficha. Nao e
+    // assinatura - o que esta pessoa fez no passado nao muda enquanto a ficha
+    // esta aberta, e onSnapshot por cliente sairia caro sem entregar nada.
+    useEffect(() => {
+        if (empresasParaAtividade.length === 0) return;
+        let vivo = true;
+        lerAtividadeDaPessoa(empresasParaAtividade, pessoa.email)
+            .then(lidas => { if (vivo) setAtividade(lidas); })
+            .finally(() => { if (vivo) setCarregandoAtiv(false); });
+        return () => { vivo = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pessoa.email]);
 
     const salvarFin = async () => {
         setSalvandoFin(true);
@@ -186,316 +268,407 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
     const temFoto = isSafeImageSrc(pessoa.fotoUrl);
     const nome = getDisplayName(pessoa);
-    const temFinanceiro = !!financeiro && (
-        financeiro.valorMensalCentavos != null || financeiro.diaVencimento != null ||
-        !!financeiro.escopo || !!financeiro.observacoes || !!financeiro.inicioContrato
-    );
 
-    const botaoTexto = "text-[11px] font-semibold text-zinc-400 hover:text-white flex items-center gap-1 transition-colors";
+    // NUMEROS derivados da atividade lida. Contagem do que esta na ficha, nao um
+    // total do banco - por isso "registradas", e nao "total".
+    const publicacoesTocadas = new Set(atividade.map(a => a.eventId)).size;
+    const ultima = atividade[0];
+
+    const botaoTexto = "text-[11px] font-semibold text-zinc-300 hover:text-white flex items-center gap-1 transition-colors bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-full";
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-md sm:p-4 lg:p-6 animate-in fade-in">
+            {/* VIDRO. Fundo semitransparente com desfoque em vez de painel opaco:
+                a ficha se le como uma folha SOBRE a lista, e nao como outra tela.
+                A borda clara em cima e o que separa o vidro do fundo escuro -
+                sem ela a folha desaparece no plano de fundo. */}
             <div
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Ficha de ${nome}`}
-                className="relative w-full sm:max-w-2xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-card flex flex-col max-h-[92dvh] overflow-hidden"
+                className="relative w-full sm:max-w-5xl bg-white/[0.09] backdrop-blur-2xl border-t sm:border border-white/20 rounded-t-card sm:rounded-card shadow-[0_24px_80px_rgba(0,0,0,0.55)] flex flex-col max-h-[94dvh] overflow-hidden"
             >
-                {/* Fecha flutuando sobre a area rolavel. O fundo proprio nao e
-                    enfeite: rolando a ficha, o botao passa por cima do texto das
-                    secoes e sem ele os dois se misturam. */}
-                <button
-                    onClick={onClose}
-                    aria-label="Fechar"
-                    className="absolute right-3 top-3 z-10 p-2 rounded-full bg-black/50 backdrop-blur-sm text-zinc-300 hover:text-white hover:bg-black/70 transition-colors"
-                >
-                    <X className="w-5 h-5" />
-                </button>
+                {/* CABECALHO fixo: barra dourada + titulo a esquerda, cargo e
+                    fechar a direita. Nao rola com o conteudo - numa ficha alta,
+                    saber de quem e a ficha nao pode depender de rolar de volta. */}
+                <header className="shrink-0 flex items-center gap-3 px-5 sm:px-7 py-4 border-b border-white/10 bg-white/[0.03]">
+                    <span className="w-1 h-5 rounded-full bg-[#FABE01] shrink-0" />
+                    <h2 className="text-lg font-bold text-white tracking-tight truncate">
+                        {ehColaborador ? 'Detalhes do colaborador' : 'Detalhes do contato'}
+                    </h2>
+                    <span className={`hidden sm:inline-flex text-[10px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${selo.cor}`}>
+                        {selo.texto}
+                    </span>
+                    <button
+                        onClick={onClose}
+                        aria-label="Fechar"
+                        className="ml-auto p-2 rounded-full text-zinc-300 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </header>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                    {/* IDENTIDADE. Faixa mais clara no topo em vez de bloco de cor:
-                        separa a identidade dos dados sem introduzir uma cor nova
-                        na paleta. */}
-                    <header className="bg-gradient-to-b from-white/[0.06] to-transparent px-5 pt-8 pb-5 sm:px-7 sm:pt-9 flex flex-col items-center text-center border-b border-white/5">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-7 space-y-4">
+                    {/* IDENTIDADE: foto grande a esquerda, nome e os tres dados de
+                        contato numa linha - o mesmo arranjo da referencia. */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
                         {temFoto ? (
                             <img
                                 src={pessoa.fotoUrl!}
                                 alt=""
-                                className="w-20 h-20 rounded-full object-cover ring-2 ring-white/10"
+                                className="w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-full object-cover ring-2 ring-white/15 mx-auto sm:mx-0"
                             />
                         ) : (
-                            <div className="w-20 h-20 rounded-full bg-white/5 ring-2 ring-white/10 flex items-center justify-center text-zinc-300 font-bold text-2xl">
+                            <div className="w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-full bg-white/[0.07] ring-2 ring-white/15 flex items-center justify-center text-zinc-200 font-bold text-2xl sm:text-3xl mx-auto sm:mx-0">
                                 {getInitials(pessoa)}
                             </div>
                         )}
 
-                        <div className="flex items-center gap-2 mt-3.5 max-w-full">
-                            <h2 className="text-xl font-bold text-white tracking-tight truncate">{nome}</h2>
-                            {ehVoce && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#FABE01] shrink-0">você</span>
-                            )}
-                        </div>
-
-                        <p className="text-sm text-zinc-500 mt-0.5">
-                            {pessoa.cargo || (ehColaborador ? 'Cargo não definido' : 'Contato do cliente')}
-                        </p>
-
-                        <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3.5">
-                            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${selo.cor}`}>
-                                {selo.texto}
-                            </span>
-                            {empresaNome && (
-                                <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-white/5 text-zinc-400 flex items-center gap-1">
-                                    <Building2 className="w-3 h-3" /> {empresaNome}
+                        <div className="min-w-0 flex-1 text-center sm:text-left">
+                            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                                <h3 className="text-2xl sm:text-[28px] font-bold text-white tracking-tight leading-tight truncate">
+                                    {nome}
+                                </h3>
+                                {ehVoce && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#FABE01] shrink-0">você</span>
+                                )}
+                                <span className={`sm:hidden text-[10px] font-semibold px-2 py-0.5 rounded-full ${selo.cor}`}>
+                                    {selo.texto}
                                 </span>
-                            )}
-                        </div>
-                    </header>
+                            </div>
 
-                    <div className="p-5 sm:p-7 space-y-6">
-                        <Secao titulo="Contato" icone={Mail}>
-                            <Grupo colunas={2}>
-                                <Linha rotulo="E-mail" valor={pessoa.email} icone={Mail} />
-                                <Linha rotulo="Telefone / WhatsApp" valor={pessoa.telefone} icone={Phone} />
-                            </Grupo>
-                        </Secao>
-
-                        <Secao
-                            titulo="Acesso"
-                            icone={ShieldCheck}
-                            acao={onSalvarCargo && !editandoCargo ? (
-                                <button onClick={() => { setRascunhoCargo(pessoa.cargo || ''); setEditandoCargo(true); }} className={botaoTexto}>
-                                    <Pencil className="w-3 h-3" /> Editar cargo
-                                </button>
-                            ) : undefined}
-                        >
-                            <Grupo colunas={2}>
-                                <Linha
-                                    rotulo="Nível de permissão"
-                                    valor={PERMISSION_LABEL[nivel]}
-                                    icone={ShieldCheck}
-                                    dica={PERMISSION_HINT[nivel]}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-6 mt-3 sm:mt-4 text-left">
+                                <Dado
+                                    rotulo="Cargo"
+                                    valor={pessoa.cargo}
+                                    vazio={ehColaborador ? 'Cargo não definido' : 'Contato do cliente'}
                                 />
-                                {/* Cargo editavel no lugar onde e lido, e nao numa
-                                    tela de edicao separada. */}
-                                <div className="bg-[#111111] px-3.5 py-3 min-w-0">
-                                    <p className="text-[10px] text-zinc-600 mb-1">Cargo</p>
-                                    {editandoCargo ? (
-                                        <div className="flex gap-1.5">
-                                            <input
-                                                autoFocus
-                                                value={rascunhoCargo}
-                                                onChange={e => setRascunhoCargo(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') salvarCargo(); }}
-                                                placeholder="Ex: Social Media"
-                                                className="min-w-0 flex-1 bg-[#0D0D0D] border border-zinc-700 text-zinc-100 text-sm rounded-control px-2 py-1.5 outline-none focus:border-[#FABE01]"
-                                            />
-                                            <button
-                                                onClick={salvarCargo}
-                                                disabled={salvandoCargo}
-                                                aria-label="Salvar cargo"
-                                                className="shrink-0 px-2.5 rounded-control bg-[#FABE01] text-black disabled:opacity-40"
-                                            >
-                                                {salvandoCargo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <Briefcase className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                                            <p className={`text-sm truncate ${pessoa.cargo ? 'text-zinc-100' : 'text-zinc-600 italic'}`}>
-                                                {pessoa.cargo || 'não definido'}
-                                            </p>
-                                        </div>
-                                    )}
-                                    <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
-                                        {ehColaborador
-                                            ? 'Só administrador altera — a pessoa não muda o próprio cargo.'
-                                            : 'Cliente é sempre cliente: o nível não muda por esta tela.'}
-                                    </p>
-                                </div>
-                            </Grupo>
-                        </Secao>
+                                <Dado rotulo="Telefone" valor={pessoa.telefone} vazio="Sem telefone" />
+                                <Dado rotulo="E-mail" valor={pessoa.email} />
+                            </div>
+                        </div>
+                    </div>
 
-                        {/* FINANCEIRO - so admin. Colaborador nao ve nem a secao
-                            vazia: um bloco "sem permissao" so anuncia que existe
-                            dado ali e convida a pedir. */}
-                        {mostrarFinanceiro && (
-                            <Secao
-                                titulo="Financeiro · pagamento"
-                                icone={Wallet}
-                                acao={!editandoFin && !carregandoFin ? (
-                                    <button onClick={() => setEditandoFin(true)} className={botaoTexto}>
-                                        <Pencil className="w-3 h-3" /> {temFinanceiro ? 'Editar' : 'Preencher'}
+                    {/* NUMEROS. Contagem do que a ficha leu; o quarto tile e o
+                        nivel de acesso, que e o "predicado" desta pessoa. */}
+                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3">
+                        <Tile
+                            icone={Activity}
+                            valor={String(atividade.length)}
+                            rotulo={atividade.length === 1 ? 'Ação registrada' : 'Ações registradas'}
+                        />
+                        <Tile
+                            icone={Layers}
+                            valor={String(publicacoesTocadas)}
+                            rotulo={publicacoesTocadas === 1 ? 'Publicação tocada' : 'Publicações tocadas'}
+                        />
+                        <Tile
+                            icone={History}
+                            valor={ultima ? relativo(ultima.em) : '—'}
+                            rotulo="Última atividade"
+                        />
+                        <Tile
+                            icone={BadgeCheck}
+                            valor={PERMISSION_LABEL[nivel]}
+                            rotulo="Nível de acesso"
+                            destaque
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
+                        {/* ATIVIDADE ocupa mais espaco que os dados fixos: e a
+                            unica parte da ficha que responde "essa pessoa esta
+                            trabalhando em que?". */}
+                        <Bloco titulo="Últimas atividades" icone={History} className="lg:col-span-3">
+                            {carregandoAtiv ? (
+                                <div className="flex items-center gap-2 text-zinc-400 text-sm py-6">
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                                </div>
+                            ) : atividade.length === 0 ? (
+                                <p className="text-xs text-zinc-400 leading-relaxed py-2">
+                                    Nenhuma ação registrada {empresasParaAtividade.length === 0 ? 'para consultar aqui' : 'ainda'}.
+                                    O histórico começa a encher assim que esta pessoa criar, mover ou aprovar uma
+                                    publicação.
+                                </p>
+                            ) : (
+                                <ol className="relative space-y-3.5 pl-1">
+                                    {atividade.map((entrada, i) => {
+                                        const Icone = ICONES_HISTORICO[entrada.tipo];
+                                        const { texto, destaque } = descreverHistorico(entrada);
+                                        return (
+                                            <li key={`${entrada.empresaId}-${entrada.id}`} className="flex gap-3 min-w-0">
+                                                <div className="flex flex-col items-center shrink-0">
+                                                    <span className="w-7 h-7 rounded-full bg-white/[0.07] border border-white/10 flex items-center justify-center text-zinc-300">
+                                                        <Icone className="w-3.5 h-3.5" />
+                                                    </span>
+                                                    {/* Fio ligando as entradas. Some na ultima:
+                                                        um fio solto abaixo do fim da lista parece
+                                                        conteudo que nao carregou. */}
+                                                    {i < atividade.length - 1 && (
+                                                        <span className="w-px flex-1 bg-white/10 mt-1" />
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 pb-0.5">
+                                                    <p className="text-sm text-zinc-100 leading-snug">{texto}</p>
+                                                    {destaque && (
+                                                        <p className="text-xs text-zinc-400 truncate" title={destaque}>{destaque}</p>
+                                                    )}
+                                                    <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
+                                                        {entrada.empresaNome} · {relativo(entrada.em)}
+                                                        {' · '}
+                                                        {entrada.em.toLocaleDateString('pt-BR')}
+                                                    </p>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ol>
+                            )}
+                        </Bloco>
+
+                        <div className="lg:col-span-2 space-y-4">
+                            <Bloco
+                                titulo="Acesso"
+                                icone={ShieldCheck}
+                                acao={onSalvarCargo && !editandoCargo ? (
+                                    <button onClick={() => { setRascunhoCargo(pessoa.cargo || ''); setEditandoCargo(true); }} className={botaoTexto}>
+                                        <Pencil className="w-3 h-3" /> Cargo
                                     </button>
                                 ) : undefined}
                             >
-                                <div className="flex items-start gap-2 bg-[#FABE01]/5 border border-[#FABE01]/20 rounded-control p-3 mb-2">
-                                    <Lock className="w-3.5 h-3.5 text-[#FABE01] shrink-0 mt-0.5" />
-                                    <p className="text-[11px] text-zinc-300 leading-relaxed">
-                                        Coleção separada: só administradores e a própria pessoa leem.
-                                        Escrita é só de administrador — ninguém edita o próprio contrato.
-                                    </p>
-                                </div>
-
-                                {carregandoFin ? (
-                                    <div className="flex items-center gap-2 text-zinc-500 text-sm py-4 px-1">
-                                        <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
-                                    </div>
-                                ) : editandoFin ? (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#111111] border border-white/5 rounded-control p-3.5">
-                                        <div>
-                                            <label className={labelStyle}>
-                                                Valor mensal / cachê (R$)
-                                            </label>
-                                            <input
-                                                autoFocus
-                                                value={valorTexto}
-                                                onChange={e => {
-                                                    setValorTexto(e.target.value);
-                                                    setRascunhoFin(d => ({ ...d, valorMensalCentavos: textoParaCentavos(e.target.value) }));
-                                                }}
-                                                placeholder="1.500,00"
-                                                inputMode="decimal"
-                                                className={inputStyle}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className={labelStyle}>
-                                                Dia do pagamento
-                                            </label>
-                                            <input
-                                                type="number" min={1} max={31}
-                                                value={rascunhoFin.diaVencimento ?? ''}
-                                                onChange={e => setRascunhoFin(d => ({ ...d, diaVencimento: e.target.value ? Number(e.target.value) : null }))}
-                                                placeholder="5"
-                                                className={inputStyle}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className={labelStyle}>Início</label>
-                                            <input
-                                                type="date"
-                                                value={rascunhoFin.inicioContrato ? toDateInputValue(rascunhoFin.inicioContrato) : ''}
-                                                onChange={e => setRascunhoFin(d => ({ ...d, inicioContrato: fromDateInputValue(e.target.value) }))}
-                                                className={`${inputStyle} [color-scheme:dark]`}
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <label className={labelStyle}>
-                                                Escopo do trabalho
-                                            </label>
-                                            <input
-                                                value={rascunhoFin.escopo || ''}
-                                                onChange={e => setRascunhoFin(d => ({ ...d, escopo: e.target.value }))}
-                                                placeholder="20h/semana, edição de reels"
-                                                className={inputStyle}
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <label className={labelStyle}>Observações</label>
-                                            <textarea
-                                                rows={3}
-                                                value={rascunhoFin.observacoes || ''}
-                                                onChange={e => setRascunhoFin(d => ({ ...d, observacoes: e.target.value }))}
-                                                className={`${inputStyle} resize-none`}
-                                            />
-                                        </div>
-                                        {erroFin && (
-                                            <p className="sm:col-span-2 text-red-400 text-xs flex items-start gap-1.5">
-                                                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {erroFin}
-                                            </p>
-                                        )}
-                                        <div className="sm:col-span-2 flex gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    // Descarta o rascunho: sair da edicao mantendo o
-                                                    // que foi digitado faria a tela mostrar valor que
-                                                    // nao esta gravado.
-                                                    setRascunhoFin(financeiro || {});
-                                                    setValorTexto(centavosParaTexto(financeiro?.valorMensalCentavos));
-                                                    setErroFin('');
-                                                    setEditandoFin(false);
-                                                }}
-                                                className="flex-1 py-2.5 text-sm font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
-                                            >
-                                                Cancelar
-                                            </button>
-                                            <button
-                                                onClick={salvarFin}
-                                                disabled={salvandoFin}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-40"
-                                            >
-                                                {salvandoFin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                                Salvar
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : erroFin ? (
-                                    <p className="text-red-400 text-xs flex items-start gap-1.5 px-1">
-                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {erroFin}
-                                    </p>
-                                ) : !temFinanceiro ? (
-                                    <p className="text-xs text-zinc-500 px-1 leading-relaxed">
-                                        Nada preenchido ainda. Registre o valor e o dia do pagamento
-                                        para não depender de memória no fim do mês.
-                                    </p>
-                                ) : (
-                                    <>
-                                        <Grupo colunas={2}>
-                                            <Linha
-                                                rotulo="Valor mensal / cachê"
-                                                valor={financeiro?.valorMensalCentavos != null ? formatarMoeda(financeiro.valorMensalCentavos) : null}
-                                                icone={Wallet}
-                                            />
-                                            <Linha
-                                                rotulo="Dia do pagamento"
-                                                valor={financeiro?.diaVencimento ? `Todo dia ${financeiro.diaVencimento}` : null}
-                                                icone={CalendarClock}
-                                            />
-                                            <Linha
-                                                rotulo="Início"
-                                                valor={financeiro?.inicioContrato?.toLocaleDateString('pt-BR')}
-                                                icone={CalendarClock}
-                                            />
-                                            <Linha
-                                                rotulo="Escopo do trabalho"
-                                                valor={financeiro?.escopo}
-                                                icone={FileText}
-                                            />
-                                        </Grupo>
-                                        {financeiro?.observacoes && (
-                                            <div className="bg-[#111111] border border-white/5 rounded-control px-3.5 py-3 mt-2">
-                                                <p className="text-[10px] text-zinc-600 mb-1">Observações</p>
-                                                <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">{financeiro.observacoes}</p>
+                                <div className="divide-y divide-white/5 -my-2.5">
+                                    <Linha
+                                        rotulo="Nível de permissão"
+                                        valor={PERMISSION_LABEL[nivel]}
+                                        icone={ShieldCheck}
+                                        dica={PERMISSION_HINT[nivel]}
+                                    />
+                                    <div className="py-2.5 min-w-0">
+                                        <p className="text-[11px] text-zinc-400 mb-1">Cargo</p>
+                                        {editandoCargo ? (
+                                            <div className="flex gap-1.5">
+                                                <input
+                                                    autoFocus
+                                                    value={rascunhoCargo}
+                                                    onChange={e => setRascunhoCargo(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') salvarCargo(); }}
+                                                    placeholder="Ex: Social Media"
+                                                    className="min-w-0 flex-1 bg-black/40 border border-white/10 text-white text-sm rounded-control px-2.5 py-1.5 outline-none focus:border-[#FABE01]"
+                                                />
+                                                <button
+                                                    onClick={salvarCargo}
+                                                    disabled={salvandoCargo}
+                                                    aria-label="Salvar cargo"
+                                                    className="shrink-0 px-2.5 rounded-control bg-[#FABE01] text-black disabled:opacity-40"
+                                                >
+                                                    {salvandoCargo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Briefcase className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                                <p className={`text-sm truncate ${pessoa.cargo ? 'text-white font-medium' : 'text-zinc-400'}`}>
+                                                    {pessoa.cargo || 'não definido'}
+                                                </p>
                                             </div>
                                         )}
-                                        {financeiro?.atualizadoEm && (
-                                            <p className="text-[10px] text-zinc-600 mt-2 px-1">
-                                                Última alteração em {financeiro.atualizadoEm.toLocaleDateString('pt-BR')}
-                                                {financeiro.atualizadoPor ? ` por ${financeiro.atualizadoPor}` : ''}.
-                                            </p>
-                                        )}
-                                    </>
-                                )}
-                            </Secao>
-                        )}
+                                        <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                                            {ehColaborador
+                                                ? 'Só administrador altera — a pessoa não muda o próprio cargo.'
+                                                : 'Cliente é sempre cliente: o nível não muda por esta tela.'}
+                                        </p>
+                                    </div>
+                                    {empresaNome && (
+                                        <Linha rotulo="Cliente" valor={empresaNome} icone={Building2} />
+                                    )}
+                                </div>
+                            </Bloco>
 
-                        {children}
+                            {/* FINANCEIRO - so admin, e so equipe. Colaborador nao ve
+                                nem a secao vazia: um bloco "sem permissao" so anuncia
+                                que existe dado ali e convida a pedir. */}
+                            {mostrarFinanceiro && (
+                                <Bloco
+                                    titulo="Financeiro"
+                                    icone={Wallet}
+                                    acao={!editandoFin && !carregandoFin ? (
+                                        <button onClick={() => setEditandoFin(true)} className={botaoTexto}>
+                                            <Pencil className="w-3 h-3" /> Editar
+                                        </button>
+                                    ) : undefined}
+                                >
+                                    {carregandoFin ? (
+                                        <div className="flex items-center gap-2 text-zinc-400 text-sm py-6">
+                                            <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                                        </div>
+                                    ) : editandoFin ? (
+                                        <div className="space-y-3.5">
+                                            <div>
+                                                <label className={labelStyle}>Valor mensal / cachê (R$)</label>
+                                                <input
+                                                    autoFocus
+                                                    value={valorTexto}
+                                                    onChange={e => {
+                                                        setValorTexto(e.target.value);
+                                                        setRascunhoFin(d => ({ ...d, valorMensalCentavos: textoParaCentavos(e.target.value) }));
+                                                    }}
+                                                    placeholder="0,00"
+                                                    inputMode="decimal"
+                                                    className={inputStyle}
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className={labelStyle}>Dia do pagamento</label>
+                                                    <input
+                                                        type="number" min={1} max={31}
+                                                        value={rascunhoFin.diaVencimento ?? ''}
+                                                        onChange={e => setRascunhoFin(d => ({ ...d, diaVencimento: e.target.value ? Number(e.target.value) : null }))}
+                                                        placeholder="5"
+                                                        className={inputStyle}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className={labelStyle}>Início</label>
+                                                    <input
+                                                        type="date"
+                                                        value={rascunhoFin.inicioContrato ? toDateInputValue(rascunhoFin.inicioContrato) : ''}
+                                                        onChange={e => setRascunhoFin(d => ({ ...d, inicioContrato: fromDateInputValue(e.target.value) }))}
+                                                        className={`${inputStyle} [color-scheme:dark]`}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className={labelStyle}>Escopo do trabalho</label>
+                                                <input
+                                                    value={rascunhoFin.escopo || ''}
+                                                    onChange={e => setRascunhoFin(d => ({ ...d, escopo: e.target.value }))}
+                                                    placeholder="20h/semana, edição de reels"
+                                                    className={inputStyle}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelStyle}>Observações</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={rascunhoFin.observacoes || ''}
+                                                    onChange={e => setRascunhoFin(d => ({ ...d, observacoes: e.target.value }))}
+                                                    className={`${inputStyle} resize-none`}
+                                                />
+                                            </div>
+                                            {erroFin && (
+                                                <p className="text-red-400 text-xs flex items-start gap-1.5">
+                                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {erroFin}
+                                                </p>
+                                            )}
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        // Descarta o rascunho: sair da edicao mantendo o
+                                                        // que foi digitado faria a tela mostrar valor que
+                                                        // nao esta gravado.
+                                                        setRascunhoFin(financeiro || {});
+                                                        setValorTexto(centavosParaTexto(financeiro?.valorMensalCentavos));
+                                                        setErroFin('');
+                                                        setEditandoFin(false);
+                                                    }}
+                                                    className="flex-1 py-2.5 text-sm font-semibold rounded-control bg-white/5 text-zinc-200 hover:bg-white/10 transition-colors"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                                <button
+                                                    onClick={salvarFin}
+                                                    disabled={salvandoFin}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-40"
+                                                >
+                                                    {salvandoFin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                    Salvar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : erroFin ? (
+                                        <p className="text-red-400 text-xs flex items-start gap-1.5">
+                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {erroFin}
+                                        </p>
+                                    ) : (
+                                        <>
+                                            {/* SEMPRE os quatro campos, mesmo sem nada
+                                                cadastrado. Campo vazio nao diz se o dado nao
+                                                existe ou se a tela nao carregou; o padrao
+                                                marcado com a etiqueta diz as duas coisas -
+                                                e R$ 0,00 sem a etiqueta seria pior que
+                                                vazio, porque parece salario de verdade. */}
+                                            <div className="divide-y divide-white/5 -my-2.5">
+                                                <Linha
+                                                    rotulo="Valor mensal / cachê"
+                                                    valor={formatarMoeda(financeiro?.valorMensalCentavos ?? 0)}
+                                                    icone={Wallet}
+                                                    padrao={financeiro?.valorMensalCentavos == null}
+                                                />
+                                                <Linha
+                                                    rotulo="Dia do pagamento"
+                                                    valor={financeiro?.diaVencimento
+                                                        ? `Todo dia ${financeiro.diaVencimento}`
+                                                        : 'Sem dia definido'}
+                                                    icone={CalendarClock}
+                                                    padrao={!financeiro?.diaVencimento}
+                                                />
+                                                <Linha
+                                                    rotulo="Início"
+                                                    valor={financeiro?.inicioContrato
+                                                        ? financeiro.inicioContrato.toLocaleDateString('pt-BR')
+                                                        : 'Sem data definida'}
+                                                    icone={CalendarClock}
+                                                    padrao={!financeiro?.inicioContrato}
+                                                />
+                                                <Linha
+                                                    rotulo="Escopo do trabalho"
+                                                    valor={financeiro?.escopo || 'Não definido'}
+                                                    icone={FileText}
+                                                    padrao={!financeiro?.escopo}
+                                                />
+                                                {financeiro?.observacoes && (
+                                                    <div className="py-2.5">
+                                                        <p className="text-[11px] text-zinc-400 mb-1">Observações</p>
+                                                        <p className="text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                                                            {financeiro.observacoes}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-start gap-2 mt-4 pt-3 border-t border-white/5">
+                                                <Lock className="w-3.5 h-3.5 text-[#FABE01] shrink-0 mt-0.5" />
+                                                <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                                    Coleção separada: só administradores leem.
+                                                    {financeiro?.atualizadoEm && (
+                                                        <> Última alteração em {financeiro.atualizadoEm.toLocaleDateString('pt-BR')}
+                                                        {financeiro.atualizadoPor ? ` por ${financeiro.atualizadoPor}` : ''}.</>
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </>
+                                    )}
+                                </Bloco>
+                            )}
+
+                            {children}
+                        </div>
                     </div>
                 </div>
 
                 {/* ACOES no rodape fixo: era um menu de tres pontos no cartao, que
                     escondia "redefinir senha" atras de um clique sem rotulo. */}
                 {acoes.length > 0 && (
-                    <footer className="shrink-0 border-t border-white/5 p-4 sm:px-7 flex flex-wrap gap-2">
+                    <footer className="shrink-0 border-t border-white/10 bg-white/[0.03] p-4 sm:px-7 flex flex-wrap gap-2">
                         {acoes.map(acao => (
                             <button
                                 key={acao.label}
                                 onClick={acao.onClick}
                                 className={`px-3.5 py-2.5 text-xs font-semibold rounded-control transition-colors ${
                                     acao.destrutiva
-                                        ? 'text-red-400 bg-red-400/5 hover:bg-red-400/15 sm:ml-auto'
-                                        : 'text-zinc-300 bg-white/5 hover:bg-white/10'
+                                        ? 'text-red-300 bg-red-500/10 hover:bg-red-500/20 sm:ml-auto'
+                                        : 'text-zinc-200 bg-white/5 hover:bg-white/10'
                                 }`}
                             >
                                 {acao.label}

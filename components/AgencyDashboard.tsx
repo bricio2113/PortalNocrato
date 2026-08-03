@@ -974,6 +974,12 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                             ? (permissionLevel(pessoa) === 'admin' ? SELO_ADMIN : SELO_COLABORADOR)
                             : SELO_SEM_EMPRESA}
                         empresaNome={empresas.find(e => e.id === pessoa.empresaId)?.nome}
+                        // Equipe da agencia trabalha em TODOS os clientes, entao a
+                        // atividade dela e procurada em todos. Contato de cliente
+                        // so tem historico no cliente dele.
+                        empresasParaAtividade={daEquipe
+                            ? empresas.map(e => ({ id: e.id, nome: e.nome }))
+                            : empresas.filter(e => e.id === pessoa.empresaId).map(e => ({ id: e.id, nome: e.nome }))}
                         ehVoce={isMe}
                         souAdmin={souAdmin}
                         autorEmail={auth.currentUser?.email}

@@ -433,6 +433,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         pessoa={pessoa}
                         selo={SELO_ATIVO}
                         empresaNome={empresaNome}
+                        empresasParaAtividade={[{ id: empresaId, nome: empresaNome }]}
                         souAdmin={souAdmin}
                         autorEmail={auth.currentUser?.email}
                         acoes={acoes}

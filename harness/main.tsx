@@ -64,8 +64,9 @@ const SCREENS: Record<string, React.ReactNode> = {
     // FICHA DA PESSOA vista por ADMIN: e a unica combinacao que carrega o
     // financeiro. Sem esta tela, a secao de dinheiro nunca era renderizada.
     'pessoa-ficha': <PersonDetailModal
-        pessoa={{ id: 'u1', email: 'kaiodaikal@gmail.com', role: 'agencia', empresaId: null, nome: 'Kaio', sobrenome: 'Henrique', cargo: 'Editor de vídeo', telefone: '(13) 98888-7777' }}
-        selo={SELO_COLABORADOR} souAdmin autorEmail={profile.email}
+        pessoa={{ id: 'u1', email: 'pedro.vidal2608@gmail.com', role: 'agencia', empresaId: null, nome: 'Maria', sobrenome: 'Silva', cargo: 'Editora de vídeo', telefone: '(13) 98888-7777' }}
+        selo={SELO_ADMIN} souAdmin autorEmail={profile.email}
+        empresasParaAtividade={[{ id: 'Agencia Mara', nome: 'Agencia Mara' }, { id: 'MarcioFisio', nome: 'Marcio Fisio' }]}
         onSalvarCargo={async () => {}}
         acoes={[{ label: 'Enviar redefinição de senha', onClick: noop }, { label: 'Remover da equipe', onClick: noop, destrutiva: true }]}
         onClose={noop}
@@ -83,6 +84,7 @@ const SCREENS: Record<string, React.ReactNode> = {
     'pessoa-ficha-cliente': <PersonDetailModal
         pessoa={{ id: 'u3', email: 'marcioalmeida81@gmail.com', role: 'cliente', empresaId: 'MarcioFisio', nome: 'Marcio', sobrenome: 'Almeida' }}
         selo={SELO_ATIVO} empresaNome="Marcio Fisio" souAdmin autorEmail={profile.email}
+        empresasParaAtividade={[{ id: 'MarcioFisio', nome: 'Marcio Fisio' }]}
         acoes={[{ label: 'Enviar redefinição de senha', onClick: noop }, { label: 'Remover acesso', onClick: noop, destrutiva: true }]}
         onClose={noop}
     />,
