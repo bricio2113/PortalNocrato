@@ -1,8 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { MidiaArquivo } from '../types';
 import { enviarMidiaDoPost, salvarThumb, removerMidia, MidiaInvalidaError } from '../utils/midia';
-import { ehVideo, dataUrlBytes } from '../utils/thumbnail';
-import { Upload, X, Loader2, AlertTriangle, Play, ImageIcon, Trash2 } from 'lucide-react';
+import { ehVideo } from '../utils/thumbnail';
+import { Caminho, criarPasta, nomePastaSeguro } from '../utils/pastas';
+import PastaPicker from './PastaPicker';
+import {
+    Upload, Loader2, AlertTriangle, Play, Trash2, FolderOpen, Folder, ChevronRight
+} from 'lucide-react';
 
 interface MediaUploadProps {
     empresaId: string;
@@ -16,6 +20,15 @@ interface MediaUploadProps {
      */
     onThumb: (thumb: string | null) => void;
     disabled?: boolean;
+    /**
+     * Titulo do conteudo. Vira o NOME DA PASTA criada dentro da pasta escolhida.
+     * Sem titulo nao ha como nomear a pasta, e o upload espera.
+     */
+    titulo?: string;
+    /** Pasta em materiais/ onde a midia deste conteudo mora. */
+    pastaMidia?: string[] | null;
+    /** Grava a pasta no rascunho do post. */
+    onPastaMidia: (caminho: string[] | null) => void;
 }
 
 const formatarBytes = (bytes: number) =>
@@ -35,11 +48,54 @@ const formatarBytes = (bytes: number) =>
  * de surpresa que faz alguem republicar tudo.
  */
 const MediaUpload: React.FC<MediaUploadProps> = ({
-    empresaId, eventId, midias, onChange, onThumb, disabled
+    empresaId, eventId, midias, onChange, onThumb, disabled,
+    titulo, pastaMidia, onPastaMidia
 }) => {
     const [enviando, setEnviando] = useState<{ nome: string; pct: number } | null>(null);
     const [erro, setErro] = useState('');
+    const [escolhendo, setEscolhendo] = useState(false);
+    const [preparando, setPreparando] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    const nomeDaPasta = nomePastaSeguro(titulo || '');
+
+    /**
+     * Recebe a pasta PAI, cria a pasta do conteudo dentro dela e abre o seletor
+     * de arquivos.
+     *
+     * A pasta e criada AQUI, e nao no primeiro upload, por dois motivos: ela
+     * aparece na arvore de materiais na hora (a equipe ja pode largar arquivo
+     * nela por fora), e se a permissao estiver errada o erro sai antes de a
+     * pessoa escolher 300 MB de video.
+     */
+    const definirPasta = async (pai: Caminho) => {
+        setEscolhendo(false);
+        if (!nomeDaPasta) {
+            setErro('Dê um título à publicação primeiro: a pasta recebe o nome dele.');
+            return;
+        }
+        setPreparando(true);
+        setErro('');
+        try {
+            await criarPasta(empresaId, pai, nomeDaPasta);
+            onPastaMidia([...pai, nomeDaPasta]);
+            // Abre o seletor em seguida: escolher a pasta e mandar o arquivo sao
+            // um gesto so na cabeca de quem esta subindo material.
+            setTimeout(() => inputRef.current?.click(), 0);
+        } catch (e) {
+            console.error(e);
+            setErro(e instanceof Error ? e.message : 'Não foi possível criar a pasta.');
+        } finally {
+            setPreparando(false);
+        }
+    };
+
+    /** Pede a pasta se ainda nao houver; senao abre direto o seletor. */
+    const pedirArquivos = () => {
+        setErro('');
+        if (pastaMidia?.length) inputRef.current?.click();
+        else setEscolhendo(true);
+    };
 
     const handleFiles = async (files: FileList | null) => {
         if (!files?.length) return;
@@ -54,7 +110,10 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 setEnviando({ nome: file.name, pct: 0 });
                 const enviada = await enviarMidiaDoPost(
                     empresaId, eventId, file,
-                    pct => setEnviando({ nome: file.name, pct })
+                    pct => setEnviando({ nome: file.name, pct }),
+                    // Sem pasta escolhida cai no caminho antigo (posts/{id}), que
+                    // continua valendo para o que ja existe.
+                    pastaMidia?.length ? pastaMidia : undefined
                 );
 
                 novas.push({
@@ -118,8 +177,8 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 {!disabled && (
                     <button
                         type="button"
-                        onClick={() => inputRef.current?.click()}
-                        disabled={Boolean(enviando)}
+                        onClick={pedirArquivos}
+                        disabled={Boolean(enviando) || preparando}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#FABE01] hover:bg-[#FABE01]/10 px-2.5 py-1.5 rounded-full transition-colors disabled:opacity-40"
                     >
                         <Upload className="w-3.5 h-3.5" /> Enviar
@@ -136,20 +195,66 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 className="hidden"
             />
 
+            {/* ONDE OS ARQUIVOS ESTAO. Antes o destino era invisivel - a midia ia
+                para posts/{id}/, um caminho com id de documento que ninguem acha
+                no bucket. Agora o caminho e escolhido e fica escrito. */}
+            {pastaMidia?.length ? (
+                <div className="flex items-center gap-2 mb-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2">
+                    <FolderOpen className="w-3.5 h-3.5 text-[#FABE01] shrink-0" />
+                    <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px] text-zinc-400 overflow-hidden">
+                        <span className="shrink-0">Materiais</span>
+                        {pastaMidia.map((seg, i) => (
+                            <React.Fragment key={`${seg}-${i}`}>
+                                <ChevronRight className="w-2.5 h-2.5 text-zinc-700 shrink-0" />
+                                <span className={`truncate ${i === pastaMidia.length - 1 ? 'text-zinc-200 font-medium' : ''}`}>
+                                    {seg}
+                                </span>
+                            </React.Fragment>
+                        ))}
+                    </span>
+                    {!disabled && midias.length === 0 && (
+                        // So troca de pasta enquanto nao ha arquivo: com midia
+                        // dentro, mudar o destino deixaria metade do carrossel numa
+                        // pasta e metade em outra.
+                        <button
+                            type="button"
+                            onClick={() => setEscolhendo(true)}
+                            className="shrink-0 text-[10px] font-semibold text-zinc-400 hover:text-white transition-colors"
+                        >
+                            trocar
+                        </button>
+                    )}
+                </div>
+            ) : null}
+
             {midias.length === 0 && !enviando && (
                 <button
                     type="button"
-                    onClick={() => !disabled && inputRef.current?.click()}
-                    disabled={disabled}
+                    onClick={() => !disabled && pedirArquivos()}
+                    disabled={disabled || preparando}
                     className="w-full py-8 px-4 border border-dashed border-white/10 rounded-control text-center hover:border-[#FABE01]/40 transition-colors disabled:hover:border-white/10 disabled:cursor-not-allowed"
                 >
-                    <Upload className="w-6 h-6 text-zinc-600 mx-auto mb-2" />
+                    {preparando ? (
+                        <Loader2 className="w-6 h-6 text-[#FABE01] mx-auto mb-2 animate-spin" />
+                    ) : pastaMidia?.length ? (
+                        <Upload className="w-6 h-6 text-zinc-600 mx-auto mb-2" />
+                    ) : (
+                        <Folder className="w-6 h-6 text-zinc-600 mx-auto mb-2" />
+                    )}
                     <p className="text-xs text-zinc-400 font-medium">
-                        {disabled ? 'Nenhuma mídia enviada' : 'Enviar imagem ou vídeo'}
+                        {disabled
+                            ? 'Nenhuma mídia enviada'
+                            : preparando
+                                ? 'Criando a pasta...'
+                                : pastaMidia?.length
+                                    ? 'Enviar imagem ou vídeo'
+                                    : 'Escolher a pasta e enviar'}
                     </p>
-                    {!disabled && (
-                        <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
-                            Imagem até 15 MB · vídeo até 300 MB · pode selecionar vários
+                    {!disabled && !preparando && (
+                        <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed max-w-xs mx-auto">
+                            {pastaMidia?.length
+                                ? 'Imagem até 15 MB · vídeo até 300 MB · pode selecionar vários'
+                                : 'Uma pasta com o nome do conteúdo é criada dentro da que você escolher, em Arquivos & Materiais.'}
                         </p>
                     )}
                 </button>
@@ -209,6 +314,15 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 <p className="text-red-400 text-xs mt-2 flex items-start gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {erro}
                 </p>
+            )}
+
+            {escolhendo && (
+                <PastaPicker
+                    empresaId={empresaId}
+                    nomeFinal={nomeDaPasta}
+                    onEscolher={definirPasta}
+                    onFechar={() => setEscolhendo(false)}
+                />
             )}
         </div>
     );

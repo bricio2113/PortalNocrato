@@ -1,12 +1,13 @@
 import { db, storage } from './firebase';
 import { arquivoParaThumb, ehImagem, ehVideo, dataUrlBytes } from './thumbnail';
+import { Caminho, prefixo } from './pastas';
 
 /**
  * Upload de midia de uma publicacao.
  *
  * DUAS COISAS EM DOIS LUGARES DIFERENTES, de proposito:
  *
- *   arquivo original  -> Cloud Storage, em empresas/{id}/posts/{eventId}/
+ *   arquivo original  -> Cloud Storage, dentro de materiais/ (ver `pastaMidia`)
  *   miniatura (~40KB) -> Firestore, em empresas/{id}/covers/{eventId}
  *
  * A grade do calendario e a previa do feed leem SO a miniatura. Assim a tela que
@@ -79,13 +80,24 @@ export async function enviarMidiaDoPost(
     empresaId: string,
     eventId: string,
     file: File,
-    onProgress?: (pct: number) => void
+    onProgress?: (pct: number) => void,
+    /**
+     * Pasta em materiais/ onde gravar. Ausente = caminho antigo,
+     * `posts/{eventId}/`.
+     *
+     * O caminho antigo continua aceito porque post ja gravado aponta para la:
+     * mudar a regra de destino nao move arquivo nenhum, e recusar o caminho velho
+     * quebraria a midia de tudo que existe hoje.
+     */
+    caminhoMateriais?: Caminho
 ): Promise<MidiaEnviada> {
     validar(file);
 
     const thumb = await arquivoParaThumb(file);
 
-    const path = `empresas/${empresaId}/posts/${eventId}/${nomeSeguro(file.name)}`;
+    const path = caminhoMateriais
+        ? `${prefixo(empresaId, caminhoMateriais)}/${nomeSeguro(file.name)}`
+        : `empresas/${empresaId}/posts/${eventId}/${nomeSeguro(file.name)}`;
     const ref = storage.ref(path);
 
     const url = await new Promise<string>((resolve, reject) => {

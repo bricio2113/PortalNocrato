@@ -635,6 +635,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     eventId={event.id}
                                     midias={editableEvent.midias || []}
                                     onChange={(midias) => handleChange('midias', midias)}
+                                    titulo={editableEvent.title}
+                                    pastaMidia={editableEvent.pastaMidia}
+                                    onPastaMidia={caminho => handleChange('pastaMidia', caminho)}
                                     onThumb={() => { /* a capa vive em covers/, fora do evento */ }}
                                     disabled={isClient}
                                 />

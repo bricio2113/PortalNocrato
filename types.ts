@@ -175,6 +175,22 @@ export interface CalendarEvent {
   midias?: MidiaArquivo[];
 
   /**
+   * Pasta em Arquivos & Materiais onde a midia deste conteudo mora.
+   *
+   * Caminho relativo a `empresas/{id}/materiais`, segmento por segmento - por
+   * exemplo `['Imagens', '2026', 'Estatico Captacao']`. Quem cria e o upload: a
+   * pessoa escolhe a PASTA PAI e o sistema cria dentro dela uma pasta com o nome
+   * do conteudo.
+   *
+   * POR QUE ISSO EXISTE: a midia ia para `posts/{eventId}/`, um caminho com id
+   * de documento no nome. Funcionava para o app e era inutil para a equipe -
+   * ninguem abre o bucket procurando `posts/x7Kd9.../`, e o material da
+   * publicacao ficava fora da arvore de materiais do cliente, onde todo o resto
+   * esta. Ausente = post antigo, com a midia no caminho velho.
+   */
+  pastaMidia?: string[] | null;
+
+  /**
    * @deprecated LEGADO. O prazo de producao e a DATA DE PUBLICACAO (`date`).
    *
    * Este campo era um segundo prazo, digitado a mao em cada post. Duas datas

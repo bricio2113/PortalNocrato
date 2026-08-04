@@ -65,6 +65,15 @@ const SCREENS: Record<string, React.ReactNode> = {
             userEmail="cliente@exemplo.com" userName="Cliente Exemplo"
         />
     </div>,
+    // MIDIA com pasta ja escolhida: a faixa do destino e a grade de arquivos.
+    'modal-midia': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{ ...evento, id: 'ev0', pastaMidia: ['Imagens', '2026', 'Estatico Captacao'] } as any}
+            onSave={noop} onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
+            userEmail={profile.email} userName="Pedro Vidal"
+        />
+    </div>,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}

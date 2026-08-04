@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CalendarEvent } from '../types';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { isSafeImageSrc } from '../utils/avatar';
@@ -36,6 +36,8 @@ interface Peca {
 const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) => {
     const [indice, setIndice] = useState(0);
     const [falhou, setFalhou] = useState<Record<number, boolean>>({});
+    /** X inicial do toque, para o arrasto lateral do carrossel. */
+    const toqueX = useRef<number | null>(null);
 
     /**
      * As pecas, em ordem.
@@ -92,7 +94,21 @@ const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) 
             </div>
 
             {/* MIDIA */}
-            <div className={`relative ${proporcao} bg-[#0A0A0A] flex items-center justify-center overflow-hidden`}>
+            <div
+                className={`relative ${proporcao} bg-[#0A0A0A] flex items-center justify-center overflow-hidden`}
+                // ARRASTAR PARA O LADO, como no app. As setas sao de mouse; no
+                // celular - onde o carrossel e mais conferido - nao existe hover e
+                // um alvo de 28px no meio da peca e chute.
+                onTouchStart={e => { toqueX.current = e.touches[0]?.clientX ?? null; }}
+                onTouchEnd={e => {
+                    if (toqueX.current === null || total < 2) return;
+                    const delta = (e.changedTouches[0]?.clientX ?? toqueX.current) - toqueX.current;
+                    toqueX.current = null;
+                    // 40px: abaixo disso e toque tremido, nao arrasto.
+                    if (delta < -40 && indice < total - 1) setIndice(i => i + 1);
+                    if (delta > 40 && indice > 0) setIndice(i => i - 1);
+                }}
+            >
                 {!atual || falhou[indice] ? (
                     <div className="text-center px-6">
                         {atual?.kind === 'external' && !falhou[indice] ? (
