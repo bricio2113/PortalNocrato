@@ -2,20 +2,20 @@ import React, { useState, useEffect } from 'react';
 import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
 import { View, UserProfile } from './types';
-import { AGENCY_EMAILS } from './constants';
-import { subscribePendingCounts, PendingCounts } from './utils/posts';
+import { isAdmin } from './utils/permissions';
+import { subscribePendingCounts, PendingCounts, CONTAGEM_VAZIA } from './utils/posts';
 
 // Componentes
 import Sidebar from './components/Sidebar';
 import CalendarView from './components/CalendarView';
-import WeeklyUpdatesView from './components/WeeklyUpdatesView';
-import IdeasHubView from './components/IdeasHubView';
+import MateriaisView from './components/MateriaisView';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import AgencyDashboard from './components/AgencyDashboard';
 import VerificationPending from './components/VerificationPending';
 // Importação da Nova View de Produção
 import ClientWorkspace from './components/ClientWorkspace';
+import ClientHomeView from './components/ClientHomeView';
 import ProfileView from './components/ProfileView';
 import CompleteProfileModal from './components/CompleteProfileModal';
 import { splitFullName, getDisplayName, isProfileComplete } from './utils/avatar';
@@ -65,7 +65,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     // Contador de pendencia no menu. Para o cliente conta o que espera decisao
     // dele; para a agencia, os ajustes que o cliente pediu e ninguem resolveu.
     // Cada lado ve a propria fila.
-    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0, semCapa: 0 });
+    const [pending, setPending] = useState<PendingCounts>(CONTAGEM_VAZIA);
 
     useEffect(() => {
         if (!targetEmpresaId) return;
@@ -80,14 +80,28 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 
     const renderPortalContent = () => {
         switch (currentView) {
+            case View.HOME: return (
+                <ClientHomeView
+                    empresaId={targetEmpresaId}
+                    empresaNome={targetEmpresaId}
+                    userName={userName}
+                    onIrParaCalendario={setCurrentView}
+                />
+            );
             case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
-            case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
-            case View.IDEAS: return <IdeasHubView empresaId={targetEmpresaId} />;
+            case View.IDEAS: return <MateriaisView empresaId={targetEmpresaId} userRole={role} autorEmail={userEmail} autorNome={userName} />;
             case View.PROFILE:
                 return profile
                     ? <ProfileView profile={profile} onSaved={onProfileSaved} />
                     : <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
-            default: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
+            default: return (
+                <ClientHomeView
+                    empresaId={targetEmpresaId}
+                    empresaNome={targetEmpresaId}
+                    userName={userName}
+                    onIrParaCalendario={setCurrentView}
+                />
+            );
         }
     };
 
@@ -128,7 +142,9 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
 };
 
 const App: React.FC = () => {
-    const [currentView, setCurrentView] = useState<View>(View.CALENDAR);
+    // Abre na visao geral, nao no calendario: a primeira pergunta de quem
+    // entra e "tem algo me esperando?".
+    const [currentView, setCurrentView] = useState<View>(View.HOME);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const [user, setUser] = useState<firebase.User | null>(null);
@@ -142,23 +158,42 @@ const App: React.FC = () => {
     // outro para producao -, o que obrigava voltar ao painel so para trocar de
     // secao. Agora e um espaco de trabalho com submenu proprio.
     const [agencyWorkspace, setAgencyWorkspace] = useState<
-        { empresaId: string; nome: string; section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' } | null
+        {
+            empresaId: string;
+            nome: string;
+            section?: 'overview' | 'calendar' | 'production' | 'files' | 'reports';
+            /** Conteudo a abrir de imediato, quando se chega por uma tarefa. */
+            eventId?: string;
+        } | null
     >(null);
     const [showProfile, setShowProfile] = useState(false);
+    /**
+     * Aba do painel, guardada AQUI e nao dentro do AgencyDashboard.
+     *
+     * Entrar num cliente desmonta o painel; ao voltar, ele remontava com a aba
+     * padrao e jogava a pessoa na Visao Geral - mesmo tendo saido de Clientes.
+     * Como o estado do painel morre a cada entrada, quem tem que lembrar e quem
+     * sobrevive: este componente.
+     */
+    const [abaPainel, setAbaPainel] = useState('overview');
 
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
             if (currentUser) {
                 await currentUser.reload();
-                const isAdmin = AGENCY_EMAILS.includes(currentUser.email || '');
+                // Bootstrap: os e-mails de ADMIN_EMAILS entram como agencia
+                // mesmo sem documento em usuarios/ - e assim que o primeiro
+                // admin consegue existir. Comparacao normalizada, para
+                // "Pedro.Vidal@..." nao ficar de fora por causa da caixa.
+                const isBootstrapAdmin = isAdmin(currentUser.email);
 
-                if (!currentUser.emailVerified && !isAdmin) {
+                if (!currentUser.emailVerified && !isBootstrapAdmin) {
                     setUser(currentUser);
                     setIsLoadingAuth(false);
                     return;
                 }
 
-                if (isAdmin) {
+                if (isBootstrapAdmin) {
                     setUser(currentUser);
                     setRole('agencia');
                     setEmpresaId(null);
@@ -291,6 +326,7 @@ const App: React.FC = () => {
                     userEmail={user.email}
                     userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
                     initialSection={agencyWorkspace.section}
+                    initialEventId={agencyWorkspace.eventId}
                     onBack={backToDashboard}
                 />
             );
@@ -298,7 +334,9 @@ const App: React.FC = () => {
 
         return <AgencyDashboard
             handleLogout={handleLogout}
-            onOpenClient={(empresaId, nome, section) => setAgencyWorkspace({ empresaId, nome, section })}
+            abaInicial={abaPainel}
+            onTrocarAba={setAbaPainel}
+            onOpenClient={(empresaId, nome, section, eventId) => setAgencyWorkspace({ empresaId, nome, section, eventId })}
             onOpenProfile={() => setShowProfile(true)}
             profile={profile}
             userEmail={user.email}

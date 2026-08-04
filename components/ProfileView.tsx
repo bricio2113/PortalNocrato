@@ -5,6 +5,7 @@ import {
     fileToAvatarDataUrl, isSafeImageSrc, getInitials, getDisplayName,
     isProfileComplete, ACCEPTED_IMAGE_TYPES
 } from '../utils/avatar';
+import { permissionLevel, PERMISSION_LABEL, PERMISSION_HINT } from '../utils/permissions';
 import {
     UserCircle, Camera, Trash2, Save, Loader2, Check,
     AlertTriangle, Mail, Building2, Shield
@@ -17,7 +18,7 @@ interface ProfileViewProps {
 }
 
 /**
- * Perfil do proprio usuario: nome, sobrenome e foto.
+ * Perfil do proprio usuario: nome, sobrenome, telefone e foto.
  *
  * E-mail, permissao e empresa aparecem em leitura. Nao e limitacao de tela: as
  * regras do Firestore congelam role e empresaId no update do proprio documento,
@@ -27,6 +28,16 @@ interface ProfileViewProps {
 const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
     const [nome, setNome] = useState(profile.nome || '');
     const [sobrenome, setSobrenome] = useState(profile.sobrenome || '');
+    /**
+     * Telefone/WhatsApp.
+     *
+     * O campo existia no tipo e na ficha da pessoa desde que o painel passou a
+     * mostrar contato - so nao havia ONDE DIGITAR, entao aparecia "sem telefone"
+     * para todo mundo, para sempre. As regras nao congelam este campo de proposito:
+     * contato e da pessoa, como nome e foto; cargo e papel e que sao decisao da
+     * agencia.
+     */
+    const [telefone, setTelefone] = useState(profile.telefone || '');
     const [fotoUrl, setFotoUrl] = useState<string | null>(profile.fotoUrl || null);
 
     const [isSaving, setIsSaving] = useState(false);
@@ -38,12 +49,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
     useEffect(() => {
         setNome(profile.nome || '');
         setSobrenome(profile.sobrenome || '');
+        setTelefone(profile.telefone || '');
         setFotoUrl(profile.fotoUrl || null);
-    }, [profile.id, profile.nome, profile.sobrenome, profile.fotoUrl]);
+    }, [profile.id, profile.nome, profile.sobrenome, profile.telefone, profile.fotoUrl]);
 
     const isDirty =
         nome !== (profile.nome || '') ||
         sobrenome !== (profile.sobrenome || '') ||
+        telefone.trim() !== (profile.telefone || '') ||
         (fotoUrl || null) !== (profile.fotoUrl || null);
 
     const previewParts = { nome, sobrenome, email: profile.email };
@@ -86,6 +99,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
         const patch = {
             nome: nome.trim(),
             sobrenome: sobrenome.trim(),
+            // Vazio grava null, nao "": a ficha da pessoa distingue "sem telefone"
+            // de string vazia, e um campo com "" mentiria dizendo que ha contato.
+            telefone: telefone.trim() || null,
             fotoUrl: fotoUrl || null
         };
         try {
@@ -214,6 +230,28 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
                                 className={inputStyle}
                             />
                         </div>
+                        <div className="sm:col-span-2">
+                            <label className={labelStyle} htmlFor="perfil-telefone">
+                                Telefone / WhatsApp
+                            </label>
+                            <input
+                                id="perfil-telefone"
+                                type="tel"
+                                value={telefone}
+                                // Sem mascara: telefone de outro pais nao cabe no
+                                // formato brasileiro, e mascara que briga com o que a
+                                // pessoa digita e pior que campo livre. O limite de
+                                // 30 evita colar um texto inteiro aqui.
+                                maxLength={30}
+                                onChange={(e) => { setTelefone(e.target.value); setSaved(false); }}
+                                placeholder="(13) 99999-9999"
+                                autoComplete="tel"
+                                className={inputStyle}
+                            />
+                            <p className="text-zinc-600 text-xs mt-1.5 leading-relaxed">
+                                Opcional. Aparece só para a equipe da agência, na sua ficha — o cliente não vê.
+                            </p>
+                        </div>
                     </div>
 
                     {/* CAMPOS EM LEITURA */}
@@ -228,8 +266,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaved }) => {
                         <div className="flex items-center gap-3 text-sm">
                             <Shield className="w-4 h-4 text-zinc-600 shrink-0" />
                             <span className="text-zinc-500 shrink-0">Permissão:</span>
-                            <span className="text-zinc-300">{profile.role === 'agencia' ? 'Agência' : 'Cliente'}</span>
+                            {/* "Agência" nao distinguia quem gerencia acessos de
+                                quem so trabalha nos clientes. */}
+                            <span className="text-zinc-300">{PERMISSION_LABEL[permissionLevel(profile)]}</span>
                         </div>
+                        <p className="text-zinc-600 text-xs leading-relaxed -mt-1 pl-7">
+                            {PERMISSION_HINT[permissionLevel(profile)]}
+                        </p>
                         {profile.empresaId && (
                             <div className="flex items-center gap-3 text-sm">
                                 <Building2 className="w-4 h-4 text-zinc-600 shrink-0" />

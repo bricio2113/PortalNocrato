@@ -3,25 +3,25 @@ import { db, auth } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import {
-    Loader2, Plus, Trash2, Layout,
-    ArrowRight, ArrowLeft, GripVertical, Search, X,
-    Link2, AlertTriangle, Filter, Layers
+    Loader2, Layout, ArrowRight, ArrowLeft, GripVertical, Search, X,
+    AlertTriangle, Filter, Layers, Clock, ListChecks, Trash2, CalendarPlus, ImageOff
 } from 'lucide-react';
 import EventDetailModal from './EventDetailModal';
-import { CalendarEvent } from '../types';
+import { AvatarGroup } from './AvatarBubble';
+import { CalendarEvent, UserProfile, EventStatus } from '../types';
 import { FORMATO_OPTIONS } from '../constants';
 import { getTypeStyles, STATUS_ACCENTS } from '../utils/eventStyles';
 import { stripUndefined } from '../utils/firestore';
+import { slaAtual, slaClasses } from '../utils/sla';
+import { Subtarefa, subscribeSubtarefas, progresso } from '../utils/subtarefas';
+import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { registrarMudancas } from '../utils/historico';
+import { getClientStage, CLIENT_STAGES, stageView } from '../utils/eventState';
 
-interface KanbanTask {
+/** Sobra do modelo antigo: card de quadro que nunca teve post na agenda. */
+interface CardOrfao {
     id: string;
     title: string;
-    status: string;
-    createdAt: Date;
-    eventId?: string;
-    /** Formato herdado do evento. Cards antigos e manuais nao tem. */
-    type?: string;
-    plataforma?: string;
 }
 
 interface ColumnDef {
@@ -39,18 +39,59 @@ interface ClientProductionViewProps {
     empresaId: string;
     userEmail?: string | null;
     userName?: string | null;
+    /** Leva para o calendario - o unico lugar onde conteudo nasce. */
+    onIrParaCalendario?: () => void;
+    /** @ do cliente, para a simulacao do post no modal. */
+    perfilHandle?: string | null;
+    /**
+     * Post a abrir assim que o quadro carregar.
+     *
+     * A visao geral do cliente lista os conteudos atrasados e manda abrir um
+     * direto. Ela nao monta o editor: ele precisa dos handlers de salvar e
+     * excluir, que vivem aqui. Duplicar isso la seria uma segunda fonte de
+     * escrita para o mesmo documento.
+     */
+    abrirEventoId?: string | null;
+    /** Avisa que o pedido foi atendido, para nao reabrir a cada render. */
+    onEventoAberto?: () => void;
 }
 
-const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, userEmail, userName }) => {
-    const [tasks, setTasks] = useState<KanbanTask[]>([]);
+/**
+ * QUADRO DE PRODUCAO - acompanhamento dos conteudos da agenda.
+ *
+ * O QUE MUDOU E DE ONDE ELE LE. Antes existia a colecao `kanban_tasks`, um
+ * ESPELHO de events/: criar um post no calendario criava um card, mover o card
+ * gravava nos dois lugares, e o quadro tambem deixava criar card do zero. Esse
+ * ultimo caminho produzia card sem post - sem legenda, sem data de publicacao,
+ * sem aprovacao, sem prazo -, e a tela precisava de um aviso amarelo explicando
+ * ao usuario que aquele card que ELE acabou de criar nao servia para nada. Duas
+ * fontes para o mesmo status tambem divergem: bastava uma das duas escritas
+ * falhar.
+ *
+ * Agora o quadro LE events/ direto. Uma fonte, uma escrita ao mover, e nao existe
+ * mais o conceito de card sem conteudo: CONTEUDO NASCE NO CALENDARIO, sempre.
+ *
+ * O que o quadro acrescenta ao calendario e o que ele faz melhor: ver o status de
+ * tudo em colunas, com prazo, responsavel e progresso das subtarefas a vista.
+ */
+const ClientProductionView: React.FC<ClientProductionViewProps> = ({
+    empresaId, userEmail, userName, onIrParaCalendario, perfilHandle, abrirEventoId, onEventoAberto
+}) => {
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [subtarefas, setSubtarefas] = useState<Subtarefa[]>([]);
+    const [equipe, setEquipe] = useState<UserProfile[]>([]);
+    const [orfaos, setOrfaos] = useState<CardOrfao[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
-    const [newTaskTitle, setNewTaskTitle] = useState('');
+
+    /**
+     * Post aberto, e em qual aba.
+     *
+     * UM modal so. Antes eram dois - a ficha de producao e o editor de conteudo -
+     * e o botao que levava de um ao outro FECHAVA o primeiro, sem volta. Agora o
+     * quadro abre o mesmo modal do calendario, direto na aba de gestao.
+     */
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
-    // Carregar UM evento nao pode desmontar o quadro inteiro; por isso este
-    // estado e separado do isLoading da lista.
-    const [isOpeningCard, setIsOpeningCard] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [modalError, setModalError] = useState('');
     const [boardError, setBoardError] = useState('');
@@ -61,118 +102,155 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('todos');
     const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
+    /** Mostra so o que tem prazo estourado ou vencendo. */
+    const [soAtencao, setSoAtencao] = useState(false);
 
     useEffect(() => {
         if (!empresaId) return;
         // Tempo real: com dois membros da equipe no mesmo quadro, um movia o
         // card e o outro so descobria recarregando.
         setIsLoading(true);
-
-        const unsubscribe = db.collection('empresas').doc(empresaId).collection('kanban_tasks')
-            .orderBy('createdAt', 'desc')
+        const unsubscribe = db.collection('empresas').doc(empresaId).collection('events')
             .onSnapshot(
                 snapshot => {
-                    setTasks(snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data(),
-                        createdAt: doc.data().createdAt?.toDate() || new Date()
-                    } as KanbanTask)));
+                    setEvents(snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            ...data,
+                            id: doc.id,
+                            date: (data.date as firebase.firestore.Timestamp | undefined)?.toDate() || new Date(),
+                            prazoProducao: (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                            approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                        } as CalendarEvent;
+                    }));
                     setIsLoading(false);
                 },
                 error => {
-                    console.error("Erro ao buscar tarefas Kanban:", error);
+                    console.error('Erro ao buscar publicações:', error);
                     setBoardError('Não foi possível carregar o quadro. Verifique sua conexão e recarregue a página.');
                     setIsLoading(false);
                 }
             );
-
         return unsubscribe;
     }, [empresaId]);
 
-    // Mensagem efemera para acoes que nao tem onde aparecer no card.
+    useEffect(() => {
+        if (!empresaId) return;
+        return subscribeSubtarefas(empresaId, setSubtarefas);
+    }, [empresaId]);
+
+    useEffect(() => {
+        lerEquipeAgencia().then(setEquipe).catch(console.error);
+    }, []);
+
+    /**
+     * Sobras do modelo antigo.
+     *
+     * Uma leitura, so para nao APAGAR CALADO o que alguem digitou: o card de
+     * quadro sem post na agenda deixou de aparecer, e sem esta faixa ele
+     * simplesmente teria desaparecido da tela do usuario sem explicacao. Os cards
+     * QUE TINHAM post nao entram aqui - o post e a fonte, nada se perde.
+     */
+    useEffect(() => {
+        if (!empresaId) return;
+        let vivo = true;
+        db.collection('empresas').doc(empresaId).collection('kanban_tasks').get()
+            .then(snap => {
+                if (!vivo) return;
+                setOrfaos(snap.docs
+                    .filter(d => !d.data().eventId)
+                    .map(d => ({ id: d.id, title: d.data().title || 'sem título' })));
+            })
+            .catch(() => { /* colecao pode nao existir - nao e erro */ });
+        return () => { vivo = false; };
+    }, [empresaId]);
+
+    /**
+     * Atende o pedido da visao geral.
+     *
+     * Espera os eventos chegarem: sem isso, o pedido feito antes da assinatura
+     * responder nao encontraria o post e sumiria em silencio.
+     */
+    useEffect(() => {
+        if (!abrirEventoId || events.length === 0) return;
+        const alvo = events.find(e => e.id === abrirEventoId);
+        if (alvo) setSelectedEvent(alvo);
+        onEventoAberto?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [abrirEventoId, events.length]);
+
     const showNotice = (msg: string) => {
         setNotice(msg);
         setTimeout(() => setNotice(''), 5000);
     };
 
-    const visibleTasks = useMemo(() => {
+    const indice = useMemo(() => indexarPorUid(equipe), [equipe]);
+
+    /** Subtarefas agrupadas por conteudo, para o card mostrar "3 de 5". */
+    const subsPorEvento = useMemo(() => {
+        return subtarefas.reduce((acc, s) => {
+            (acc[s.eventId] = acc[s.eventId] || []).push(s);
+            return acc;
+        }, {} as Record<string, Subtarefa[]>);
+    }, [subtarefas]);
+
+    const visibleEvents = useMemo(() => {
         const term = search.trim().toLowerCase();
-        return tasks.filter(task => {
+        return events.filter(event => {
             if (typeFilter !== 'todos') {
-                // Cards sem formato (manuais ou anteriores a esta versao) caem em
-                // "Sem formato" em vez de desaparecerem sem explicacao.
-                const taskType = task.type || 'Sem formato';
-                if (taskType !== typeFilter) return false;
+                const tipo = event.type || 'Sem formato';
+                if (tipo !== typeFilter) return false;
             }
-            if (term && !task.title.toLowerCase().includes(term)) return false;
+            if (term && !(event.title || '').toLowerCase().includes(term)) return false;
+            if (soAtencao) {
+                const sla = slaAtual(event);
+                if (!sla || (sla.tone !== 'atrasado' && sla.tone !== 'hoje')) return false;
+            }
             return true;
         });
-    }, [tasks, search, typeFilter]);
+    }, [events, search, typeFilter, soAtencao]);
 
-    const isFiltering = search.trim() !== '' || typeFilter !== 'todos';
+    const isFiltering = search.trim() !== '' || typeFilter !== 'todos' || soAtencao;
 
-    // Formatos realmente presentes no quadro. Oferecer filtro para formato que
-    // nao existe ali so gera resultado vazio.
     const availableTypes = useMemo(() => {
-        const present = new Set(tasks.map(t => t.type || 'Sem formato'));
+        const present = new Set<string>(events.map(e => e.type || 'Sem formato'));
         const ordered = FORMATO_OPTIONS.filter(f => present.has(f)) as string[];
         if (present.has('Sem formato')) ordered.push('Sem formato');
         return ordered;
-    }, [tasks]);
+    }, [events]);
 
-    const clearFilters = () => { setSearch(''); setTypeFilter('todos'); };
+    const clearFilters = () => { setSearch(''); setTypeFilter('todos'); setSoAtencao(false); };
 
-    const handleAddTask = async (e: React.FormEvent, status: string) => {
-        e.preventDefault();
-        if (!newTaskTitle.trim()) return;
-        const newTask = {
-            title: newTaskTitle.trim(),
-            status: status,
-            createdAt: new Date()
-        };
-        try {
-            await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add(newTask);
-            setAddingToColumn(null);
-            setNewTaskTitle('');
-        } catch (error) {
-            console.error("Erro ao adicionar tarefa:", error);
-            showNotice('Não foi possível adicionar o card. Tente novamente.');
-        }
-    };
-
-    const handleDeleteTask = async (taskId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!window.confirm("Excluir este card?")) return;
-        try {
-            await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(taskId).delete();
-        } catch (error) {
-            console.error("Erro ao excluir:", error);
-            showNotice('Não foi possível excluir o card.');
-        }
-    };
-
-    const moveTask = async (taskId: string, newStatus: string, e?: React.MouseEvent) => {
+    /**
+     * Mover = mudar o status DO POST. Uma escrita, uma fonte.
+     *
+     * A escrita otimista continua: o Firestore leva um instante para confirmar e
+     * sem ela o card volta para a coluna de origem por meio segundo.
+     */
+    const moveEvent = async (eventId: string, novoStatus: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
-        const taskToMove = tasks.find(t => t.id === taskId);
-        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-        
+        const antes = events.find(ev => ev.id === eventId);
+        if (!antes || antes.status === novoStatus) return;
+
+        setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, status: novoStatus as EventStatus } : ev));
         try {
-            await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(taskId).update({ status: newStatus });
-            // Se o card está vinculado à agenda, atualizamos a base do calendário
-            if (taskToMove && taskToMove.eventId) {
-                await db.collection('empresas').doc(empresaId).collection('events').doc(taskToMove.eventId).update({ status: newStatus });
-            }
+            await db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+                .update({ status: novoStatus });
+            // O cliente le o andamento; mover no quadro e uma mudanca de status
+            // como qualquer outra e precisa aparecer lá.
+            registrarMudancas(
+                empresaId, antes, { ...antes, status: novoStatus as EventStatus },
+                userEmail || auth.currentUser?.email || '', userName || null, 'agencia'
+            );
         } catch (error) {
-            console.error("Erro ao mover:", error);
-            // Desfaz o movimento otimista usando o status capturado antes da
-            // troca, e avisa - antes o card voltava sozinho sem explicacao.
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: taskToMove?.status || 'Pendente' } : t));
+            console.error('Erro ao mover:', error);
+            setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, status: antes.status } : ev));
             showNotice('Não foi possível mover o card. O status anterior foi restaurado.');
         }
     };
 
-    const handleDragStart = (e: React.DragEvent, taskId: string) => {
-        e.dataTransfer.setData('taskId', taskId);
+    const handleDragStart = (e: React.DragEvent, eventId: string) => {
+        e.dataTransfer.setData('eventId', eventId);
         e.dataTransfer.effectAllowed = 'move';
         setTimeout(() => { (e.target as HTMLElement).classList.add('opacity-50'); }, 0);
     };
@@ -188,43 +266,20 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
 
     const handleDrop = (e: React.DragEvent, status: string) => {
         e.preventDefault();
-        const taskId = e.dataTransfer.getData('taskId');
-        if (taskId) moveTask(taskId, status);
+        const eventId = e.dataTransfer.getData('eventId');
+        if (eventId) moveEvent(eventId, status);
     };
 
-    const handleTaskClick = async (task: KanbanTask) => {
-        if (!task.eventId) {
-            // Era um alert() nativo que travava a pagina para dar um recado.
-            showNotice('Este card foi criado direto na produção e não tem post na agenda. Crie-o no Calendário para editar legenda e links.');
-            return;
-        }
-
-        // Antes usava setIsLoading, o mesmo estado da carga inicial: clicar num
-        // card fazia o quadro inteiro desaparecer e voltar.
-        setIsOpeningCard(true);
-        setModalError('');
+    const removerOrfao = async (id: string) => {
         try {
-            const eventDoc = await db.collection('empresas').doc(empresaId).collection('events').doc(task.eventId).get();
-            if (eventDoc.exists) {
-                const data = eventDoc.data();
-                setSelectedEvent({
-                    id: eventDoc.id,
-                    ...data,
-                    date: data?.date?.toDate() || new Date()
-                } as CalendarEvent);
-            } else {
-                showNotice('O post correspondente não existe mais na agenda. Você pode excluir este card.');
-            }
-        } catch (error) {
-            console.error("Erro ao buscar evento:", error);
-            showNotice('Não foi possível abrir o post. Tente novamente.');
-        } finally {
-            setIsOpeningCard(false);
+            await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(id).delete();
+            setOrfaos(prev => prev.filter(o => o.id !== id));
+        } catch (e) {
+            console.error(e);
+            showNotice('Não foi possível excluir o card antigo.');
         }
     };
 
-    // Mesma correcao do calendario: erro nao pode fechar o modal em silencio,
-    // senao o usuario acredita que salvou.
     const handleSaveEvent = async (eventData: CalendarEvent) => {
         if (isSaving) return;
         setIsSaving(true);
@@ -232,24 +287,9 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
         try {
             const { id, ...data } = eventData;
             await db.collection('empresas').doc(empresaId).collection('events').doc(id).update(stripUndefined(data));
-
-            const task = tasks.find(t => t.eventId === id);
-            if (task) {
-                // Inclui type/plataforma para o card nao ficar com o formato antigo
-                // depois de o post mudar de formato.
-                await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(task.id).update({
-                    title: eventData.title,
-                    status: eventData.status,
-                    type: eventData.type,
-                    plataforma: eventData.plataforma
-                });
-                setTasks(prev => prev.map(t => t.id === task.id
-                    ? { ...t, title: eventData.title, status: eventData.status, type: eventData.type, plataforma: eventData.plataforma }
-                    : t));
-            }
             setSelectedEvent(null);
         } catch (error) {
-            console.error("Erro ao salvar evento:", error);
+            console.error('Erro ao salvar evento:', error);
             setModalError('Não foi possível salvar. Confira sua conexão e tente de novo.');
             return;
         } finally {
@@ -266,14 +306,9 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
             // O espelho em Agenciaapk tambem precisa sair, senao o post continua
             // gravado la depois de excluido na agenda.
             await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete().catch(() => {});
-            const task = tasks.find(t => t.eventId === eventId);
-            if (task) {
-                await db.collection('empresas').doc(empresaId).collection('kanban_tasks').doc(task.id).delete();
-                setTasks(prev => prev.filter(t => t.id !== task.id));
-            }
             setSelectedEvent(null);
         } catch (error) {
-            console.error("Erro ao excluir evento:", error);
+            console.error('Erro ao excluir evento:', error);
             setModalError('Não foi possível excluir. Tente novamente.');
             return;
         } finally {
@@ -281,7 +316,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
         }
     };
 
-    if (isLoading && !selectedEvent) {
+    if (isLoading) {
         return (
             <div className="h-96 flex flex-col items-center justify-center gap-3">
                 <Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" />
@@ -299,17 +334,61 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
         );
     }
 
+    const controle = "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors";
+
     return (
         <div className="text-zinc-100 font-sans flex flex-col relative min-h-[70vh] lg:h-[calc(100dvh-13rem)]">
-            <header className="mb-6 shrink-0">
-                <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
-                    <Layout className="w-8 h-8 text-[#FABE01]" />
-                    Quadro de Tarefas
-                </h1>
-                <p className="text-zinc-400 mt-2 text-sm">
-                    Acompanhe e movimente o status. Clique nos cards da agenda para editar o conteúdo e legenda.
-                </p>
+            <header className="mb-5 shrink-0 flex flex-wrap items-start gap-3">
+                <div className="min-w-0 flex-1">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                        <span className="w-1.5 h-7 rounded-full bg-[#FABE01] shrink-0" />
+                        Produção
+                    </h1>
+                    <p className="text-zinc-400 mt-1.5 text-sm">
+                        O status de cada conteúdo da agenda. Arraste para mudar; clique para ver subtarefas e
+                        responsáveis.
+                    </p>
+                </div>
+                {/* O caminho de criar aponta para o calendario, o unico lugar onde
+                    conteudo nasce - em vez do "Adicionar Card" que criava um card
+                    sem post e sem serventia. */}
+                {onIrParaCalendario && (
+                    <button
+                        onClick={onIrParaCalendario}
+                        className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-full bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
+                    >
+                        <CalendarPlus className="w-4 h-4" /> Novo conteúdo
+                    </button>
+                )}
             </header>
+
+            {/* SOBRAS DO MODELO ANTIGO. */}
+            {orfaos.length > 0 && (
+                <div className="shrink-0 mb-4 bg-amber-500/5 border border-amber-500/20 rounded-card p-4">
+                    <p className="text-xs text-amber-400 font-semibold mb-1 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        {orfaos.length} card{orfaos.length > 1 ? 's' : ''} do modelo antigo
+                    </p>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+                        Foram criados direto na produção, sem post na agenda — por isso não têm data, legenda nem
+                        prazo, e não aparecem mais no quadro. Recrie no calendário o que ainda importa e apague o resto.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {orfaos.map(o => (
+                            <span key={o.id} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full pl-3 pr-1.5 py-1 text-xs text-zinc-200">
+                                {o.title}
+                                <button
+                                    onClick={() => removerOrfao(o.id)}
+                                    aria-label={`Excluir card antigo ${o.title}`}
+                                    className="p-1 rounded-full text-zinc-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* BARRA DE FILTROS */}
             <div className="shrink-0 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
@@ -320,7 +399,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Buscar por título..."
-                        aria-label="Buscar cards por título"
+                        aria-label="Buscar conteúdos por título"
                         className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
                     />
                     {search && (
@@ -330,13 +409,22 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                     )}
                 </div>
 
-                {/* Filtro por formato, com a mesma cor usada no card e na agenda. */}
+                <button
+                    onClick={() => setSoAtencao(v => !v)}
+                    aria-pressed={soAtencao}
+                    className={`${controle} ${soAtencao
+                        ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                        : 'text-zinc-400 border-white/10 hover:text-zinc-200'}`}
+                >
+                    <Clock className="w-3.5 h-3.5" /> Prazo estourando
+                </button>
+
                 {availableTypes.length > 1 && (
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 lg:pb-0">
                         <Filter className="w-4 h-4 text-zinc-500 shrink-0" />
                         <button
                             onClick={() => setTypeFilter('todos')}
-                            className={`shrink-0 px-3 py-1.5 rounded-control text-xs font-bold uppercase tracking-wide border transition-colors ${
+                            className={`${controle} uppercase tracking-wide ${
                                 typeFilter === 'todos'
                                     ? 'bg-white/10 text-white border-white/20'
                                     : 'text-zinc-500 border-white/5 hover:text-zinc-300'
@@ -352,7 +440,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                                     key={type}
                                     onClick={() => setTypeFilter(active ? 'todos' : type)}
                                     aria-pressed={active}
-                                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-control text-xs font-bold uppercase tracking-wide border transition-colors ${
+                                    className={`${controle} uppercase tracking-wide ${
                                         active
                                             ? `${styles.bg} ${styles.text} ${styles.border}`
                                             : 'text-zinc-500 border-white/5 hover:text-zinc-300'
@@ -367,8 +455,6 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                 )}
 
                 <div className="flex items-center gap-3 lg:ml-auto shrink-0">
-                    {/* Com sete colunas fixas, esconder as vazias encurta bastante a
-                        rolagem horizontal quando o quadro esta filtrado. */}
                     <label className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer select-none">
                         <input
                             type="checkbox"
@@ -389,7 +475,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
 
             {isFiltering && (
                 <p className="shrink-0 mb-3 text-xs text-zinc-500">
-                    Exibindo <span className="text-white font-bold">{visibleTasks.length}</span> de {tasks.length} cards
+                    Exibindo <span className="text-white font-bold">{visibleEvents.length}</span> de {events.length} conteúdos
                 </p>
             )}
 
@@ -403,145 +489,186 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                 </div>
             )}
 
-            {tasks.length === 0 && (
+            {events.length === 0 && (
                 <div className="shrink-0 py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
                     <Layout className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                    <p className="text-zinc-300 font-bold mb-1">O quadro ainda está vazio</p>
+                    <p className="text-zinc-300 font-bold mb-1">Nenhum conteúdo na agenda</p>
                     <p className="text-zinc-500 text-sm max-w-md mx-auto leading-relaxed">
-                        Publicações criadas no Calendário Editorial aparecem aqui automaticamente. Você também pode adicionar um card direto em qualquer coluna.
+                        O quadro acompanha o que existe no Calendário Editorial. Crie a publicação lá e ela aparece
+                        aqui na hora.
                     </p>
+                    {onIrParaCalendario && (
+                        <button
+                            onClick={onIrParaCalendario}
+                            className="mt-6 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-sm px-5 py-2.5 rounded-full transition-colors"
+                        >
+                            <CalendarPlus className="w-4 h-4" /> Ir para o calendário
+                        </button>
+                    )}
                 </div>
             )}
 
-            {isFiltering && visibleTasks.length === 0 && tasks.length > 0 && (
+            {isFiltering && visibleEvents.length === 0 && events.length > 0 && (
                 <div className="shrink-0 py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
                     <Search className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                    <p className="text-zinc-300 font-bold mb-1">Nenhum card corresponde ao filtro</p>
+                    <p className="text-zinc-300 font-bold mb-1">Nenhum conteúdo corresponde ao filtro</p>
                     <button onClick={clearFilters} className="mt-4 inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-sm px-5 py-2.5 rounded-control uppercase tracking-wide transition-colors">
                         Limpar filtros
                     </button>
                 </div>
             )}
 
-            <div className={`flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-4 ${tasks.length === 0 || (isFiltering && visibleTasks.length === 0) ? 'hidden' : ''}`}>
-                <div className="flex gap-6 h-full items-start min-w-max px-1">
+            <div className={`flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-4 ${events.length === 0 || (isFiltering && visibleEvents.length === 0) ? 'hidden' : ''}`}>
+                <div className="flex gap-5 h-full items-start min-w-max px-1">
                     {COLUMNS.map((col, colIndex) => {
-                        const columnTasks = visibleTasks.filter(t => t.status === col.id);
+                        const columnEvents = visibleEvents.filter(e => e.status === col.id);
                         // Colunas vazias so somem por escolha explicita: escondê-las
                         // sempre tiraria o destino do arraste.
-                        if (hideEmptyColumns && columnTasks.length === 0) return null;
+                        if (hideEmptyColumns && columnEvents.length === 0) return null;
                         return (
-                            <div key={col.id} className="w-[85vw] max-w-[320px] sm:w-[340px] sm:max-w-none shrink-0 bg-[#1A1A1A] rounded-card flex flex-col max-h-full border border-white/5" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, col.id)}>
-                                <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0 bg-[#111111]/50 rounded-t-card">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`w-3 h-3 rounded-full ${col.accentColor}`} />
-                                        <h3 className="font-bold text-white tracking-wide truncate">{col.title}</h3>
+                            <div
+                                key={col.id}
+                                className="w-[85vw] max-w-[320px] sm:w-[330px] sm:max-w-none shrink-0 bg-[#1A1A1A] rounded-card flex flex-col max-h-full border border-white/5"
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => handleDrop(e, col.id)}
+                            >
+                                <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${col.accentColor}`} />
+                                        <h3 className="font-bold text-white text-sm tracking-tight truncate">{col.title}</h3>
                                     </div>
-                                    <span className="bg-white/10 text-zinc-300 text-xs font-bold px-2 py-1 rounded-full">{columnTasks.length}</span>
+                                    <span className="bg-white/5 text-zinc-400 text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                                        {columnEvents.length}
+                                    </span>
                                 </div>
-                                
-                                <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                                    {columnTasks.map(task => {
-                                        const styles = getTypeStyles(task.type);
-                                        const hasType = Boolean(task.type);
+
+                                <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
+                                    {columnEvents.length === 0 && (
+                                        <p className="text-[11px] text-zinc-600 text-center py-6">
+                                            Arraste um conteúdo para cá
+                                        </p>
+                                    )}
+
+                                    {columnEvents.map(event => {
+                                        const styles = getTypeStyles(event.type);
+                                        const sla = slaAtual(event);
+                                        const subs = subsPorEvento[event.id] || [];
+                                        const prog = progresso(subs);
+                                        const pendentes = prog.total - prog.feitas;
+                                        const responsaveis = pessoasDeUids(event.responsaveis, indice);
+                                        const vista = stageView(getClientStage(event), 'agencia');
+                                        const semDono = responsaveis.length === 0;
                                         return (
-                                        <div
-                                            key={task.id}
-                                            draggable
-                                            onDragStart={(e) => handleDragStart(e, task.id)}
-                                            onDragEnd={handleDragEnd}
-                                            onClick={() => handleTaskClick(task)}
-                                            // Faixa lateral na cor do formato: da para reconhecer
-                                            // Reel / Post / Story de relance, sem ler a etiqueta.
-                                            className={`bg-[#111111] border border-white/10 border-l-4 ${hasType ? styles.border : 'border-l-zinc-700'} p-4 rounded-card shadow-sm hover:border-[#FABE01]/50 transition-colors group cursor-grab active:cursor-grabbing`}
-                                        >
-                                            <div className="flex items-start gap-2 mb-3">
-                                                <GripVertical className="w-4 h-4 text-zinc-600 shrink-0 mt-0.5 hidden group-hover:block" />
-                                                <p className="text-sm font-medium text-white leading-relaxed break-words flex-1">
-                                                    {task.title}
-                                                </p>
-                                                <button onClick={(e) => handleDeleteTask(task.id, e)} className="text-zinc-600 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" title="Excluir card" aria-label={`Excluir card ${task.title}`}>
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-
-                                            {/* ETIQUETAS: formato, plataforma e vinculo com a agenda */}
-                                            <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                                                {hasType ? (
-                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-control uppercase tracking-widest ${styles.label}`}>
-                                                        {task.type}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-control uppercase tracking-widest bg-white/5 text-zinc-500">
-                                                        Sem formato
-                                                    </span>
-                                                )}
-                                                {task.plataforma && (
-                                                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-control uppercase tracking-wider bg-white/5 text-zinc-400">
-                                                        {task.plataforma}
-                                                    </span>
-                                                )}
-                                                {/* Distingue card com post na agenda de card criado a mao:
-                                                    antes so descobria clicando e levando um alert(). */}
-                                                {task.eventId ? (
-                                                    <span className="flex items-center gap-1 text-[9px] font-medium text-zinc-500" title="Vinculado a um post do calendário">
-                                                        <Link2 className="w-3 h-3" /> Na agenda
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[9px] font-medium text-zinc-600" title="Card criado direto na produção">
-                                                        Só produção
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-auto">
-                                                <div className="text-[10px] text-zinc-600 font-mono">
-                                                    {task.createdAt.toLocaleDateString('pt-BR')}
+                                            <div
+                                                key={event.id}
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, event.id)}
+                                                onDragEnd={handleDragEnd}
+                                                onClick={() => setSelectedEvent(event)}
+                                                className={`bg-[#111111] border border-white/10 border-l-[3px] ${styles.border} p-3.5 rounded-card hover:border-[#FABE01]/50 transition-colors group cursor-pointer`}
+                                            >
+                                                <div className="flex items-start gap-2 mb-2.5">
+                                                    <GripVertical className="w-4 h-4 text-zinc-600 shrink-0 mt-0.5 hidden group-hover:block cursor-grab" />
+                                                    <p className="text-sm font-medium text-white leading-snug break-words flex-1">
+                                                        {event.title}
+                                                    </p>
                                                 </div>
-                                                <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                                    {colIndex > 0 && (
-                                                        <button onClick={(e) => moveTask(task.id, COLUMNS[colIndex - 1].id, e)} className="p-1.5 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-control transition-colors" title="Mover para esquerda">
-                                                            <ArrowLeft className="w-3.5 h-3.5" />
-                                                        </button>
+
+                                                {/* ETIQUETAS. Formato, plataforma, de quem e a bola
+                                                    e o prazo - o que se precisa saber sem abrir. */}
+                                                <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-chip uppercase tracking-widest ${styles.label}`}>
+                                                        {event.type || 'Sem formato'}
+                                                    </span>
+                                                    {event.plataforma && (
+                                                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-chip uppercase tracking-wider bg-white/5 text-zinc-400">
+                                                            {event.plataforma}
+                                                        </span>
                                                     )}
-                                                    {colIndex < COLUMNS.length - 1 && (
-                                                        <button onClick={(e) => moveTask(task.id, COLUMNS[colIndex + 1].id, e)} className="p-1.5 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-control transition-colors" title="Mover para direita">
-                                                            <ArrowRight className="w-3.5 h-3.5" />
-                                                        </button>
+                                                    {/* De quem e a bola, na LINGUAGEM DA AGENCIA:
+                                                        o card mostrava "Aguardando você" para a
+                                                        propria equipe, acusando ela de segurar um
+                                                        post que espera o cliente. */}
+                                                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border ${
+                                                        CLIENT_STAGES[getClientStage(event)].bg
+                                                    } ${CLIENT_STAGES[getClientStage(event)].text} ${
+                                                        CLIENT_STAGES[getClientStage(event)].border
+                                                    }`}>
+                                                        {vista.label}
+                                                    </span>
+                                                    {sla && (
+                                                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border flex items-center gap-1 ${slaClasses(sla.tone)}`}>
+                                                            <Clock className="w-2.5 h-2.5" /> {sla.label}
+                                                        </span>
                                                     )}
                                                 </div>
+
+                                                {/* SUBTAREFAS: o que FALTA, nao o que ja foi.
+                                                    "1/3" obriga a subtrair de cabeca; num quadro
+                                                    de producao a pergunta e quantas ainda faltam. */}
+                                                {prog.total > 0 && (
+                                                    <div className="mb-2.5">
+                                                        <div className="flex items-center justify-between text-[10px] mb-1">
+                                                            <span className={`flex items-center gap-1 font-medium ${
+                                                                pendentes === 0 ? 'text-emerald-400' : 'text-zinc-400'
+                                                            }`}>
+                                                                <ListChecks className="w-3 h-3" />
+                                                                {pendentes === 0
+                                                                    ? 'Todas as etapas prontas'
+                                                                    : `${pendentes} etapa${pendentes === 1 ? '' : 's'} pendente${pendentes === 1 ? '' : 's'}`}
+                                                            </span>
+                                                            <span className="text-zinc-600">{prog.feitas}/{prog.total}</span>
+                                                        </div>
+                                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all ${pendentes === 0 ? 'bg-emerald-500' : 'bg-[#FABE01]'}`}
+                                                                style={{ width: `${prog.pct}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* SEM MATERIAL e um bloqueio silencioso: o post
+                                                    nao tem o que aprovar e ninguem descobre ate a
+                                                    vespera. */}
+                                                {!event.midias?.length && !event.previewUrl && !event.coverUrl && !event.url && (
+                                                    <p className="text-[10px] text-zinc-500 flex items-center gap-1 mb-2.5">
+                                                        <ImageOff className="w-3 h-3 shrink-0" /> sem material anexado
+                                                    </p>
+                                                )}
+
+                                                <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-2.5">
+                                                    <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                                                        {event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                                    </span>
+
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span title={semDono ? 'Ninguém atribuído' : responsaveis.map(r => r.nome || r.email).join(', ')}>
+                                                            <AvatarGroup pessoas={responsaveis} tamanho="xs" limite={3} anelClasse="ring-[#111111]" />
+                                                        </span>
+                                                        <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                            {colIndex > 0 && (
+                                                                <button onClick={(e) => moveEvent(event.id, COLUMNS[colIndex - 1].id, e)} className="p-1 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-control transition-colors" title="Mover para esquerda">
+                                                                    <ArrowLeft className="w-3 h-3" />
+                                                                </button>
+                                                            )}
+                                                            {colIndex < COLUMNS.length - 1 && (
+                                                                <button onClick={(e) => moveEvent(event.id, COLUMNS[colIndex + 1].id, e)} className="p-1 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-control transition-colors" title="Mover para direita">
+                                                                    <ArrowRight className="w-3 h-3" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
                                         );
                                     })}
-
-                                    {addingToColumn === col.id ? (
-                                        <form onSubmit={(e) => handleAddTask(e, col.id)} className="bg-[#111111] border border-[#FABE01] p-3 rounded-control shadow-lg animate-in fade-in zoom-in-95">
-                                            <textarea autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="O que precisa ser feito?" className="w-full bg-transparent text-sm text-white resize-none outline-none border-none p-0 mb-3 placeholder:text-zinc-600" rows={3} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddTask(e as any, col.id); } }} />
-                                            <div className="flex items-center justify-between">
-                                                <button type="button" onClick={() => { setAddingToColumn(null); setNewTaskTitle(''); }} className="text-xs font-bold text-zinc-500 hover:text-white px-2 py-1">Cancelar</button>
-                                                <button type="submit" disabled={!newTaskTitle.trim()} className="bg-[#FABE01] text-black text-xs font-bold px-3 py-1.5 rounded-control disabled:opacity-50">Adicionar</button>
-                                            </div>
-                                        </form>
-                                    ) : (
-                                        <button onClick={() => setAddingToColumn(col.id)} className="w-full py-3 flex items-center justify-center gap-2 text-sm font-medium text-zinc-500 hover:text-white hover:bg-white/5 rounded-control transition-colors border border-dashed border-transparent hover:border-white/20">
-                                            <Plus className="w-4 h-4" /> Adicionar Card
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                         );
                     })}
                 </div>
             </div>
-            
-            {/* Feedback de "abrindo card" sem desmontar o quadro. */}
-            {isOpeningCard && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#1A1A1A] border border-white/10 rounded-full px-4 py-2 shadow-2xl">
-                    <Loader2 className="w-4 h-4 text-[#FABE01] animate-spin" />
-                    <span className="text-xs text-zinc-300 font-medium">Abrindo publicação...</span>
-                </div>
-            )}
 
             {selectedEvent && (
                 <EventDetailModal
@@ -549,6 +676,9 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({ empresaId, 
                     onSave={handleSaveEvent}
                     onDelete={handleDeleteEvent}
                     onClose={() => { setSelectedEvent(null); setModalError(''); }}
+                    // O quadro e sobre producao: abre onde o trabalho e dividido.
+                    abaInicial="gestao"
+                    perfilHandle={perfilHandle}
                     isSaving={isSaving}
                     errorMessage={modalError}
                     empresaId={empresaId}

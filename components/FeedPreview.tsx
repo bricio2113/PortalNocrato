@@ -15,6 +15,11 @@ interface FeedPreviewProps {
     onSelectEvent?: (event: CalendarEvent) => void;
     /** Desenha a moldura de celular em volta. */
     framed?: boolean;
+    /**
+     * Miniaturas geradas no upload, por eventId. Vencem os links do Drive: sao
+     * ~40 KB contra 3 MB, e este grid carrega 9 de uma vez.
+     */
+    thumbs?: Record<string, string>;
 }
 
 const PAGE_SIZE = 9;
@@ -78,7 +83,7 @@ type FeedTab = 'grid' | 'reels' | 'tagged';
  * dentro de um portal que o cliente abre seria um dado falso na cara dele; a
  * forma do Instagram e mantida, o conteudo e honesto.
  */
-const FeedPreview: React.FC<FeedPreviewProps> = ({ events, empresaNome, onSelectEvent, framed = true }) => {
+const FeedPreview: React.FC<FeedPreviewProps> = ({ events, empresaNome, onSelectEvent, framed = true, thumbs = {} }) => {
     const [page, setPage] = useState(0);
     const [tab, setTab] = useState<FeedTab>('grid');
 
@@ -182,7 +187,9 @@ const FeedPreview: React.FC<FeedPreviewProps> = ({ events, empresaNome, onSelect
             {stories.length > 0 && (
                 <div className="flex gap-3.5 px-3.5 pb-3 overflow-x-auto custom-scrollbar shrink-0">
                     {stories.map(story => {
-                        const preview = getMediaPreview(coverSourceOf(story));
+                        const preview = thumbs[story.id]
+                            ? { kind: 'image' as const, src: thumbs[story.id] }
+                            : getMediaPreview(coverSourceOf(story));
                         return (
                             <button
                                 key={story.id}
@@ -255,7 +262,12 @@ const FeedPreview: React.FC<FeedPreviewProps> = ({ events, empresaNome, onSelect
                 ) : (
                     <div className="grid grid-cols-3 gap-[2px]">
                         {pagePosts.map(event => {
-                            const preview = getMediaPreview(coverSourceOf(event));
+                            // Miniatura do Firestore primeiro; link do Drive so
+                            // como fallback para os posts antigos.
+                            const local = thumbs[event.id];
+                            const preview = local
+                                ? { kind: 'image' as const, src: local }
+                                : getMediaPreview(coverSourceOf(event));
                             const styles = getTypeStyles(event.type);
                             const stageStyle = CLIENT_STAGES[getClientStage(event)];
                             const corner = cornerIcon(event.type);

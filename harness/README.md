@@ -42,6 +42,24 @@ reporta:
 
 Screenshots de cada tela ficam em `dist-harness/shot-*.png`.
 
+## Verificação de comportamento
+
+```bash
+node harness/verifica-midia.mjs
+```
+
+O `audit.mjs` mede layout; este script exercita **comportamento**: abre a
+publicação nova, escolhe pasta pelos dois caminhos (criar subpasta com o título
+do conteúdo / usar uma pasta existente), sobe um PNG de verdade e confere no
+`__writes` e na `__arvore` do mock que o arquivo foi para o caminho certo — e que
+ele **aparece na tela de Arquivos & Materiais**, que é a promessa da interface.
+Também cobre o cadastro de cliente (nasce com as pastas padrão) e o telefone do
+próprio perfil.
+
+Existe porque o campo de mídia sumiu da publicação nova sem nada acusar: ele
+estava atrás de `!isCreating` e nenhuma tela do harness renderizava um post sem
+id. As telas `modal-novo` e `midia-e-pastas` fecham esse buraco.
+
 ## Limite
 
 O mock não valida regras do Firestore, permissão nem escrita — só layout e

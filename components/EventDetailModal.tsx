@@ -2,21 +2,42 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ApprovalState, CalendarEvent, EventMetrics } from '../types';
 import { PLATAFORMA_OPTIONS, STATUS_OPTIONS, FORMATO_OPTIONS } from '../constants';
 import { toSafeHref } from '../utils/url';
-import { toDateInputValue, fromDateInputValue } from '../utils/date';
+import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTime } from '../utils/date';
+import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
-import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState';
+import { getClientStage, getApproval, CLIENT_STAGES, stageView } from '../utils/eventState';
 import { setApproval, saveMetrics } from '../utils/posts';
 import PostComments from './PostComments';
+import MediaUpload from './MediaUpload';
+import PostTimeline from './PostTimeline';
+import ContentManagementPanel from './ContentManagementPanel';
+import PostPreview from './PostPreview';
+import { AvatarGroup } from './AvatarBubble';
+import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { UserProfile } from '../types';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
     Youtube, Twitter, Globe, Check, Loader2, AlertTriangle,
-    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo
+    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock, ListChecks, FileText
 } from 'lucide-react';
+
+/**
+ * O que o modal precisa gravar mas nao cabe no documento do evento.
+ *
+ * Hoje e so a capa. Ela vive em `covers/{eventId}` e uma publicacao nova nao tem
+ * id enquanto nao e criada - quem chama o `onSave` recebe o id do `add()` e e o
+ * unico que pode gravar. Sem este caminho, todo post criado JA COM MIDIA nasceria
+ * sem miniatura na grade do calendario.
+ */
+export interface ExtrasDoSave {
+    /** Data URI da miniatura da primeira midia. Ausente = nada a gravar. */
+    thumb?: string | null;
+}
 
 interface EventDetailModalProps {
     event: CalendarEvent;
-    onSave: (event: CalendarEvent) => void;
+    onSave: (event: CalendarEvent, extras?: ExtrasDoSave) => void;
     onDelete: (eventId: string) => void;
     onClose: () => void;
     /** Trava os botoes enquanto a gravacao esta em curso. */
@@ -32,7 +53,17 @@ interface EventDetailModalProps {
     userName?: string | null;
     /** Chamado apos o cliente aprovar ou pedir ajuste. */
     onApprovalChange?: (state: ApprovalState) => void;
+    /**
+     * Aba em que abrir. O quadro de producao abre em 'gestao'; o calendario, em
+     * 'conteudo'. Antes eram dois MODAIS diferentes para o mesmo post, e o botao
+     * que levava de um ao outro fechava o primeiro sem volta.
+     */
+    abaInicial?: AbaConteudo;
+    /** @ do cliente, para a simulacao do post sair com o perfil certo. */
+    perfilHandle?: string | null;
 }
+
+export type AbaConteudo = 'conteudo' | 'gestao';
 
 const METRIC_FIELDS = [
     { key: 'alcance' as const, label: 'Alcance' },
@@ -56,15 +87,44 @@ const getPlatformIcon = (platform: string) => {
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({
     event, onSave, onDelete, onClose, isSaving = false, errorMessage,
-    empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange
+    empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange,
+    abaInicial = 'conteudo', perfilHandle
 }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
+    const [aba, setAba] = useState<AbaConteudo>(abaInicial);
+
+    /**
+     * Equipe da agencia, para mostrar rosto de responsavel nas duas abas.
+     *
+     * Nao carrega para o cliente: as regras nao deixam ele ler usuarios/ da
+     * agencia, e a chamada so renderia erro de permissao no console dele.
+     */
+    const [equipe, setEquipe] = useState<UserProfile[]>([]);
+    useEffect(() => {
+        if (userRole === 'cliente') return;
+        lerEquipeAgencia().then(setEquipe).catch(console.error);
+    }, [userRole]);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showDiscardWarning, setShowDiscardWarning] = useState(false);
     const isCreating = !event.id;
     const titleRef = useRef<HTMLTextAreaElement>(null);
 
+    /**
+     * Miniatura da primeira midia enviada numa publicacao AINDA SEM ID.
+     *
+     * A capa vive em `empresas/{id}/covers/{eventId}` e o post novo nao tem
+     * eventId, entao o MediaUpload nao consegue gravar - ele devolve a miniatura
+     * por aqui e ela viaja no `onSave`, para quem cria o documento gravar com o id
+     * em maos. Em ref, e nao em estado: mudar a capa nao muda nada na tela e um
+     * setState aqui so causaria re-render no meio do upload.
+     */
+    const thumbPendente = useRef<string | null>(null);
+
     const isClient = userRole === 'cliente';
+    // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
+    // gravado: um campo teria que ser recalculado a cada mudanca de data ou de
+    // formato, e um esquecimento ali mentiria na tela.
+    const janela = janelaRevisao(event);
     // Aprovacao e comentarios exigem um post ja gravado: sem id nao ha o que
     // referenciar.
     const canReview = Boolean(empresaId && event.id);
@@ -196,6 +256,108 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     // mas falha ao salvar e pior que um formulario visivelmente travado.
     const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none disabled:opacity-60 disabled:cursor-not-allowed read-only:opacity-60";
 
+
+    /**
+     * Bloco de aprovacao.
+     *
+     * Extraido para viver na COLUNA DA PECA: aprovar e olhar para o post sao a
+     * mesma acao, e o botao estava do outro lado da tela em relacao ao que ele
+     * julga.
+     */
+    const vista = stageView(stage, isClient ? 'cliente' : 'agencia');
+
+    const ApprovalBlock = () => (
+                            <div className="flex items-start gap-3">
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${stageStyle.dot}`} />
+                                <div className="flex-1 min-w-0">
+                                    <p className={`font-bold text-sm ${stageStyle.text}`}>{vista.label}</p>
+                                    <p className="text-zinc-400 text-xs mt-0.5 leading-relaxed">{vista.hint}</p>
+
+                                    {localApproval === 'ajuste_solicitado' && (
+                                        <p className="text-amber-400 text-xs mt-2 font-medium">
+                                            Ajuste solicitado{event.approvalByName || event.approvalBy ? ` por ${event.approvalByName || event.approvalBy}` : ''}. Detalhe o que mudar na conversa abaixo.
+                                        </p>
+                                    )}
+                                    {localApproval === 'aprovado' && (event.approvalByName || event.approvalBy) && (
+                                        <p className="text-emerald-400/80 text-xs mt-2">
+                                            Aprovado por {event.approvalByName || event.approvalBy}
+                                            {event.approvalAt ? ` em ${event.approvalAt.toLocaleDateString('pt-BR')}` : ''}.
+                                        </p>
+                                    )}
+
+                                    {/* JANELA DE REVISAO.
+                                        Aparece SEMPRE que ainda esta aberta, e nao
+                                        so quando fecha. Uma janela que o cliente
+                                        descobre no momento em que perde o direito
+                                        parece punicao; anunciada antes, e combinado.
+                                        Video pede 2 dias porque reeditar e renderizar
+                                        nao cabe em um. */}
+                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && janela.aberta && (
+                                        <p className="text-[11px] text-zinc-400 mt-3 flex items-center gap-1.5 leading-relaxed">
+                                            <Clock className="w-3.5 h-3.5 shrink-0" />
+                                            Ajuste pode ser pedido até <strong className="text-white">{janela.limite.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</strong>
+                                            {janela.dias === 0 ? ' — hoje é o último dia.' : ` (${janela.dias} dia${janela.dias === 1 ? '' : 's'}).`}
+                                        </p>
+                                    )}
+
+                                    {/* Só o cliente decide. A agência vê o estado, não vota. */}
+                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && (
+                                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                                            <button
+                                                onClick={() => handleApproval('aprovado')}
+                                                disabled={approvalBusy !== null || localApproval === 'aprovado'}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm rounded-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                {approvalBusy === 'aprovado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+                                                {localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar'}
+                                            </button>
+                                            {/* Fora da janela o botao SAI, em vez de
+                                                ficar apagado: um botao desabilitado sem
+                                                explicacao vira reclamacao no WhatsApp. */}
+                                            {janela.aberta && (
+                                                <button
+                                                    onClick={() => handleApproval('ajuste_solicitado')}
+                                                    disabled={approvalBusy !== null || localApproval === 'ajuste_solicitado'}
+                                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-semibold text-sm rounded-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                >
+                                                    {approvalBusy === 'ajuste_solicitado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareWarning className="w-4 h-4" />}
+                                                    Pedir ajuste
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* JANELA FECHADA.
+                                        O prazo de pedir ajuste passou. Nao ha botao de
+                                        ajuste, e as tres saidas viram CONVERSA, nao
+                                        escrita direta: renegociar data, cancelar ou
+                                        substituir mexem no calendario, e quem produziu
+                                        a peca precisa participar da decisao. As regras
+                                        do Firestore tambem nao deixam o cliente mudar
+                                        data nem status - so os campos de aprovacao. */}
+                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && !janela.aberta && (
+                                        <div className="mt-4 border border-white/10 bg-black/20 rounded-control p-3">
+                                            <p className="text-xs text-zinc-300 font-semibold flex items-center gap-1.5">
+                                                <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                                                Prazo de ajuste encerrado
+                                            </p>
+                                            <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                                                {ehVideo(event.type) ? 'Vídeo' : 'Conteúdo de imagem'} precisa de {janela.antecedencia} dia
+                                                {janela.antecedencia === 1 ? '' : 's'} de antecedência, e a publicação é {event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}.
+                                                Ainda dá para <strong className="text-zinc-300">remarcar</strong>, <strong className="text-zinc-300">cancelar</strong> ou <strong className="text-zinc-300">trocar por outro conteúdo</strong> — peça na conversa abaixo e a equipe ajusta o calendário.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {approvalError && (
+                                        <p className="text-red-400 text-xs mt-2 flex items-center gap-1.5">
+                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {approvalError}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+    );
+
     return (
         <div
             className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
@@ -204,7 +366,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
         >
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
-            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-2xl flex flex-col h-[90dvh] sm:h-auto sm:max-h-[90dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+            <div className="relative w-full sm:max-w-6xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-2xl flex flex-col h-[92dvh] sm:max-h-[92dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
 
                 {isDeleting && (
                     <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
@@ -260,130 +422,125 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-control shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar">
+                {/* DUAS COLUNAS.
+                    Esquerda: como o post FICA no perfil. Direita: o que se
+                    preenche sobre ele. Antes a previa era uma faixa no meio do
+                    formulario - uma imagem solta entre campos, que nao respondia
+                    "como isso aparece publicado?", que e a pergunta de quem
+                    aprova. Em tela estreita as duas viram uma coluna so, com a
+                    peca em cima: ela e o assunto. */}
+                <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
 
-                    {/* ESTAGIO + APROVACAO
-                        O cliente nao precisa entender os sete status internos da
-                        agencia; precisa saber se a bola esta com ele. */}
+                <aside className="lg:w-[360px] xl:w-[400px] shrink-0 lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/5 p-4 sm:p-5 bg-[#151515]">
+                    <PostPreview event={editableEvent} handle={perfilHandle} />
+
+                    {/* APROVACAO fica junto da peca: decidir sobre o post e olhar
+                        para ele sao a mesma acao. No formulario, do outro lado da
+                        tela, o botao ficava longe do que ele julga. */}
                     {canReview && (
-                        <div className={`border rounded-card p-4 ${stageStyle.bg} ${stageStyle.border}`}>
-                            <div className="flex items-start gap-3">
-                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${stageStyle.dot}`} />
-                                <div className="flex-1 min-w-0">
-                                    <p className={`font-bold text-sm ${stageStyle.text}`}>{stageStyle.label}</p>
-                                    <p className="text-zinc-400 text-xs mt-0.5 leading-relaxed">{stageStyle.hint}</p>
-
-                                    {localApproval === 'ajuste_solicitado' && (
-                                        <p className="text-amber-400 text-xs mt-2 font-medium">
-                                            Ajuste solicitado{event.approvalByName || event.approvalBy ? ` por ${event.approvalByName || event.approvalBy}` : ''}. Detalhe o que mudar na conversa abaixo.
-                                        </p>
-                                    )}
-                                    {localApproval === 'aprovado' && (event.approvalByName || event.approvalBy) && (
-                                        <p className="text-emerald-400/80 text-xs mt-2">
-                                            Aprovado por {event.approvalByName || event.approvalBy}
-                                            {event.approvalAt ? ` em ${event.approvalAt.toLocaleDateString('pt-BR')}` : ''}.
-                                        </p>
-                                    )}
-
-                                    {/* Só o cliente decide. A agência vê o estado, não vota. */}
-                                    {isClient && stage !== 'publicado' && stage !== 'cancelado' && (
-                                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                                            <button
-                                                onClick={() => handleApproval('aprovado')}
-                                                disabled={approvalBusy !== null || localApproval === 'aprovado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {approvalBusy === 'aprovado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
-                                                {localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar'}
-                                            </button>
-                                            <button
-                                                onClick={() => handleApproval('ajuste_solicitado')}
-                                                disabled={approvalBusy !== null || localApproval === 'ajuste_solicitado'}
-                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 border border-amber-500/40 hover:bg-amber-500/10 text-amber-400 font-bold text-sm rounded-control uppercase tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {approvalBusy === 'ajuste_solicitado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquareWarning className="w-4 h-4" />}
-                                                Pedir ajuste
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {approvalError && (
-                                        <p className="text-red-400 text-xs mt-2 flex items-center gap-1.5">
-                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {approvalError}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
+                        <div className={`mt-4 border rounded-card p-4 ${stageStyle.bg} ${stageStyle.border}`}>
+                            <ApprovalBlock />
                         </div>
                     )}
+                </aside>
 
-                    {/* PREVIA DO CRIATIVO
-                        Antes o cliente precisava sair do portal, abrir o Drive e
-                        voltar para aprovar. */}
-                    <div>
-                        <label className={labelStyle}>Prévia</label>
-                        {preview && preview.kind === 'image' && !previewFailed && (
-                            <img
-                                src={preview.src}
-                                alt={`Prévia de ${editableEvent.title || 'publicação'}`}
-                                onError={() => setPreviewFailed(true)}
-                                loading="lazy"
-                                className="w-full max-h-[420px] object-contain bg-[#111111] border border-white/10 rounded-control"
-                            />
-                        )}
-                        {preview && preview.kind === 'video' && !previewFailed && (
-                            <video
-                                src={preview.src}
-                                controls
-                                onError={() => setPreviewFailed(true)}
-                                className="w-full max-h-[420px] bg-[#111111] border border-white/10 rounded-control"
-                            />
-                        )}
-                        {(!preview || preview.kind === 'external' || previewFailed) && (
-                            <div className="border border-dashed border-white/10 rounded-card p-6 text-center">
-                                {preview ? (
-                                    <>
-                                        {previewFailed ? <ImageOff className="w-8 h-8 text-zinc-700 mx-auto mb-2" /> : <FileVideo className="w-8 h-8 text-zinc-700 mx-auto mb-2" />}
-                                        <p className="text-zinc-400 text-sm mb-1">
-                                            {previewFailed
-                                                ? 'Não foi possível exibir a prévia aqui.'
-                                                : `O material está no ${getLinkLabel(preview.src)}.`}
-                                        </p>
-                                        <p className="text-zinc-600 text-xs mb-4">
-                                            {previewFailed
-                                                ? 'Verifique se o arquivo está compartilhado por link.'
-                                                : 'Arquivos de imagem e vídeo compartilhados por link aparecem direto nesta área.'}
-                                        </p>
-                                        <a
-                                            href={preview.src}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 text-sm font-bold text-[#FABE01] hover:underline"
-                                        >
-                                            Abrir material <ExternalLink className="w-4 h-4" />
-                                        </a>
-                                    </>
-                                ) : (
-                                    <>
-                                        <ImageOff className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-                                        <p className="text-zinc-500 text-sm">
-                                            {isClient
-                                                ? 'A equipe ainda não anexou o material desta publicação.'
-                                                : 'Preencha um dos links abaixo para a prévia aparecer aqui.'}
-                                        </p>
-                                    </>
-                                )}
-                            </div>
-                        )}
+                <div className="flex-1 min-w-0 flex flex-col lg:min-h-0">
+
+                {/* ABAS.
+                    O post tem duas metades - o que ele E (peca, legenda, data,
+                    aprovacao) e como ele SAI (quem faz, em que etapa). Eram dois
+                    modais; agora sao duas abas do mesmo, e alternar nao perde o
+                    que estava aberto. O cliente so ve a primeira: a divisao
+                    interna do trabalho nao e assunto dele. */}
+                {!isClient && (
+                    <div className="shrink-0 flex items-center gap-1 px-4 sm:px-6 border-b border-white/5" role="tablist">
+                        {([
+                            ['conteudo', 'Informação do conteúdo', FileText],
+                            ['gestao', 'Gestão do conteúdo', ListChecks]
+                        ] as const).map(([id, label, Icone]) => {
+                            const ativa = aba === id;
+                            return (
+                                <button
+                                    key={id}
+                                    role="tab"
+                                    aria-selected={ativa}
+                                    onClick={() => setAba(id)}
+                                    className={`flex items-center gap-2 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                                        ativa
+                                            ? 'border-[#FABE01] text-white'
+                                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                                    }`}
+                                >
+                                    <Icone className="w-4 h-4" />
+                                    <span className="hidden sm:inline">{label}</span>
+                                    <span className="sm:hidden">{id === 'conteudo' ? 'Conteúdo' : 'Gestão'}</span>
+                                </button>
+                            );
+                        })}
                     </div>
+                )}
+
+                {/* GESTAO */}
+                {aba === 'gestao' && !isClient && (
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+                        <ContentManagementPanel
+                            empresaId={empresaId || ''}
+                            event={editableEvent}
+                            autorEmail={userEmail}
+                            podeEditar={!isClient}
+                            equipe={equipe}
+                        />
+                    </div>
+                )}
+
+                {/* Body */}
+                <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar ${aba === 'gestao' && !isClient ? 'hidden' : ''}`}>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div>
-                            <label className={labelStyle}>Data</label>
-                            <div className="relative">
-                                <input type="date" disabled={isClient} value={toDateInputValue(editableEvent.date)} onChange={(e) => { const parsed = fromDateInputValue(e.target.value); if (parsed) handleChange('date', parsed); }} className={`${inputStyle} [color-scheme:dark]`} />
-                                <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                        {/* Data + hora ocupam DUAS colunas: numa so, o campo de
+                            hora (fixo em 7.5rem) comia a largura do de data, que
+                            aparecia cortado mostrando so parte do valor. */}
+                        <div className="sm:col-span-2">
+                            <label className={labelStyle}>Publicação</label>
+                            {/* Data e hora no mesmo campo `date`. A hora nao virou
+                                coluna propria porque toda ordenacao, filtro de mes
+                                e comparacao com "agora" que ja existem passam a
+                                considerar o horario sem nenhuma mudanca. */}
+                            <div className="flex gap-2">
+                                <div className="relative flex-1 min-w-0">
+                                    <input
+                                        type="date"
+                                        disabled={isClient}
+                                        value={toDateInputValue(editableEvent.date)}
+                                        onChange={(e) => {
+                                            const parsed = fromDateInputValue(e.target.value);
+                                            // Preserva a hora ja escolhida: sem isto trocar o
+                                            // dia jogava a publicacao de volta para 00:00.
+                                            if (parsed) handleChange('date', hasTime(editableEvent.date)
+                                                ? withTime(parsed, toTimeInputValue(editableEvent.date))
+                                                : parsed);
+                                        }}
+                                        className={`${inputStyle} [color-scheme:dark]`}
+                                    />
+                                    <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                </div>
+                                {/* A LARGURA FICA NO PAI, nao no input.
+                                    `inputStyle` traz `w-full`, e na folha gerada a
+                                    regra `.w-full` vem DEPOIS de `.w-[7.5rem]` -
+                                    entao ela vencia por ordem de cascata, sem
+                                    importar a ordem das classes aqui. O campo de
+                                    hora esticava para 100% e espremia o de data
+                                    ate 26px, que aparecia cortado na tela. */}
+                                <div className="w-[8.5rem] shrink-0">
+                                    <input
+                                        type="time"
+                                        disabled={isClient}
+                                        aria-label="Horário da publicação"
+                                        value={hasTime(editableEvent.date) ? toTimeInputValue(editableEvent.date) : ''}
+                                        onChange={(e) => handleChange('date', withTime(editableEvent.date, e.target.value))}
+                                        className={`${inputStyle} [color-scheme:dark]`}
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -394,6 +551,41 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 </select>
                             </div>
                         </div>
+
+                        {/* PRAZO. Nao ha campo: o prazo E a data de publicacao
+                            acima. Existia um "Prazo de produção" separado, e ele
+                            criava duas datas para a mesma peca - livres para
+                            divergir - alem de deixar quem esquecesse de preencher
+                            com um post que nunca aparecia como atrasado. O selo
+                            abaixo mostra o SLA QUE VALE AGORA e de quem e a bola. */}
+                        {!isClient && (
+                            <div className="col-span-1 sm:col-span-2">
+                                <label className={labelStyle}>Prazo</label>
+                                {(() => {
+                                    const sla = slaAtual(editableEvent);
+                                    if (!sla) {
+                                        return (
+                                            <p className="text-xs text-zinc-500 leading-snug pt-2">
+                                                Fora do fluxo — sem prazo corrente.
+                                            </p>
+                                        );
+                                    }
+                                    return (
+                                        <div className="pt-1.5 space-y-1">
+                                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-full border ${slaClasses(sla.tone)}`}>
+                                                <Clock className="w-3 h-3" />
+                                                {slaTipoLabel(sla.tipo)} · {sla.label}
+                                            </span>
+                                            <p className="text-[10px] text-zinc-600 leading-snug">
+                                                {sla.dono === 'agencia'
+                                                    ? 'Bola com a equipe. Interno — o cliente não vê.'
+                                                    : 'Bola com o cliente. Aguardando a decisão dele.'}
+                                            </p>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                         <div>
                             <label className={labelStyle}>Formato / Tipo</label>
                             <div className="relative">
@@ -411,20 +603,88 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-zinc-500">{getPlatformIcon(editableEvent.plataforma)}</div>
                             </div>
                         </div>
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-4">
-                            <label className={labelStyle}>Responsável</label>
-                            <div className="relative">
-                                <input type="text" disabled={isClient} value={editableEvent.proprietario || ''} onChange={(e) => handleChange('proprietario', e.target.value)} placeholder="Nome" className={inputStyle} />
-                                <User className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                        {/* RESPONSAVEL - o MESMO da aba Gestão.
+                            Era um campo de texto livre aqui e uma lista de pessoas
+                            lá: dois donos para o mesmo post, escritos em lugares
+                            diferentes, e nada garantia que batessem. Aqui virou
+                            leitura, com o caminho para editar onde se edita. */}
+                        {!isClient && (
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-4">
+                                <label className={labelStyle}>Responsáveis</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setAba('gestao')}
+                                    className="w-full flex items-center gap-3 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 hover:border-white/20 transition-colors text-left"
+                                >
+                                    <AvatarGroup
+                                        pessoas={pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))}
+                                        tamanho="sm"
+                                        anelClasse="ring-[#111111]"
+                                    />
+                                    <span className="text-sm text-zinc-400 flex-1 min-w-0 truncate">
+                                        {pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))
+                                            .map(p => p.nome || p.email).join(', ') || 'Ninguém atribuído'}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-[#FABE01] shrink-0">definir →</span>
+                                </button>
+                                {/* Campo antigo, so leitura, e so quando existe:
+                                    nao apagamos o que ja foi digitado, mas tambem
+                                    nao damos um segundo lugar para digitar dono. */}
+                                {editableEvent.proprietario && (
+                                    <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">
+                                        Cadastro antigo: “{editableEvent.proprietario}”. Refaça a atribuição na aba Gestão.
+                                    </p>
+                                )}
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* LINKS: MATERIAL BRUTO E FINALIZADO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {/* UPLOAD DIRETO.
+                            Fica ANTES dos campos de link de proposito: subir o
+                            arquivo aqui e o caminho principal agora, e o link do
+                            Drive vira o caminho legado, para o material que ja
+                            existe fora do portal. Deixar o link primeiro
+                            ensinaria o fluxo antigo a quem entra hoje.
+
+                            APARECE TAMBEM EM PUBLICACAO NOVA. Antes so aparecia em
+                            post ja salvo, porque o caminho no bucket era
+                            `posts/{eventId}/` e sem id o arquivo iria para
+                            "posts//arquivo" - orfao. Com `pastaMidia` o destino e a
+                            pasta escolhida em materiais/, sem id no caminho, e o
+                            motivo da trava deixou de existir. Esconder o campo na
+                            criacao obrigava a salvar um post vazio e reabrir so para
+                            subir a midia. */}
+                        {empresaId && (
+                            <div className="sm:col-span-2">
+                                <MediaUpload
+                                    empresaId={empresaId}
+                                    eventId={event.id}
+                                    midias={editableEvent.midias || []}
+                                    onChange={(midias) => handleChange('midias', midias)}
+                                    titulo={editableEvent.title}
+                                    pastaMidia={editableEvent.pastaMidia}
+                                    onPastaMidia={caminho => handleChange('pastaMidia', caminho)}
+                                    onThumb={thumb => { thumbPendente.current = thumb; }}
+                                    disabled={isClient}
+                                />
+                            </div>
+                        )}
+
                         {/* Link Material Bruto */}
                         <div>
                             <label className={labelStyle}>Link do Material (Bruto)</label>
+                            {/* O DRIVE E A ALTERNATIVA, e a tela diz isso. O campo
+                                continua aqui - material que ja mora no Drive, ou
+                                arquivo grande demais para o bucket, precisa de um
+                                lugar -, mas quem esta cadastrando hoje tem que saber
+                                que a peca sobe acima e nao depende deste link. */}
+                            {!isClient && (
+                                <p className="text-[10px] text-zinc-600 -mt-1 mb-1.5 leading-relaxed">
+                                    Alternativa: use quando o material ficar no Drive em vez de subir acima.
+                                </p>
+                            )}
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
                                     <input type="text" disabled={isClient} value={editableEvent.url || ''} onChange={(e) => handleChange('url', e.target.value)} placeholder="Pasta do Drive..." className={inputStyle} />
@@ -559,6 +819,21 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         </div>
                     )}
 
+                    {/* ANDAMENTO.
+                        Vem ANTES da conversa de proposito: quando o cliente abre
+                        o post, a primeira pergunta dele e "em que pe esta?", nao
+                        "o que foi dito?". O historico responde a primeira sem
+                        ninguem ter que digitar nada. */}
+                    {canReview && empresaId && (
+                        <div className="border-t border-white/5 pt-6">
+                            <PostTimeline
+                                empresaId={empresaId}
+                                eventId={event.id}
+                                userRole={userRole}
+                            />
+                        </div>
+                    )}
+
                     {/* CONVERSA */}
                     {canReview && empresaId && (
                         <div className="border-t border-white/5 pt-6">
@@ -571,6 +846,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             />
                         </div>
                     )}
+                </div>
+
+                </div>
                 </div>
 
                 {/* Footer */}
@@ -608,14 +886,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 Firestore recusam a escrita do cliente aqui, entao
                                 exibir o botao so produziria erro de permissao. */}
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
+                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
                                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                     {isSaving ? 'Salvando...' : (isCreating ? 'Agendar' : 'Salvar')}
                                 </button>
                             )}
                             <button onClick={requestClose} disabled={isSaving} aria-label="Fechar" className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform disabled:opacity-50"><X className="w-6 h-6" /></button>
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
+                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
                                     {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />)}
                                 </button>
                             )}

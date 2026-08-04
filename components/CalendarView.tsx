@@ -1,18 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CalendarEvent } from '../types';
-import EventDetailModal from './EventDetailModal';
+import { CalendarEvent, UserProfile } from '../types';
+import EventDetailModal, { ExtrasDoSave } from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
-import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
+import { getClientStage, CLIENT_STAGES, stageView, stageCurto } from '../utils/eventState';
 import { stripUndefined } from '../utils/firestore';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { getMediaPreview } from '../utils/media';
 import { PageHeader, SegmentedTabs, EmptyState } from './ui';
+import FeedPreview from './FeedPreview';
+import { formatTime } from '../utils/date';
+import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
+import { subscribeThumbs, salvarThumb } from '../utils/midia';
+import { registrarMudancas } from '../utils/historico';
+import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { AvatarGroup } from './AvatarBubble';
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
     Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
-    ImageOff, User, MessageSquareWarning
+    ImageOff, User, MessageSquareWarning, Clock, GripVertical
 } from 'lucide-react';
 
 interface CalendarViewProps {
@@ -20,6 +27,10 @@ interface CalendarViewProps {
     userRole?: 'agencia' | 'cliente';
     userEmail?: string | null;
     userName?: string | null;
+    /** Nome da empresa, para a previa do perfil. Sem ele usa o proprio id. */
+    empresaNome?: string;
+    /** @ do cliente, para a simulacao do post no modal. */
+    perfilHandle?: string | null;
 }
 
 // A grade mensal precisa de 1200px para caber sete colunas legiveis, o que no
@@ -31,6 +42,33 @@ const prefersListView = () => typeof window !== 'undefined' && window.innerWidth
 // feed usa: escolha manual, capa do Drive, material final, material bruto.
 const coverSourceOf = (event: CalendarEvent) =>
     event.previewUrl || event.coverUrl || event.finalUrl || event.url;
+
+/**
+ * Miniaturas geradas no upload, indexadas por eventId.
+ *
+ * Vive em contexto e nao em prop porque EventCover e EventThumb estao tres
+ * niveis abaixo, dentro de dois `map` - passar prop ate la significaria alterar
+ * a assinatura de tudo no caminho.
+ */
+const ThumbsContext = React.createContext<Record<string, string>>({});
+
+/**
+ * A miniatura do Firestore VENCE tudo.
+ *
+ * E ~40 KB contra os 3 MB do arquivo original, e e por isso que a grade do mes
+ * com 25 capas custa 1,4 MB de saida em vez de 100 MB. Ver utils/thumbnail.ts.
+ *
+ * Os campos antigos (previewUrl, coverUrl, links do Drive) continuam como
+ * fallback: todo post que existe hoje depende deles, e nao vai ganhar miniatura
+ * sozinho.
+ */
+const useThumb = (event: CalendarEvent): { src: string; local: boolean } | null => {
+    const thumbs = React.useContext(ThumbsContext);
+    const doFirestore = thumbs[event.id];
+    if (doFirestore) return { src: doFirestore, local: true };
+    const preview = getMediaPreview(coverSourceOf(event));
+    return preview && preview.kind === 'image' ? { src: preview.src, local: false } : null;
+};
 
 /** Icone do formato. O quadradinho colorido e o que faz o card ser lido de longe. */
 const formatIcon = (type?: string) => {
@@ -55,20 +93,21 @@ const EventCover: React.FC<{ event: CalendarEvent }> = ({ event }) => {
     // que nao ter faixa nenhuma. Desmontando a faixa inteira, o card volta a
     // ser exatamente o de um post sem capa.
     const [falhou, setFalhou] = useState(false);
-    const src = coverSourceOf(event);
-    const preview = getMediaPreview(src);
+    const capa = useThumb(event);
 
-    // Um src novo merece uma nova tentativa; sem isto o card ficava marcado
-    // como falho para sempre depois de "Resolver capas" trocar a imagem.
-    useEffect(() => { setFalhou(false); }, [src]);
+    // Uma fonte nova merece uma nova tentativa; sem isto o card ficava marcado
+    // como falho para sempre depois de um upload trocar a imagem.
+    useEffect(() => { setFalhou(false); }, [capa?.src]);
 
-    if (falhou || !preview || preview.kind !== 'image') return null;
+    if (falhou || !capa) return null;
     return (
         <div className="w-full aspect-[4/3] bg-[#111111] overflow-hidden">
             <img
-                src={preview.src}
+                src={capa.src}
                 alt=""
-                loading="lazy"
+                // Miniatura em data URI ja esta no documento que a tela acabou de
+                // ler: `loading=lazy` nela seria custo sem beneficio.
+                loading={capa.local ? undefined : 'lazy'}
                 className="w-full h-full object-cover"
                 onError={() => setFalhou(true)}
             />
@@ -87,20 +126,19 @@ const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, s
     // Mesmo motivo do EventCover: capa quebrada cai para o icone do formato em
     // vez de deixar um quadrado vazio onde deveria ter a peca.
     const [falhou, setFalhou] = useState(false);
-    const src = coverSourceOf(event);
-    const preview = getMediaPreview(src);
+    const capa = useThumb(event);
     const styles = getTypeStyles(event.type);
     const Icon = formatIcon(event.type);
 
-    useEffect(() => { setFalhou(false); }, [src]);
+    useEffect(() => { setFalhou(false); }, [capa?.src]);
 
-    if (!falhou && preview && preview.kind === 'image') {
+    if (!falhou && capa) {
         return (
             <div className={`${size} shrink-0 rounded-chip overflow-hidden bg-[#111111]`}>
                 <img
-                    src={preview.src}
+                    src={capa.src}
                     alt=""
-                    loading="lazy"
+                    loading={capa.local ? undefined : 'lazy'}
                     className="w-full h-full object-cover"
                     onError={() => setFalhou(true)}
                 />
@@ -114,7 +152,7 @@ const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, s
     );
 };
 
-const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName, empresaNome, perfilHandle }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -123,6 +161,51 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     const [saveError, setSaveError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (prefersListView() ? 'list' : 'grid'));
+
+    // O cliente nao move publicacao: as regras do Firestore so deixam ele tocar
+    // nos campos de aprovacao, entao arrastar produziria erro de permissao.
+    const podeEditar = userRole === 'agencia';
+
+    /**
+     * Equipe, so para resolver o rosto dos responsaveis no card.
+     *
+     * Uma leitura, e so para a agencia: as regras nao deixam o cliente ler
+     * usuarios/ da agencia, e a chamada renderia erro de permissao no console
+     * dele sem colocar nada na tela.
+     */
+    const [equipe, setEquipe] = useState<UserProfile[]>([]);
+    useEffect(() => {
+        if (!podeEditar) return;
+        lerEquipeAgencia().then(setEquipe).catch(console.error);
+    }, [podeEditar]);
+    const indiceEquipe = useMemo(() => indexarPorUid(equipe), [equipe]);
+
+    // ARRASTAR PARA REAGENDAR.
+    //
+    // O id viaja no dataTransfer do proprio evento, nao em estado do React.
+    // Estado e assincrono: entre o dragstart e o drop o React pode nao ter
+    // comitado ainda, e um arraste rapido soltaria com o id ainda nulo. O
+    // dataTransfer e sincrono e e para isso que existe.
+    //
+    // `dragId` sobrou apenas para o efeito visual de opacidade no card em
+    // movimento - se ele atrasar um frame, ninguem morre.
+    const [dragId, setDragId] = useState<string | null>(null);
+    const [dragOverDia, setDragOverDia] = useState<string | null>(null);
+
+    // PREVIA NO HOVER, renderizada em position:fixed no fim da arvore.
+    //
+    // Dentro da celula ela seria cortada: o container dos eventos tem
+    // overflow-y-auto, que recorta qualquer filho posicionado. Um unico cartao
+    // flutuante ancorado no cursor resolve e nunca duplica.
+    const [hover, setHover] = useState<{ event: CalendarEvent; x: number; y: number } | null>(null);
+
+    // Uma assinatura para TODAS as capas da empresa. Um listener por card seriam
+    // 30 conexoes pelo mesmo numero de leituras.
+    const [thumbs, setThumbs] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (!empresaId) return;
+        return subscribeThumbs(empresaId, setThumbs);
+    }, [empresaId]);
 
     const getDaysInMonth = (year: number, month: number) => {
         const date = new Date(year, month, 1);
@@ -195,6 +278,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                             id: doc.id,
                             date: (data.date as firebase.firestore.Timestamp)?.toDate() || new Date(),
                             approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
+                            prazoProducao: (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null,
                             coverResolvedAt: (data.coverResolvedAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
                             ...(data.metrics
                                 ? {
@@ -231,10 +315,41 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         setSelectedEvent({ id: '', date: date, title: '', type: 'Post', status: 'Pendente', proprietario: null, plataforma: 'Instagram', url: '', finalUrl: '', copy: '', description: '' });
     };
 
+    /**
+     * Reagenda para outro dia, arrastando.
+     *
+     * Grava SO o campo `date`. Um update com o objeto inteiro reenviaria estado
+     * possivelmente velho da tela - inclusive a aprovacao do cliente - e
+     * poderia desfazer uma decisao que chegou por onSnapshot no meio do arraste.
+     *
+     * A HORA E PRESERVADA: mover um post de terca para quarta nao pode jogar a
+     * publicacao das 18h de volta para meia-noite.
+     */
+    const handleDropOnDay = async (dia: Date, id: string) => {
+        setDragId(null);
+        setDragOverDia(null);
+        if (!id || !podeEditar) return;
+
+        const event = events.find(e => e.id === id);
+        if (!event) return;
+
+        const nova = new Date(dia);
+        nova.setHours(event.date.getHours(), event.date.getMinutes(), 0, 0);
+        if (nova.toDateString() === event.date.toDateString()) return; // mesmo dia: nada a fazer
+
+        try {
+            await db.collection('empresas').doc(empresaId).collection('events').doc(id).update({ date: nova });
+            await espelharPost(id, event.title, event.copy || '', nova);
+        } catch (error) {
+            console.error(error);
+            setLoadError('Não foi possível mover a publicação. Ela continua no dia original.');
+        }
+    };
+
     // Erros aqui eram apenas logados no console e o modal fechava de qualquer
     // forma - o usuario via a tela fechar e presumia que gravou. Agora a falha
     // mantem o modal aberto com a mensagem, para nao perder o que foi digitado.
-    const handleSaveEvent = async (eventData: CalendarEvent) => {
+    const handleSaveEvent = async (eventData: CalendarEvent, extras?: ExtrasDoSave) => {
         if (isSaving) return; // evita duplicar o evento com dois cliques
         setIsSaving(true);
         setSaveError('');
@@ -242,42 +357,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
         if (eventData.id) {
             try {
                 const { id, ...data } = eventData;
+                // Estado ANTES da escrita, para saber o que mudou. Lido daqui e
+                // nao do banco: `events` esta em onSnapshot, entao o array local
+                // e a versao que o usuario tinha na tela ao editar.
+                const antes = events.find(e => e.id === eventData.id) || null;
                 await db.collection('empresas').doc(empresaId).collection('events').doc(eventData.id).update(stripUndefined(data));
+                // Nao bloqueia o salvamento: registrar() nunca lanca.
+                registrarMudancas(empresaId, antes, eventData, userEmail || '', userName || null, userRole);
                 await espelharPost(eventData.id, eventData.title, eventData.copy || '', eventData.date);
                 // Sem setEvents: o onSnapshot ja reflete a escrita, inclusive
                 // pelo cache local do Firestore. Duplicar aqui podia inserir
                 // dois itens com o mesmo id por um instante.
 
-                // Sincroniza titulo e status com o card do Kanban.
-                //
-                // O vinculo e SEMPRE por eventId. Casar por titulo corromperia
-                // posts homonimos ("Story institucional" etc.), que sao a regra
-                // numa agencia, nao a excecao.
-                const tasksRef = db.collection('empresas').doc(empresaId).collection('kanban_tasks');
-                const tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
-
-                if (tasksSnapshot.empty) {
-                    // Evento anterior ao Kanban: cria o card que faltava em vez
-                    // de sequestrar o de outro post.
-                    await tasksRef.add({
-                        title: eventData.title || 'Nova Publicação',
-                        status: eventData.status,
-                        createdAt: new Date(),
-                        eventId: eventData.id,
-                        type: eventData.type,
-                        plataforma: eventData.plataforma
-                    });
-                } else {
-                    // type e plataforma tambem viajam para o card: sem eles o
-                    // quadro de producao nao tem como colorir nem filtrar por
-                    // formato, e o card fica dessincronizado se o formato muda.
-                    await Promise.all(tasksSnapshot.docs.map(doc => doc.ref.update({
-                        title: eventData.title || 'Nova Publicação',
-                        status: eventData.status,
-                        type: eventData.type,
-                        plataforma: eventData.plataforma
-                    })));
-                }
+                // NAO EXISTE MAIS espelho em kanban_tasks. O quadro de producao
+                // le events/ direto, entao titulo, status e formato ja chegam
+                // nele por esta mesma escrita. Manter o espelho significava duas
+                // escritas para o mesmo dado - e a segunda podia falhar sozinha,
+                // deixando calendario e quadro discordando do status.
             } catch (e) {
                 console.error(e);
                 setSaveError('Não foi possível salvar as alterações. Confira sua conexão e tente de novo.');
@@ -288,17 +384,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             try {
                 const { id, ...data } = eventData;
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(stripUndefined(data));
+                registrarMudancas(empresaId, null, { ...eventData, id: docRef.id }, userEmail || '', userName || null, userRole);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
 
-                // Cria o Card no Kanban com o status exato do modal
-                await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
-                    title: eventData.title || 'Nova Publicação',
-                    status: eventData.status,
-                    createdAt: new Date(),
-                    eventId: docRef.id,
-                    type: eventData.type,
-                    plataforma: eventData.plataforma
-                });
+                // CAPA DA MIDIA SUBIDA ANTES DE O POST EXISTIR. O upload acontece
+                // no modal, onde ainda nao ha id; a miniatura vem pelo `extras` e
+                // so aqui ha `docRef.id` para enderecar covers/{id}. Falhar nisto
+                // nao desfaz o post: sem miniatura o card cai no link de previa, o
+                // que e degradacao visual, nao perda de dado.
+                if (extras?.thumb) {
+                    await salvarThumb(empresaId, docRef.id, extras.thumb).catch(e =>
+                        console.error('Post criado, mas a capa não foi gravada:', e));
+                }
+
+                // Sem criar card de quadro: o post JA e o card. Ver a nota no
+                // cabecalho de ClientProductionView.
             } catch (e) {
                 console.error(e);
                 setSaveError('Não foi possível criar o agendamento. Confira sua conexão e tente de novo.');
@@ -321,10 +421,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             await empresaRef.collection('events').doc(eventId).delete();
             await empresaRef.collection('Agenciaapk').doc(eventId).delete();
 
-            // Sem isto o card continua no quadro apontando para um evento que
-            // nao existe mais, e clicar nele so mostra "evento nao encontrado".
-            const orphanTasks = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
-            await Promise.all(orphanTasks.docs.map(doc => doc.ref.delete()));
+            // Espelho antigo do quadro: apagado junto enquanto existir. Assim o
+            // cliente que ainda tem documentos de kanban_tasks nao acumula lixo
+            // apontando para posts excluidos.
+            const espelhos = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
+            await Promise.all(espelhos.docs.map(doc => doc.ref.delete()));
+
+            // As subtarefas do conteudo vao com ele: etapa de producao de um post
+            // que nao existe mais nao tem onde aparecer, e ficaria contando no
+            // progresso de ninguem.
+            const subs = await empresaRef.collection('subtarefas').where('eventId', '==', eventId).get();
+            await Promise.all(subs.docs.map(doc => doc.ref.delete()));
 
             setSelectedEvent(null);
         } catch (e) {
@@ -350,6 +457,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     };
 
     return (
+        <ThumbsContext.Provider value={thumbs}>
         <div className="text-zinc-100 font-sans selection:bg-[#FABE01] selection:text-black">
             <PageHeader
                 title="Calendário Editorial"
@@ -374,7 +482,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 }
             />
 
-            <div className="bg-[#1A1A1A] rounded-card border border-white/5 shadow-card overflow-hidden">
+            {/* Calendario e previa do perfil lado a lado.
+                A previa saiu da Visao Geral do cliente e passou a viver aqui: ela
+                so faz sentido olhando o calendario, e ter a mesma grade em duas
+                secoes do menu era redundancia - dois caminhos para a mesma
+                informacao. Vale para os dois lados, agencia e cliente. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+            <div className="min-w-0 bg-[#1A1A1A] rounded-card border border-white/5 shadow-card overflow-hidden">
                 <header className="flex flex-col sm:flex-row justify-between sm:items-center p-4 md:p-5 border-b border-white/5 gap-3">
                     <h2 className="text-lg font-bold text-white capitalize flex items-center gap-2">
                         <CalendarIcon className="w-5 h-5 text-[#FABE01] shrink-0" />
@@ -411,7 +525,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                         const dayEvents = events.filter(e => e.date.toDateString() === date.toDateString());
                                         const isTodayDate = isToday(date);
                                         return (
-                                            <div key={date.toISOString()} className={`group relative min-h-[110px] sm:min-h-[170px] p-2 sm:p-2.5 border-b border-r border-white/5 flex flex-col transition-colors ${isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'}`}>
+                                            <div
+                                                key={date.toISOString()}
+                                                // Alvo de soltar. preventDefault no dragOver e o que
+                                                // autoriza o drop - sem ele o navegador recusa e o
+                                                // cursor mostra "proibido" sem explicacao.
+                                                onDragOver={podeEditar ? (e) => { e.preventDefault(); setDragOverDia(date.toDateString()); } : undefined}
+                                                onDragLeave={podeEditar ? () => setDragOverDia(prev => prev === date.toDateString() ? null : prev) : undefined}
+                                                onDrop={podeEditar ? (e) => {
+                                                    e.preventDefault();
+                                                    handleDropOnDay(date, e.dataTransfer.getData('text/plain'));
+                                                } : undefined}
+                                                className={`group relative min-h-[110px] sm:min-h-[170px] p-2 sm:p-2.5 border-b border-r border-white/5 flex flex-col transition-colors ${
+                                                    dragOverDia === date.toDateString()
+                                                        ? 'bg-[#FABE01]/15 ring-1 ring-inset ring-[#FABE01]'
+                                                        : isTodayDate ? 'bg-[#FABE01]/5' : 'bg-[#111111] hover:bg-[#1A1A1A]'
+                                                }`}
+                                            >
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isTodayDate ? 'bg-[#FABE01] text-black shadow-[0_0_10px_rgba(250,190,1,0.5)]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{date.getDate()}</span>
                                                     <button onClick={(e) => { e.stopPropagation(); handleCreateEventForDate(date); }} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 rounded-control transition-all"><Plus className="w-4 h-4" /></button>
@@ -430,11 +560,27 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                             <div
                                                                 key={event.id}
                                                                 onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }}
+                                                                draggable={podeEditar}
+                                                                onDragStart={(e) => {
+                                                                    e.dataTransfer.setData('text/plain', event.id);
+                                                                    e.dataTransfer.effectAllowed = 'move';
+                                                                    setDragId(event.id);
+                                                                }}
+                                                                onDragEnd={() => { setDragId(null); setDragOverDia(null); }}
+                                                                // A previa segue o cursor. onMouseMove em vez de so
+                                                                // onMouseEnter porque o card e alto: entrando pelo topo, um
+                                                                // cartao ancorado no ponto de entrada apareceria longe do
+                                                                // ponteiro.
+                                                                onMouseEnter={(e) => setHover({ event, x: e.clientX, y: e.clientY })}
+                                                                onMouseMove={(e) => setHover({ event, x: e.clientX, y: e.clientY })}
+                                                                onMouseLeave={() => setHover(null)}
                                                                 // Borda neutra de proposito: `${styles.border}/30` seria uma
                                                                 // classe montada em tempo de execucao, e o Tailwind so gera o
                                                                 // que encontra literalmente no fonte. O fundo tingido ja
                                                                 // carrega a cor do formato.
-                                                                className={`cursor-pointer rounded-chip border border-white/5 hover:border-white/20 transition-colors overflow-hidden ${styles.bg}`}
+                                                                className={`rounded-chip border border-white/5 hover:border-white/20 transition-all overflow-hidden ${styles.bg} ${
+                                                                    podeEditar ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                                                                } ${dragId === event.id ? 'opacity-40' : ''}`}
                                                             >
                                                                 <EventCover event={event} />
                                                                 <div className="p-2.5 space-y-2">
@@ -442,16 +588,35 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         {event.title || '(Sem título)'}
                                                                     </p>
                                                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        {formatTime(event.date) && (
+                                                                            <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-zinc-300 bg-black/30 px-1.5 py-0.5 rounded-full">
+                                                                                <Clock className="w-2.5 h-2.5" />{formatTime(event.date)}
+                                                                            </span>
+                                                                        )}
                                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
                                                                         {/* Estagio direto no card: sem isso o contador do menu
                                                                             dizia "3 pendentes" e o usuario tinha que abrir post
                                                                             por post para descobrir quais. */}
-                                                                        {stageOf(event) !== 'em_producao' && (
-                                                                            <span
-                                                                                className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`}
-                                                                                title={stage.label}
-                                                                            />
-                                                                        )}
+                                                                        {(() => {
+                                                                            const curto = stageCurto(stageOf(event), userRole);
+                                                                            return curto ? (
+                                                                                <span
+                                                                                    className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-semibold ${curto.classe}`}
+                                                                                    title={stageView(stageOf(event), userRole).hint}
+                                                                                >
+                                                                                    {curto.texto}
+                                                                                </span>
+                                                                            ) : null;
+                                                                        })()}
+                                                                        {/* Atraso de producao: so a agencia. */}
+                                                                        {podeEditar && (() => {
+                                                                            const prazo = slaAtual(event);
+                                                                            return prazo?.estourado ? (
+                                                                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full">
+                                                                                    <AlertTriangle className="w-2.5 h-2.5" />{Math.abs(prazo.dias)}d
+                                                                                </span>
+                                                                            ) : null;
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -517,7 +682,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                         </button>
                                                     </div>
 
-                                                    <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                                                    <div className="grid gap-2.5 sm:grid-cols-2">
                                                         {dayEvents.map(event => {
                                                             const styles = getTypeStyles(event.type);
                                                             const stage = CLIENT_STAGES[stageOf(event)];
@@ -540,20 +705,41 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                                 <h4 className="text-white font-semibold text-sm leading-snug line-clamp-2">
                                                                                     {event.title || '(Sem título)'}
                                                                                 </h4>
-                                                                                <span className={`shrink-0 w-2 h-2 mt-1.5 rounded-full ${stage.dot}`} title={stage.label} />
                                                                             </div>
                                                                             <p className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1.5 truncate">
+                                                                                {formatTime(event.date) && (
+                                                                                    <>
+                                                                                        <Clock className="w-3 h-3 shrink-0" />
+                                                                                        <span className="text-zinc-300 font-medium">{formatTime(event.date)}</span>
+                                                                                        <span className="text-zinc-700">·</span>
+                                                                                    </>
+                                                                                )}
                                                                                 {event.plataforma === 'Instagram'
                                                                                     ? <Instagram className="w-3 h-3 shrink-0" />
                                                                                     : <FileText className="w-3 h-3 shrink-0" />}
                                                                                 {event.plataforma || 'Sem plataforma'}
-                                                                                {event.proprietario && (
+                                                                                {/* RESPONSAVEIS: os mesmos da aba Gestão.
+                                                                                    O texto solto `proprietario` so aparece
+                                                                                    quando o post e antigo e ninguem foi
+                                                                                    atribuido - senao a agenda mostraria um
+                                                                                    dono e a gestão, outro. */}
+                                                                                {podeEditar && (event.responsaveis?.length ? (
+                                                                                    <>
+                                                                                        <span className="text-zinc-700">·</span>
+                                                                                        <AvatarGroup
+                                                                                            pessoas={pessoasDeUids(event.responsaveis, indiceEquipe)}
+                                                                                            tamanho="xs"
+                                                                                            limite={2}
+                                                                                            anelClasse="ring-[#1A1A1A]"
+                                                                                        />
+                                                                                    </>
+                                                                                ) : event.proprietario ? (
                                                                                     <>
                                                                                         <span className="text-zinc-700">·</span>
                                                                                         <User className="w-3 h-3 shrink-0" />
                                                                                         <span className="truncate">{event.proprietario}</span>
                                                                                     </>
-                                                                                )}
+                                                                                ) : null)}
                                                                             </p>
                                                                         </div>
                                                                     </div>
@@ -564,13 +750,22 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                     <div className="flex items-center gap-1.5 flex-wrap mt-3 pt-2.5 border-t border-white/5">
                                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
                                                                         <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${stage.bg} ${stage.text} ${stage.border}`}>
-                                                                            {stage.label}
+                                                                            {stageView(stageOf(event), userRole).label}
                                                                         </span>
                                                                         {pediuAjuste && (
                                                                             <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
                                                                                 <MessageSquareWarning className="w-3 h-3" /> ajuste
                                                                             </span>
                                                                         )}
+                                                                        {/* Prazo de producao: interno. */}
+                                                                        {podeEditar && (() => {
+                                                                            const prazo = slaAtual(event);
+                                                                            return prazo && prazo.tone !== 'tranquilo' ? (
+                                                                                <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(prazo.tone)}`}>
+                                                                                    <Clock className="w-3 h-3" /> {prazo.label}
+                                                                                </span>
+                                                                            ) : null;
+                                                                        })()}
                                                                         <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-zinc-600">
                                                                             {temMaterial
                                                                                 ? <><Paperclip className="w-3 h-3" /> material</>
@@ -591,9 +786,80 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                     </>
                 )}
             </div>
+
+                <div className="w-full max-w-[340px] mx-auto xl:mx-0 xl:sticky xl:top-4">
+                    <FeedPreview
+                        events={events}
+                        empresaNome={empresaNome || empresaId}
+                        onSelectEvent={setSelectedEvent}
+                        thumbs={thumbs}
+                    />
+                </div>
+            </div>
+
+            {/* PREVIA NO HOVER.
+                position:fixed e no fim da arvore de proposito: dentro da celula o
+                container de eventos tem overflow-y-auto e recortaria o cartao.
+                Deslocado 14px do cursor para nao ficar embaixo do ponteiro, e
+                virado para a esquerda/cima perto da borda da janela. */}
+            {hover && (
+                <div
+                    className="hidden md:block fixed z-50 w-64 pointer-events-none"
+                    style={{
+                        left: Math.min(hover.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 272),
+                        top: Math.min(hover.y + 14, (typeof window !== 'undefined' ? window.innerHeight : 800) - 300)
+                    }}
+                    aria-hidden="true"
+                >
+                    <div className="bg-[#1A1A1A] border border-white/10 rounded-card shadow-card overflow-hidden">
+                        <EventCover event={hover.event} />
+                        <div className="p-3 space-y-2">
+                            <p className="text-sm font-semibold text-white leading-snug line-clamp-3">
+                                {hover.event.title || '(Sem título)'}
+                            </p>
+                            <p className="text-[11px] text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                                <CalendarIcon className="w-3 h-3 shrink-0" />
+                                {hover.event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                {formatTime(hover.event.date) && <>· <Clock className="w-3 h-3 shrink-0" />{formatTime(hover.event.date)}</>}
+                                {hover.event.plataforma && <>· {hover.event.plataforma}</>}
+                            </p>
+                            {hover.event.copy && (
+                                <p className="text-[11px] text-zinc-500 leading-relaxed line-clamp-4 whitespace-pre-wrap">
+                                    {hover.event.copy}
+                                </p>
+                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${getTypeStyles(hover.event.type).label}`}>
+                                    {hover.event.type}
+                                </span>
+                                <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${
+                                    CLIENT_STAGES[stageOf(hover.event)].bg
+                                } ${CLIENT_STAGES[stageOf(hover.event)].text} ${CLIENT_STAGES[stageOf(hover.event)].border}`}>
+                                    {stageView(stageOf(hover.event), userRole).label}
+                                </span>
+                                {podeEditar && (() => {
+                                    const prazo = slaAtual(hover.event);
+                                    return prazo ? (
+                                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(prazo.tone)}`}>
+                                            {prazo.label}
+                                        </span>
+                                    ) : null;
+                                })()}
+                            </div>
+                            {podeEditar && (
+                                <p className="text-[10px] text-zinc-600 flex items-center gap-1 pt-1">
+                                    <GripVertical className="w-3 h-3" /> arraste para outro dia
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {selectedEvent && (
                 <EventDetailModal
                     event={selectedEvent}
+                    perfilHandle={perfilHandle}
                     onSave={handleSaveEvent}
                     onDelete={handleDeleteEvent}
                     onClose={() => { setSelectedEvent(null); setSaveError(''); }}
@@ -605,6 +871,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 />
             )}
         </div>
+        </ThumbsContext.Provider>
     );
 };
 

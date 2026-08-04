@@ -32,13 +32,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Bootstrap da agencia por e-mail. Precisa ficar igual a lista
-    // AGENCY_EMAILS em constants.ts - sem isso o primeiro admin nao
-    // conseguiria criar o proprio documento com role 'agencia'.
-    function isAgencyEmail() {
+    // ADMINISTRADORES. Precisa ficar igual a ADMIN_EMAILS em constants.ts.
+    //
+    // Duas funcoes: bootstrap (o primeiro admin precisa conseguir criar o
+    // proprio documento com role 'agencia') e poder administrativo.
+    //
+    // Por que a lista fica aqui e nao num campo do documento: um `isAdmin:
+    // true` em usuarios/{uid} exigiria uma regra protegendo esse campo
+    // especifico, e um esquecimento ali reabre a escalacao de privilegio. Esta
+    // lista nenhum SDK escreve.
+    function isAdminEmail() {
       return isSignedIn() && request.auth.token.email in [
-        'briciomarketing@gmail.com',
-        'briciomarketing@mail.com'
+        'pedro.vidal2608@gmail.com',
+        'briciomarketing@gmail.com'
       ];
     }
 
@@ -51,11 +57,24 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
     }
 
+    // EQUIPE DA AGENCIA: admin ou colaborador. Da acesso ao trabalho de
+    // conteudo em todos os clientes - calendario, producao, aprovacao,
+    // relatorios, arquivos.
+    //
     // Confiar no campo 'role' so e seguro porque as regras de
     // usuarios/{userId} impedem que o proprio usuario o altere.
     function isAgency() {
-      return isAgencyEmail()
+      return isAdminEmail()
         || (isVerified() && hasUserDoc() && myUserDoc().role == 'agencia');
+    }
+
+    // ADMINISTRADOR: gerencia PESSOAS e CLIENTES.
+    //
+    // Antes este degrau nao existia - `role: 'agencia'` dava tudo, e qualquer
+    // pessoa da equipe podia se promover, mudar o vinculo de outra ou excluir
+    // um cliente com os posts dentro.
+    function isAdmin() {
+      return isAdminEmail();
     }
 
     function belongsTo(empresaId) {
@@ -87,7 +106,11 @@ service cloud.firestore {
 
       // Auto-cadastro: apenas o proprio uid, sempre como cliente sem vinculo.
       // Impede que alguem nasca 'agencia' ou ja vinculado a uma empresa.
-      allow create: if isAgency()
+      //
+      // Criar conta para outra pessoa e privilegio de admin: um colaborador
+      // que pudesse criar documento arbitrario poderia se dar um segundo
+      // usuario 'agencia' e contornar todo o resto.
+      allow create: if isAdmin()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == 'cliente'
@@ -101,16 +124,37 @@ service cloud.firestore {
       // aplicado no cliente (utils/avatar.ts) e repetido aqui, porque validacao
       // que so existe no front nao e validacao: sem isto alguem poderia gravar
       // 1 MiB por documento chamando o SDK direto.
-      allow update: if isAgency()
+      // `cargo` entra na lista de campos congelados junto de role e empresaId.
+      // Cargo define como a pessoa e vista pela equipe; quem se auto-intitula
+      // "Diretor" cria confusao, nao hierarquia.
+      allow update: if isAdmin()
                     || (isSignedIn()
                         && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
                         && request.resource.data.empresaId == resource.data.empresaId
+                        && request.resource.data.get('cargo', null) == resource.data.get('cargo', null)
                         && (!('fotoUrl' in request.resource.data)
                             || request.resource.data.fotoUrl == null
                             || request.resource.data.fotoUrl.size() <= 300000));
 
-      allow delete: if isAgency();
+      // Remover conta e administrativo. O colaborador nao apaga colega nem
+      // cliente.
+      allow delete: if isAdmin();
+
+      // DADOS FINANCEIROS DA PESSOA - subcolecao, nao campo.
+      //
+      // O documento usuarios/{uid} e lido pela EQUIPE INTEIRA (o painel precisa
+      // listar as pessoas). Um campo `financeiro` ali dentro estaria visivel
+      // para todo colaborador, e "so admin ve" seria mentira da interface: o
+      // dado chegaria no navegador de quem nao deveria. O Firestore nao filtra
+      // campo na leitura - quem le o documento le tudo.
+      //
+      // Admin ve de todos; cada pessoa ve o proprio. Escrita e so do admin:
+      // ninguem edita o proprio contrato.
+      match /_financeiro/{docId} {
+        allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+        allow write: if isAdmin();
+      }
     }
 
     // ---------------------------------------------------------------
@@ -120,10 +164,22 @@ service cloud.firestore {
     match /empresas/{empresaId} {
 
       // Cliente le a propria empresa; agencia le todas.
+      //
+      // ATENCAO ao que se grava neste documento: o CLIENTE LE TODOS OS CAMPOS
+      // dele. `notasInternas` tem nome enganoso - nao e escondido do cliente,
+      // porque o Firestore nao filtra campo na leitura. Segredo de verdade vai
+      // para _financeiro/ abaixo, ou para outra subcolecao restrita.
       allow read: if isAgency() || belongsTo(empresaId);
 
-      // Criar, renomear e excluir empresa e privilegio da agencia.
-      allow write: if isAgency();
+      // Criar, renomear e excluir empresa e privilegio de ADMIN.
+      //
+      // Excluir a empresa e a acao mais destrutiva do sistema - leva o
+      // calendario, os relatorios e o historico de aprovacao com ela -, e
+      // estava liberada para qualquer conta com role 'agencia'.
+      //
+      // O cadastro do cliente (segmento, contato, contrato) mora neste
+      // documento, entao editar ficha tambem e administrativo.
+      allow write: if isAdmin();
 
       // events: o cliente le tudo, mas nao apaga nem cria publicacao. O papel
       // dele e aprovar ou pedir ajuste - a producao e da agencia. Antes tinha
@@ -169,6 +225,20 @@ service cloud.firestore {
         allow write: if isAgency();
       }
 
+      // SUBTAREFAS: as etapas de producao de um conteudo (roteiro, design,
+      // revisao). SO A AGENCIA, nem leitura para o cliente - e a divisao interna
+      // do trabalho, e mostra-la daria ao cliente um painel de cobranca sobre
+      // quem da equipe esta atrasado em que.
+      match /subtarefas/{docId} {
+        allow read, write: if isAgency();
+      }
+
+      // kanban_tasks: MODELO ANTIGO, mantido apenas para limpeza.
+      //
+      // O quadro de producao lia esta colecao como se fosse a verdade, e ela era
+      // um espelho de events/ - dava para criar card aqui sem post na agenda, e
+      // esse card nao movia nada nem tinha conteudo. Hoje o quadro le events/
+      // direto. A regra continua de pe para o app conseguir APAGAR o que sobrou.
       match /kanban_tasks/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
@@ -178,13 +248,95 @@ service cloud.firestore {
       match /drive_links/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+
+      // ESTUDO DE MARCA - personas, tom e estrategia de conteudo.
+      //
+      // LEITURA E ESCRITA PARA OS DOIS, agencia e cliente, e isso e deliberado: e
+      // a unica coisa do portal construida a quatro maos. O cliente conhece o
+      // publico, a promessa e o que nao pode ser dito; a agencia traduz isso em
+      // conteudo. Um estudo que so a agencia editasse viraria transcricao de
+      // reuniao envelhecendo, e um que so o cliente editasse nao seria mantido.
+      //
+      // Nao ha segredo aqui: e informacao que os dois lados PRECISAM ver para o
+      // trabalho sair certo. Dado sigioso continua em _financeiro/, que segue
+      // restrito a admin.
+      match /marca/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
       match /_meta/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+      // HISTORICO das publicacoes: o "andamento" que o cliente ve.
+      //
+      // SO ESCRITA, NUNCA EDICAO. Nao ha allow update nem delete: a serventia de
+      // um historico e ser prova, e prova que se edita nao serve. Registro
+      // errado se corrige com registro novo.
+      //
+      // `por` e `porPapel` precisam refletir quem esta escrevendo, senao o
+      // cliente poderia gravar uma entrada assinada como agencia - mesma
+      // protecao que post_comments tem.
+      match /historico/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow create: if (isAgency() || belongsTo(empresaId))
+                      && request.resource.data.por == request.auth.token.email
+                      && request.resource.data.porPapel == (isAgency() ? 'agencia' : 'cliente');
+        allow update, delete: if false;
+      }
+
+      // MINIATURAS das publicacoes: um documento por evento, com a capa em
+      // data URI de ~40 KB.
+      //
+      // Colecao propria, e nao campo dentro do evento, por causa de custo: o
+      // subscribePendingCounts le a colecao events inteira para contar
+      // pendencias, e com a miniatura la dentro cada contagem arrastaria 40 KB
+      // por post - dezenas de MB por abertura do painel com 20 clientes.
+      //
+      // Escrita e da agencia: a miniatura e derivada do material que ela produz.
+      // O cliente le, porque e o que a grade e a previa do feed exibem para ele.
+      match /covers/{docId} {
+        allow read: if isAgency() || belongsTo(empresaId);
+        allow write: if isAgency()
+                     // Teto repetido aqui: o limite de 120 KB aplicado no
+                     // navegador (utils/thumbnail.ts) nao vale nada se alguem
+                     // chamar o SDK direto. O documento do Firestore aceita
+                     // 1 MiB, e 30 posts com 1 MiB cada seriam 30 MB por
+                     // abertura de tela.
+                     && request.resource.data.thumb is string
+                     && request.resource.data.thumb.size() <= 200000;
+      }
+
       // Espelho de leitura escrito pelo CalendarView.
       match /Agenciaapk/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+
+      // FINANCEIRO DO CLIENTE - so admin, nem o proprio cliente.
+      //
+      // Mesmo motivo do _financeiro do usuario: subcolecao e a unica forma de
+      // esconder do cliente, que le o documento da empresa dele por inteiro.
+      // Colaborador tambem nao ve - contrato e valor nao sao dado de producao.
+      match /_financeiro/{docId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // CONFIGURACOES GERAIS DO APP - configuracoes/{doc}
+    //
+    // Hoje: configuracoes/cargos { lista: [string], atualizadoEm, atualizadoPor }
+    //
+    // LEITURA para qualquer pessoa autenticada, inclusive cliente. A lista de
+    // cargos nao e segredo - e um vocabulario - e o portal do cliente exibe o
+    // cargo de quem atende. Restringir a agencia so produziria erro de permissao
+    // no console de uma tela que apenas mostra a palavra "Designer".
+    //
+    // ESCRITA so de admin: quem muda o vocabulario da equipe muda o significado
+    // de todo cargo ja gravado nas pessoas.
+    // ---------------------------------------------------------------
+
+    match /configuracoes/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // ---------------------------------------------------------------

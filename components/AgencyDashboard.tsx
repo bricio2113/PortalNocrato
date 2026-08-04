@@ -4,13 +4,23 @@ import { DELETE_USER_ENDPOINT } from '../constants';
 import { subscribePendingCounts, PendingCounts } from '../utils/posts';
 import { UserProfile } from '../types';
 import { getDisplayName, getInitials, isSafeImageSrc } from '../utils/avatar';
-import AgencyCalendarBoard from './AgencyCalendarBoard';
+import { isAdmin, permissionLevel, PERMISSION_LABEL } from '../utils/permissions';
+import { Empresa } from '../types';
+import { parseEmpresa, statusLabel } from '../utils/empresas';
+import ClientFormModal from './ClientFormModal';
+import PersonDetailModal, { PersonDetailAcao, Bloco } from './PersonDetailModal';
+import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
+import SettingsView from './SettingsView';
+import AgencyOverview from './AgencyOverview';
+import AgencyCalendarView from './AgencyCalendarView';
+import PersonFormModal from './PersonFormModal';
+import TasksView from './TasksView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
-    LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus, Save,
+    LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, SlidersHorizontal, ListChecks
 } from 'lucide-react';
 
 interface UserData {
@@ -21,14 +31,19 @@ interface UserData {
     nome?: string | null;
     sobrenome?: string | null;
     fotoUrl?: string | null;
+    /** Profissao: "Social Media", "Designer". So admin altera (ver regras). */
+    cargo?: string | null;
+    /** Contato. A propria pessoa mantem, igual a nome e foto. */
+    telefone?: string | null;
 }
 
-interface EmpresaData {
-    id: string;
-    nome: string;
-}
+// A ficha do cliente agora e um tipo compartilhado (types.ts): antes eram so
+// id e nome, e todo contato e contrato vivia fora do sistema.
+type EmpresaData = Empresa;
 
-type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+type ClientSection = 'overview' | 'calendar' | 'production' | 'files' | 'reports';
+
+type Aba = 'overview' | 'calendar' | 'tasks' | 'clients' | 'team' | 'settings';
 
 interface AgencyDashboardProps {
     handleLogout: () => void;
@@ -39,7 +54,14 @@ interface AgencyDashboardProps {
      * obrigavam voltar ao painel so para sair do calendario e entrar na
      * producao do MESMO cliente.
      */
-    onOpenClient: (empresaId: string, nome: string, section?: ClientSection) => void;
+    /** `eventId` abre o cliente JA com o conteudo aberto (ver AgencyOverview). */
+    onOpenClient: (empresaId: string, nome: string, section?: ClientSection, eventId?: string) => void;
+    /**
+     * Aba em que abrir. Vem de fora porque entrar num cliente DESMONTA este
+     * componente: sem isso, voltar caia sempre na Visao Geral.
+     */
+    abaInicial?: string;
+    onTrocarAba?: (aba: string) => void;
     /** Abre a tela de perfil do proprio usuario da agencia. */
     onOpenProfile?: () => void;
     profile?: UserProfile | null;
@@ -81,6 +103,19 @@ const EmptyState: React.FC<{
  * um na aba Clientes -, ambos com os mesmos dois botoes e nenhum dado. O card
  * agora carrega o estado do cliente, e a superficie inteira e clicavel: abrir o
  * cliente e a acao principal, e os atalhos de secao sao secundarios.
+ *
+ * NOVO DESENHO. Os tres numeros ficavam soltos lado a lado e brigavam com o nome
+ * pelo mesmo peso visual; o icone de predio era o mesmo em todo cartao, entao nao
+ * distinguia nada; e as acoes de editar/excluir ficavam sempre acesas ao lado do
+ * status, competindo com ele. Agora:
+ *
+ *   - a MARCA e a inicial do cliente, nao um icone generico repetido;
+ *   - o STATUS e um ponto colorido junto ao nome, nao uma etiqueta que disputa o
+ *     canto com dois botoes;
+ *   - editar e excluir SO APARECEM no hover, porque nao e o que se faz aqui;
+ *   - os numeros viram uma faixa dividida, um degrau abaixo do titulo;
+ *   - o que exige acao ganha uma FAIXA no topo, na cor da urgencia - da para
+ *     varrer nove cartoes e achar o problema sem ler numero nenhum.
  */
 const ClientCard: React.FC<{
     empresa: EmpresaData;
@@ -88,9 +123,46 @@ const ClientCard: React.FC<{
     usuarios: number;
     onOpen: (section?: ClientSection) => void;
     onDelete?: () => void;
-}> = ({ empresa, stats, usuarios, onOpen, onDelete }) => {
+    onEdit?: () => void;
+}> = ({ empresa, stats, usuarios, onOpen, onDelete, onEdit }) => {
     const ajustes = stats?.aguardandoAgencia || 0;
     const aguardando = stats?.aguardandoCliente || 0;
+    const atrasados = stats?.atrasados || 0;
+
+    const urgencia = atrasados > 0 ? 'erro' : ajustes > 0 ? 'atencao' : usuarios === 0 ? 'aviso' : null;
+
+    const BORDA = {
+        erro: 'border-red-500/25 hover:border-red-500/50',
+        atencao: 'border-[#FABE01]/25 hover:border-[#FABE01]/50',
+        aviso: 'border-white/5 hover:border-white/15',
+        normal: 'border-white/5 hover:border-[#FABE01]/40'
+    };
+
+    const FAIXA = {
+        erro: 'bg-red-500/[0.08] text-red-400 border-red-500/20',
+        atencao: 'bg-[#FABE01]/[0.08] text-[#FABE01] border-[#FABE01]/20',
+        aviso: 'bg-white/[0.03] text-zinc-400 border-white/10'
+    };
+
+    const aviso = atrasados > 0
+        ? `${atrasados} conteúdo(s) com prazo estourado`
+        : ajustes > 0
+            ? `${ajustes} ajuste(s) esperando a equipe`
+            : usuarios === 0
+                ? 'Ninguém do cliente consegue entrar ainda'
+                : null;
+
+    // Iniciais do cliente. Duas letras de palavras diferentes quando ha ("Dra.
+    // Sylvia" -> DS); uma so quando e nome unico.
+    const iniciais = empresa.nome
+        .split(/\s+/)
+        .filter(p => /[a-zA-ZÀ-ÿ0-9]/.test(p))
+        .slice(0, 2)
+        .map(p => p[0])
+        .join('')
+        .toUpperCase() || '?';
+
+    const status = statusLabel(empresa.status);
 
     return (
         <div
@@ -98,68 +170,109 @@ const ClientCard: React.FC<{
             tabIndex={0}
             onClick={() => onOpen()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
-            className={`group text-left bg-[#1A1A1A] border rounded-card p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
-                ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-white/5 hover:border-[#FABE01]/40'
+            className={`group relative flex flex-col h-full text-left bg-[#1A1A1A] border rounded-card overflow-hidden cursor-pointer transition-colors focus:outline-none focus-visible:border-[#FABE01] ${
+                BORDA[urgencia || 'normal']
             }`}
         >
-            <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 shrink-0 rounded-control bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
-                    <Building2 className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <h3 className="text-white font-bold leading-tight truncate group-hover:text-[#FABE01] transition-colors">
-                        {empresa.nome}
-                    </h3>
-                    <p className="text-xs text-zinc-600 truncate mt-0.5">
-                        {usuarios === 0 ? 'Nenhum usuário vinculado' : `${usuarios} usuário(s)`}
-                    </p>
-                </div>
-                {onDelete && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                        aria-label={`Excluir ${empresa.nome}`}
-                        className="text-zinc-700 hover:text-red-500 p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
-                    >
-                        <Trash2 className="w-4 h-4" />
-                    </button>
-                )}
-            </div>
-
-            {/* Numeros do cliente: e o que responde "como esta esse cliente?"
-                sem precisar entrar nele. */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
-                <div>
-                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">No mês</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.noMes : '—'}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Publicados</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.publicados : '—'}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Total</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.total : '—'}</p>
-                </div>
-            </div>
-
-            {(ajustes > 0 || aguardando > 0) && (
-                <div className="flex flex-wrap gap-1.5 mb-4">
-                    {ajustes > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-control">
-                            <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s) pedido(s)
-                        </span>
-                    )}
-                    {aguardando > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/5 text-zinc-400 px-2 py-1 rounded-control">
-                            {aguardando} aguardando o cliente
-                        </span>
-                    )}
+            {/* FAIXA DE URGENCIA. Uma linha, no topo, na cor do problema. */}
+            {aviso && urgencia && (
+                <div className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold border-b ${FAIXA[urgencia]}`}>
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{aviso}</span>
                 </div>
             )}
 
+            <div className="p-5">
+                <div className="flex items-start gap-3">
+                    <span className="w-11 h-11 shrink-0 rounded-control bg-[#FABE01]/10 text-[#FABE01] font-bold text-sm flex items-center justify-center">
+                        {iniciais}
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                            {/* Ponto de status junto ao nome: informa sem ocupar
+                                uma etiqueta inteira. O texto vive no title. */}
+                            <span
+                                title={status.label}
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    empresa.status === 'encerrado' ? 'bg-zinc-600'
+                                        : empresa.status === 'pausado' ? 'bg-amber-400'
+                                        : 'bg-emerald-400'
+                                }`}
+                            />
+                            <h3 className="text-white font-bold leading-tight truncate group-hover:text-[#FABE01] transition-colors">
+                                {empresa.nome}
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {empresa.handle && (
+                                <span className="text-[11px] text-zinc-500 truncate">@{empresa.handle}</span>
+                            )}
+                            {empresa.segmento && (
+                                <span className="text-[10px] font-medium text-zinc-400 bg-white/5 px-1.5 py-0.5 rounded-full truncate max-w-[10rem]">
+                                    {empresa.segmento}
+                                </span>
+                            )}
+                            {(empresa.status === 'pausado' || empresa.status === 'encerrado') && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${status.cor}`}>
+                                    {status.label}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Editar e excluir aparecem no hover. Sempre acesas, nove
+                        cartoes viravam dezoito botoes de manutencao na tela. */}
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        {onEdit && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                                aria-label={`Editar ficha de ${empresa.nome}`}
+                                title="Editar ficha"
+                                className="text-zinc-500 hover:text-white p-1.5 rounded-full hover:bg-white/5 transition-colors"
+                            >
+                                <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        {onDelete && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                                aria-label={`Excluir ${empresa.nome}`}
+                                className="text-zinc-600 hover:text-red-400 p-1.5 rounded-full hover:bg-red-500/10 transition-colors"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* NUMEROS em faixa dividida: o fundo claro vazando entre eles
+                    separa sem precisar de tres blocos. */}
+                <div className="grid grid-cols-3 gap-px bg-white/5 rounded-control overflow-hidden mt-4">
+                    {[
+                        { r: 'No mês', v: stats ? stats.noMes : null },
+                        { r: 'Publicados', v: stats ? stats.publicados : null },
+                        { r: 'Na agenda', v: stats ? stats.total : null }
+                    ].map(item => (
+                        <div key={item.r} className="bg-[#111111] px-3 py-2.5">
+                            <p className="text-lg font-bold text-white leading-none">
+                                {item.v === null ? '—' : item.v}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-1">{item.r}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {aguardando > 0 && (
+                    <p className="text-[11px] text-zinc-500 mt-3">
+                        <span className="text-zinc-300 font-semibold">{aguardando}</span> aguardando o cliente aprovar
+                    </p>
+                )}
+            </div>
+
             {/* Atalhos de secao: levam direto ao lugar, sem passar pela visao
                 geral do cliente. stopPropagation para nao disparar o card. */}
-            <div className="flex flex-wrap gap-1.5 pt-3 border-t border-white/5">
+            <div className="flex items-center gap-0.5 mt-auto px-3 py-2 border-t border-white/5 bg-white/[0.015]">
                 {([
                     ['calendar', 'Calendário', Calendar],
                     ['production', 'Produção', ClipboardList],
@@ -168,35 +281,70 @@ const ClientCard: React.FC<{
                     <button
                         key={section}
                         onClick={(e) => { e.stopPropagation(); onOpen(section); }}
-                        className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-white hover:bg-white/5 px-2 py-1.5 rounded-control transition-colors"
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500 hover:text-white hover:bg-white/5 px-2.5 py-1.5 rounded-full transition-colors"
                     >
                         <Icon className="w-3 h-3" /> {label}
                     </button>
                 ))}
+                <span className="ml-auto pr-1.5 text-zinc-600 group-hover:text-[#FABE01] transition-colors">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                </span>
             </div>
         </div>
     );
 };
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenClient, onOpenProfile, profile, userEmail, userName }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
+    handleLogout, onOpenClient, onOpenProfile, profile, userEmail, userName,
+    abaInicial = 'overview', onTrocarAba
+}) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
-    const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team'>('overview');
+    const [activeTab, setActiveTab] = useState<Aba>(abaInicial as Aba);
     const [isNavOpen, setIsNavOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
-    const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
-    const [creatingCompanyForUser, setCreatingCompanyForUser] = useState<string | null>(null);
-    /** Card de colaborador aberto para edicao. Um por vez, de proposito. */
-    const [editingUserId, setEditingUserId] = useState<string | null>(null);
-    const [newCompanyIdInput, setNewCompanyIdInput] = useState('');
+
+    // FICHA DO CLIENTE. `null` fechado, `'novo'` criando, ou a empresa editada.
+    //
+    // Um caminho de criacao so, com duas portas: o botao "Novo cliente" e a
+    // opcao "+ Novo cliente" no select de vinculo. Dois formularios diferentes
+    // para a mesma coisa e a redundancia que confunde - e um deles sempre fica
+    // esquecido quando um campo novo aparece.
+    const [fichaAberta, setFichaAberta] = useState<'novo' | Empresa | null>(null);
+    /** Usuario a vincular assim que o cliente for criado, se veio do select. */
+    const [vincularApos, setVincularApos] = useState<string | null>(null);
+    /**
+     * Pessoa com a FICHA aberta - contato, acesso e financeiro numa tela so.
+     *
+     * Antes existiam dois modais para a mesma pessoa (financeiro) e um modo de
+     * edicao embutido no card (cargo). Um lugar so: o card abre a ficha.
+     */
+    const [fichaPessoa, setFichaPessoa] = useState<UserData | null>(null);
+
+    // Quem esta olhando: admin ou colaborador.
+    //
+    // Nao vem de estado nem do banco - e derivado do e-mail da sessao contra
+    // ADMIN_EMAILS, a mesma lista que firestore.rules usa. Se um colaborador
+    // forcar o botao pelo console, a regra recusa a escrita: a interface aqui
+    // e conveniencia, nao a trava.
+    const souAdmin = isAdmin(auth.currentUser?.email);
 
     // Pendencia por empresa: quais clientes pediram ajuste e estao esperando.
     // Uma assinatura por empresa - aceitavel no volume de um portal de agencia,
     // e o unico jeito de saber sem manter contadores denormalizados.
     const [pendingByEmpresa, setPendingByEmpresa] = useState<Record<string, PendingCounts>>({});
+    /** Cadastro de pessoa da equipe aberto. So admin chega aqui. */
+    const [criandoPessoa, setCriandoPessoa] = useState(false);
+    /**
+     * Pessoa pre-filtrada ao entrar em Tarefas.
+     *
+     * Vem de clicar num nome em "Tarefas da equipe": o clique diz de quem se quer
+     * ver a fila, e chegar na tela sem o filtro obrigaria a repetir a escolha.
+     */
+    const [filtroTarefaPessoa, setFiltroTarefaPessoa] = useState<string | null>(null);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -204,7 +352,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             const usersSnapshot = await db.collection('usuarios').get();
             setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData)));
             const empresasSnapshot = await db.collection('empresas').get();
-            setEmpresas(empresasSnapshot.docs.map(doc => ({ id: doc.id, nome: doc.data().nome || doc.id } as EmpresaData)));
+            setEmpresas(empresasSnapshot.docs.map(doc => parseEmpresa(doc.id, doc.data())));
         } catch (error) {
             console.error(error);
         } finally {
@@ -224,8 +372,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         return () => unsubscribes.forEach(fn => fn());
     }, [empresas]);
 
-    const empresasComAjuste = empresas.filter(e => (pendingByEmpresa[e.id]?.aguardandoAgencia || 0) > 0);
-    const totalAjustes = empresasComAjuste.reduce(
+    /**
+     * Ajustes pedidos, somados. Alimenta o badge da aba Clientes.
+     *
+     * Os outros agregados que existiam aqui foram para AgencyOverview, que e quem
+     * os desenha: manter a soma nos dois lugares e duas contas para o mesmo
+     * numero, e a que ninguem le fica sem manutencao.
+     */
+    const totalAjustes = empresas.reduce(
         (sum, e) => sum + (pendingByEmpresa[e.id]?.aguardandoAgencia || 0), 0
     );
 
@@ -235,6 +389,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const handleDeleteUser = async (userId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         if (!window.confirm("ATENÇÃO: Deseja remover este usuário?")) return;
         try {
             // O ID token identifica quem esta pedindo a exclusao. A funcao
@@ -273,6 +431,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
     };
 
     const handleDeleteEmpresa = async (empresaId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) return showNotification('Apenas administradores podem fazer isso.');
         const linkedUsers = users.filter(u => u.empresaId === empresaId);
         
         const msg = linkedUsers.length > 0 
@@ -300,106 +462,161 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         }
     };
 
-    // EDICAO DE UM COLABORADOR.
-    //
-    // Antes os dois selects viviam abertos no card e cada um tinha o proprio
-    // botao de salvar, que so aparecia depois de mexer. Resultado: nada dizia
-    // se o que estava na tela era o valor atual ou uma alteracao ainda nao
-    // gravada, e trocar permissao e empresa exigia dois saves. Agora o card e
-    // leitura por padrao e a edicao e um estado explicito, com um Salvar so.
-    const startUserEdit = (userId: string) => {
-        setEditingUserId(userId);
-        setCreatingCompanyForUser(null);
-        descartarRascunho(userId);
-    };
-
     const descartarRascunho = (userId: string) => {
-        setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
         setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
     };
 
-    const cancelUserEdit = (userId: string) => {
-        setEditingUserId(null);
-        setCreatingCompanyForUser(null);
-        descartarRascunho(userId);
-    };
-
-    const saveUserEdit = async (userId: string) => {
-        const novoRole = pendingRoleChanges[userId];
-        const novaEmpresa = pendingEmpresaChanges[userId];
-        if (novoRole === undefined && novaEmpresa === undefined) {
-            setEditingUserId(null);
+    /**
+     * VINCULA a conta a um cliente.
+     *
+     * Toda alteracao acontece dentro da FICHA (PersonDetailModal), nunca no card
+     * da lista: os selects abertos no card nao diziam se o que estava na tela era
+     * o valor gravado ou um rascunho, e cada campo tinha o proprio Salvar.
+     *
+     * Chamava-se `saveUserEdit` e carregava rascunho de role e de cargo tambem.
+     * Os dois eram CODIGO MORTO: nada na interface preenchia
+     * `pendingRoleChanges` nem `pendingCargoChanges` - cargo passou a ser gravado
+     * por `salvarCargoDaFicha` e papel nao tinha tela nenhuma. Um "salva role" que
+     * nunca recebia role dava a impressao, lendo o codigo, de que promover
+     * colaborador estava resolvido.
+     */
+    const salvarVinculo = async (userId: string) => {
+        // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
+        // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
+        // cru de permissao do Firestore. A trava de verdade esta nas regras.
+        if (!souAdmin) {
+            showNotification('Apenas administradores podem fazer isso.');
             return;
         }
+        const novaEmpresa = pendingEmpresaChanges[userId];
+        if (novaEmpresa === undefined) return;
 
-        // Uma escrita so: gravar em dois update() separados deixaria a conta
-        // num estado meio-salvo se o segundo falhasse.
-        const patch: Record<string, unknown> = {};
-        if (novoRole !== undefined) patch.role = novoRole;
-        if (novaEmpresa !== undefined) patch.empresaId = novaEmpresa;
+        const patch: Record<string, unknown> = { empresaId: novaEmpresa };
 
         try {
             await db.collection('usuarios').doc(userId).update(patch);
             setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } as UserData : u));
+            // A ficha aberta le de `fichaPessoa`, uma copia: sem isto o cargo
+            // salvo continuaria mostrando o valor antigo ate fechar e reabrir.
+            setFichaPessoa(prev => prev && prev.id === userId ? { ...prev, ...patch } as UserData : prev);
             descartarRascunho(userId);
-            setEditingUserId(null);
             showNotification('Alterações salvas.');
         } catch (e) {
             console.error(e);
-            // Mantem o modo de edicao aberto: o rascunho continua na tela para
-            // o usuario tentar de novo em vez de perder o que escolheu.
+            // O rascunho continua na tela para o usuario tentar de novo em vez
+            // de perder o que escolheu.
             showNotification('Não foi possível salvar. Tente novamente.');
+        }
+    };
+
+    /**
+     * Grava o cargo pela ficha.
+     *
+     * Nao reaproveita saveUserEdit de proposito: aquele le o rascunho do estado,
+     * e o estado ainda nao chegou no mesmo tick do clique. A ficha ja tem o
+     * valor em maos, entao escreve direto. Propaga o erro para a ficha manter o
+     * campo aberto em vez de fingir que salvou.
+     */
+    const salvarCargoDaFicha = async (userId: string, cargo: string) => {
+        try {
+            await db.collection('usuarios').doc(userId).update({ cargo: cargo.trim() || null });
+            const patch = { cargo: cargo.trim() || null };
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } : u));
+            setFichaPessoa(prev => prev && prev.id === userId ? { ...prev, ...patch } : prev);
+            descartarRascunho(userId);
+            showNotification('Cargo atualizado.');
+        } catch (e) {
+            console.error(e);
+            showNotification('Não foi possível salvar o cargo.');
+            throw e;
         }
     };
 
     const handleEmpresaSelection = (userId: string, val: string) => {
         if (val === 'create_new') {
-            setCreatingCompanyForUser(userId);
-            setNewCompanyIdInput('');
+            // Mesma ficha completa do botao "Novo cliente". Antes esta opcao
+            // abria um input de texto solto que criava o cliente com nome e
+            // mais nada.
+            setVincularApos(userId);
+            setFichaPessoa(null); // Duas camadas no mesmo z-index se sobrepõem.
+            setFichaAberta('novo');
             setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
             return;
         }
         setPendingEmpresaChanges(prev => ({ ...prev, [userId]: val === 'null' ? null : val }));
     };
 
-    const handleCreateAndAssignCompany = async (userId: string) => {
-        const nome = newCompanyIdInput.trim();
-        if (!nome) return showNotification('Informe um nome para a empresa.');
+    /**
+     * Cliente criado ou editado na ficha.
+     *
+     * Recarrega a lista em vez de inserir na mao: a ficha grava campos que este
+     * componente nao conhece, e montar o objeto aqui deixaria a tela mostrando
+     * uma versao incompleta ate o proximo refresh.
+     */
+    const handleFichaSalva = async (empresaId: string, nome: string) => {
+        setFichaAberta(null);
+        const paraVincular = vincularApos;
+        setVincularApos(null);
 
-        // O texto digitado ia direto como ID de documento. IDs do Firestore nao
-        // aceitam "/", nao podem ser "." ou "..", e um nome com espacos gera um
-        // caminho fragil. O nome legivel fica no campo `nome`; o ID vira slug.
-        const empresaId = nome
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos (marcas combinantes)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .slice(0, 60);
-
-        if (!empresaId) return showNotification('Use ao menos uma letra ou número no nome.');
-
-        try {
-            // Criar por cima de uma empresa existente reatribuiria os dados dela
-            // para outro cliente sem aviso nenhum.
-            const existing = await db.collection('empresas').doc(empresaId).get();
-            if (existing.exists) {
-                showNotification(`Já existe uma empresa com o ID "${empresaId}". Escolha outro nome.`);
-                return;
+        if (paraVincular) {
+            try {
+                await db.collection('usuarios').doc(paraVincular).update({ empresaId });
+                setUsers(prev => prev.map(u => u.id === paraVincular ? { ...u, empresaId } : u));
+                descartarRascunho(paraVincular);
+                showNotification(`Cliente "${nome}" criado e vinculado.`);
+            } catch (e) {
+                console.error(e);
+                showNotification(`Cliente "${nome}" criado, mas o vínculo falhou. Vincule na aba Equipe.`);
             }
+        } else {
+            showNotification(`Cliente "${nome}" salvo.`);
+        }
+        fetchData();
+    };
 
-            await db.collection('empresas').doc(empresaId).set({ nome });
-            await db.collection('usuarios').doc(userId).update({ empresaId });
-            setCreatingCompanyForUser(null);
-            setNewCompanyIdInput('');
-            // O vinculo ja foi gravado aqui; deixar o card em edicao faria o
-            // Salvar seguinte reenviar um empresaId antigo do rascunho.
-            setEditingUserId(null);
-            descartarRascunho(userId);
-            showNotification(`Empresa "${nome}" criada e vinculada.`);
-            fetchData();
+    /**
+     * PROMOVE a conta a colaborador da agencia, ou tira da equipe.
+     *
+     * ESTE ERA O BURACO DO CADASTRO DE PESSOAS. Conta nasce sempre como
+     * `role: 'cliente'` sem vinculo - a regra de criacao forca isso, de proposito,
+     * para ninguem nascer com acesso a agencia. Mas nao havia NENHUMA tela que
+     * mudasse o papel depois: a unica forma de ter um colaborador era editar o
+     * campo `role` na mao, no console do Firebase. A tela de Equipe ainda dizia "a
+     * equipe aparece aqui depois de criar conta no portal", o que nunca aconteceria.
+     *
+     * O papel e gravado direto, sem rascunho: nao e um campo que se ajusta junto de
+     * outros, e uma decisao de acesso - vira uma escrita com confirmacao explicita.
+     *
+     * `empresaId: null` junto: colaborador trabalha em TODOS os clientes, e um
+     * vinculo esquecido faria a pessoa aparecer como contato daquele cliente ao
+     * mesmo tempo que da equipe. No caminho de volta, o mesmo - a conta volta para
+     * a fila "aguardando vinculo", que e onde uma conta sem cliente pertence.
+     *
+     * NAO mexe em administrador: esse nivel vem da lista de e-mails em
+     * constants.ts / firestore.rules, que nenhum SDK escreve. Ver isAdminEmail().
+     */
+    const handleAlterarPapel = async (pessoa: UserData, paraEquipe: boolean) => {
+        if (!souAdmin) {
+            showNotification('Apenas administradores podem fazer isso.');
+            return;
+        }
+        const nome = getDisplayName(pessoa);
+        const aviso = paraEquipe
+            ? `Tornar ${nome} colaborador da agência?\n\nEle passa a ver e editar o conteúdo de TODOS os clientes.`
+            : `Tirar ${nome} da equipe?\n\nEle perde o acesso a todos os clientes e volta para a fila "aguardando vínculo".`;
+        if (!window.confirm(aviso)) return;
+
+        const patch = { role: paraEquipe ? 'agencia' : 'cliente', empresaId: null };
+        try {
+            await db.collection('usuarios').doc(pessoa.id).update(patch);
+            setUsers(prev => prev.map(u => u.id === pessoa.id ? { ...u, ...patch } as UserData : u));
+            setFichaPessoa(null);
+            showNotification(paraEquipe
+                ? `${nome} agora é colaborador da agência.`
+                : `${nome} saiu da equipe.`);
         } catch (e) {
             console.error(e);
-            showNotification('Erro ao criar a empresa.');
+            showNotification('Não foi possível alterar a permissão. Tente novamente.');
         }
     };
 
@@ -418,19 +635,25 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
         return u.email.toLowerCase().includes(term)
             || getDisplayName(u).toLowerCase().includes(term);
     });
-    const filteredEmpresas = empresas.filter(e => e.nome.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Busca por nome, @ ou segmento: quem digita "fisio" espera achar a
+    // clinica pelo nicho, nao so pelo nome fantasia.
+    const filteredEmpresas = empresas.filter(e => {
+        const termo = searchTerm.toLowerCase();
+        if (!termo) return true;
+        return [e.nome, e.handle, e.segmento].some(v => (v || '').toLowerCase().includes(termo));
+    });
 
     // Cliente sem empresa nao consegue usar o portal - so ve o aviso de conta
     // nao vinculada. E a pendencia mais acionavel do painel, por isso vira
     // destaque na Visao Geral em vez de ficar escondida na tabela.
     const unlinkedUsers = users.filter(u => u.role !== 'agencia' && !u.empresaId);
+    // Filtrada pela busca, para a fila respeitar o filtro digitado.
+    const semVinculo = filteredUsers.filter(u => u.role !== 'agencia' && !u.empresaId);
 
     // Separar por papel elimina a coluna "Vínculo" com "Global" repetido em toda
     // linha de agencia, que era ruido puro.
     const equipe = users.filter(u => u.role === 'agencia');
-    const clientes = users.filter(u => u.role !== 'agencia');
     const equipeFiltrada = filteredUsers.filter(u => u.role === 'agencia');
-    const clientesFiltrados = filteredUsers.filter(u => u.role !== 'agencia');
 
     // Cabecalho por secao. Fica junto porque a saudacao e o subtitulo mudam com
     // a navegacao e antes nao existiam - a tela abria com "Painel
@@ -440,17 +663,25 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             title: greeting(userName),
             subtitle: 'Resumo do que exige atenção hoje em todos os clientes.'
         },
-        editorial: {
-            title: 'Calendário Editorial',
-            subtitle: 'Todas as publicações de todos os clientes em um lugar só.'
-        },
         clients: {
             title: 'Clientes',
             subtitle: 'Clique em um cliente para abrir o espaço de trabalho dele.'
         },
         team: {
-            title: 'Equipe & Permissões',
-            subtitle: 'Quem tem acesso ao portal e a qual empresa cada conta pertence.'
+            title: 'Equipe',
+            subtitle: 'Quem trabalha na agência. O acesso de cada cliente fica dentro do próprio cliente.'
+        },
+        calendar: {
+            title: 'Calendário',
+            subtitle: 'Publicações de qualquer cliente, trocando pelo seletor de cima.'
+        },
+        tasks: {
+            title: 'Tarefas',
+            subtitle: 'Tudo o que ainda não foi entregue, por conteúdo, com prazo de cada etapa.'
+        },
+        settings: {
+            title: 'Configurações',
+            subtitle: 'O que vale para a agência inteira: cargos, prazos e padrões do sistema.'
         }
     };
 
@@ -459,14 +690,28 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             title: 'Geral',
             items: [
                 { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-                { id: 'editorial', label: 'Calendário Editorial', icon: Calendar },
+                // CALENDARIO GLOBAL. Foi removido e voltou: a remocao dizia que a
+                // tela era "o mesmo CalendarView com um seletor em cima", o que
+                // descrevia o componente e ignorava o que ela resolvia - trocar de
+                // cliente em um clique, em vez de voltar ao painel, achar o cartao,
+                // entrar e ir em Calendário. A duplicacao real (uma segunda previa
+                // do feed montada ao lado) essa sim nao voltou.
+                { id: 'calendar', label: 'Calendário', icon: Calendar },
+                // SEM contador no menu: o numero viria de assinar as subtarefas dos
+                // 12 clientes aqui tambem, so para desenhar uma bolinha - a mesma
+                // leitura que a Visao Geral e a propria tela de Tarefas ja fazem.
+                { id: 'tasks', label: 'Tarefas', icon: ListChecks },
                 { id: 'clients', label: 'Clientes', icon: Briefcase, badge: totalAjustes, badgeTone: 'amber' }
             ]
         },
         {
             title: 'Gestão',
             items: [
-                { id: 'team', label: 'Equipe & Permissões', icon: Users, badge: unlinkedUsers.length }
+                { id: 'team', label: 'Equipe', icon: Users, badge: unlinkedUsers.length, badgeTone: 'amber' as const },
+                // Visivel para a equipe inteira, editavel so por admin. Esconder
+                // do colaborador faria ele procurar onde muda o cargo em vez de
+                // ver, escrito, que a decisao nao e dele.
+                { id: 'settings', label: 'Configurações', icon: SlidersHorizontal }
             ]
         }
     ];
@@ -481,7 +726,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 // O termo de busca e compartilhado pelas secoes; sem limpar na
                 // troca, o usuario mudava de secao e via uma lista vazia por
                 // causa de um filtro digitado em outro contexto.
-                onSelect={(id) => { setActiveTab(id as any); setSearchTerm(''); setIsNavOpen(false); }}
+                onSelect={(id) => {
+                    setActiveTab(id as Aba);
+                    // Avisa o App: entrar num cliente desmonta esta tela, e quem
+                    // lembra da aba para o "voltar" e ele.
+                    onTrocarAba?.(id);
+                    setSearchTerm('');
+                    setIsNavOpen(false);
+                }}
                 isOpen={isNavOpen}
                 onClose={() => setIsNavOpen(false)}
                 footer={
@@ -523,136 +775,77 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {notification && <div className="fixed top-20 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-control shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
 
-                    <PageHeader title={HEADERS[activeTab].title} subtitle={HEADERS[activeTab].subtitle} />
+                    {/* O calendario traz o cabecalho DELE (com troca de visao e
+                        "Nova publicação"), e o seletor de cliente ja diz de quem e
+                        a agenda: um segundo titulo aqui seria dois cabecalhos
+                        empilhados dizendo a mesma coisa. */}
+                    {activeTab !== 'calendar' && (
+                        <PageHeader title={HEADERS[activeTab].title} subtitle={HEADERS[activeTab].subtitle} />
+                    )}
 
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4"><Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" /></div>
                 ) : (
                     <>
                         {activeTab === 'overview' && (
-                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-                                    <StatTile label="Clientes" value={empresas.length} icon={Building2} tone="brand" />
-                                    <StatTile label="Usuários cadastrados" value={users.length} icon={Users} />
-                                    <StatTile
-                                        label="Ajustes pedidos"
-                                        value={totalAjustes}
-                                        icon={MessageSquareWarning}
-                                        tone={totalAjustes > 0 ? 'attention' : 'positive'}
-                                        hint={totalAjustes > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe'}
-                                        onClick={totalAjustes > 0 ? () => { setActiveTab('clients'); setSearchTerm(''); } : undefined}
-                                    />
-                                    <StatTile
-                                        label="Aguardando vínculo"
-                                        value={unlinkedUsers.length}
-                                        icon={Shield}
-                                        tone={unlinkedUsers.length > 0 ? 'attention' : 'positive'}
-                                        hint={unlinkedUsers.length > 0 ? 'Sem empresa, não conseguem usar o portal' : 'Todo mundo com acesso liberado'}
-                                        onClick={unlinkedUsers.length > 0 ? () => { setActiveTab('team'); setSearchTerm(''); } : undefined}
-                                    />
-                                </div>
-
-                                {/* A Visão Geral só mostrava três números - nenhum caminho para
-                                    a tarefa real. O trabalho do dia é entrar no calendário ou na
-                                    produção de um cliente, então esses atalhos passam a ficar
-                                    aqui, junto do que exige atenção. */}
-                                {/* Ajustes pedidos pelo cliente: e a fila de trabalho
-                                    mais urgente da agencia, porque alguem do outro
-                                    lado esta esperando. Vem antes do resto. */}
-                                {totalAjustes > 0 && (
-                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-card p-5">
-                                        <div className="flex items-start gap-3">
-                                            <MessageSquareWarning className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-white font-bold text-sm mb-1">
-                                                    {totalAjustes === 1
-                                                        ? '1 publicação com ajuste pedido pelo cliente'
-                                                        : `${totalAjustes} publicações com ajuste pedido pelo cliente`}
-                                                </h3>
-                                                <p className="text-zinc-400 text-sm leading-relaxed mb-4">
-                                                    O cliente revisou e pediu mudanças. O detalhe está na conversa de cada publicação.
-                                                </p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {empresasComAjuste.map(empresa => (
-                                                        <button
-                                                            key={empresa.id}
-                                                            onClick={() => onOpenClient(empresa.id, empresa.nome, 'calendar')}
-                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-control transition-colors"
-                                                        >
-                                                            {empresa.nome}
-                                                            <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px]">
-                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
-                                                            </span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {totalAjustes === 0 && unlinkedUsers.length === 0 && (
-                                    <div className="border border-white/5 bg-[#1A1A1A] rounded-card p-6 flex flex-col sm:flex-row sm:items-center gap-4">
-                                        <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                                            <Check className="w-5 h-5" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white font-bold text-sm mb-0.5">Nada pendente com a equipe</p>
-                                            <p className="text-zinc-400 text-sm leading-relaxed">
-                                                Nenhum ajuste pedido e todo mundo com empresa vinculada.
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2.5 rounded-control uppercase tracking-wide transition-colors shrink-0"
-                                        >
-                                            Ver clientes <ArrowRight className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                )}
-
-                                {unlinkedUsers.length > 0 && (
-                                    <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-card p-5">
-                                        <div className="flex items-start gap-3">
-                                            <UserCog className="w-5 h-5 text-[#FABE01] shrink-0 mt-0.5" />
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-white font-bold text-sm mb-1">
-                                                    {unlinkedUsers.length === 1
-                                                        ? '1 usuário aguardando vínculo'
-                                                        : `${unlinkedUsers.length} usuários aguardando vínculo`}
-                                                </h3>
-                                                <p className="text-zinc-400 text-sm leading-relaxed mb-3">
-                                                    Enquanto não tiverem empresa, essas contas entram e veem apenas um aviso de conta não vinculada.
-                                                </p>
-                                                <p className="text-xs text-zinc-500 font-mono truncate mb-4">
-                                                    {unlinkedUsers.slice(0, 3).map(u => getDisplayName(u)).join(', ')}
-                                                    {unlinkedUsers.length > 3 && ` +${unlinkedUsers.length - 3}`}
-                                                </p>
-                                                <button
-                                                    onClick={() => { setActiveTab('team'); setSearchTerm(''); }}
-                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-bold text-xs px-4 py-2 rounded-control uppercase tracking-wide transition-colors"
-                                                >
-                                                    Resolver agora <ArrowRight className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                            </div>
+                            <AgencyOverview
+                                onIrParaTarefas={(uid) => {
+                                    setFiltroTarefaPessoa(uid || null);
+                                    setActiveTab('tasks');
+                                    // O App tambem precisa saber: e ele que lembra da
+                                    // aba quando se entra num cliente e volta.
+                                    onTrocarAba?.('tasks');
+                                }}
+                                empresas={empresas}
+                                users={users as UserProfile[]}
+                                pendingByEmpresa={pendingByEmpresa}
+                                souAdmin={souAdmin}
+                                semVinculo={unlinkedUsers.length}
+                                onOpenClient={onOpenClient}
+                                onIrParaClientes={() => { setActiveTab('clients'); onTrocarAba?.('clients'); setSearchTerm(''); }}
+                                onIrParaEquipe={() => { setActiveTab('team'); onTrocarAba?.('team'); setSearchTerm(''); }}
+                            />
                         )}
 
-                        {activeTab === 'editorial' && (
-                            <div className="animate-in fade-in">
-                                <AgencyCalendarBoard embedded userEmail={userEmail} userName={userName} />
-                            </div>
+                        {activeTab === 'calendar' && (
+                            <AgencyCalendarView
+                                empresas={empresas}
+                                pendingByEmpresa={pendingByEmpresa}
+                                userEmail={userEmail}
+                                userName={userName}
+                            />
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <TasksView
+                                empresas={empresas}
+                                users={users}
+                                onOpenClient={onOpenClient}
+                                pessoaInicial={filtroTarefaPessoa}
+                            />
                         )}
 
                         {activeTab === 'clients' && (
                             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="relative w-full max-w-md">
-                                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
-                                    <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2 pl-9 pr-4 text-sm text-white focus:border-[#FABE01] outline-none" />
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <div className="relative w-full sm:max-w-md">
+                                        <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar por nome, @ ou segmento..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2.5 pl-9 pr-4 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
+                                        />
+                                    </div>
+                                    {souAdmin && (
+                                        <button
+                                            onClick={() => { setVincularApos(null); setFichaAberta('novo'); }}
+                                            className="sm:ml-auto shrink-0 inline-flex items-center justify-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-sm px-5 py-2.5 rounded-full transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" /> Novo cliente
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {/* Distinguir "nenhuma empresa cadastrada" de "a busca nao
@@ -661,9 +854,9 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                         empresas.length === 0 ? (
                                             <EmptyState
                                                 icon={Building2}
-                                                title="Nenhuma empresa cadastrada"
-                                                description="Empresas são criadas ao vincular um usuário na aba Equipe & Permissões. Escolha “+ Nova” na coluna Vínculo do usuário."
-                                                action={{ label: 'Ir para Equipe', onClick: () => { setActiveTab('team'); setSearchTerm(''); } }}
+                                                title="Nenhum cliente cadastrado"
+                                                description="Cadastre o cliente com contato, nicho e contrato. Depois vincule os usuários dele na aba Equipe & Permissões."
+                                                action={souAdmin ? { label: 'Cadastrar cliente', onClick: () => { setVincularApos(null); setFichaAberta('novo'); } } : undefined}
                                             />
                                         ) : (
                                             <EmptyState
@@ -681,267 +874,291 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                             stats={pendingByEmpresa[empresa.id]}
                                             usuarios={users.filter(u => u.empresaId === empresa.id).length}
                                             onOpen={(section) => onOpenClient(empresa.id, empresa.nome, section)}
-                                            onDelete={() => handleDeleteEmpresa(empresa.id)}
+                                            onEdit={souAdmin ? () => { setVincularApos(null); setFichaAberta(empresa); } : undefined}
+                                            onDelete={souAdmin ? () => handleDeleteEmpresa(empresa.id) : undefined}
                                         />
                                     ))}
                                 </div>
                             </div>
                         )}
 
+                        {activeTab === 'settings' && (
+                            <SettingsView
+                                souAdmin={souAdmin}
+                                autorEmail={auth.currentUser?.email}
+                                cargosEmUso={users.map(u => u.cargo || '').filter(Boolean)}
+                            />
+                        )}
+
                         {activeTab === 'team' && (
-                            <div className="space-y-6 animate-in fade-in">
+                            <div className="space-y-8 animate-in fade-in">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                     <div className="relative w-full sm:max-w-md">
-                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                                        <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-500 pointer-events-none" />
                                         <input
                                             type="text"
-                                            placeholder="Buscar por nome ou e-mail..."
+                                            placeholder="Buscar por nome, e-mail ou cargo..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-control py-2.5 pl-9 pr-9 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] outline-none transition-all"
                                         />
                                         {searchTerm && (
-                                            <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white">
+                                            <button onClick={() => setSearchTerm('')} aria-label="Limpar busca" className="absolute right-2.5 top-3 text-zinc-500 hover:text-white">
                                                 <X className="w-4 h-4" />
                                             </button>
                                         )}
                                     </div>
                                     <p className="text-xs text-zinc-500 sm:ml-auto shrink-0">
-                                        <span className="text-white font-bold">{equipe.length}</span> na equipe ·{' '}
-                                        <span className="text-white font-bold">{clientes.length}</span> cliente(s)
+                                        <span className="text-white font-semibold">{equipe.length}</span> na equipe
+                                        {semVinculo.length > 0 && (
+                                            <> · <span className="text-amber-400 font-semibold">{semVinculo.length}</span> aguardando vínculo</>
+                                        )}
                                     </p>
+                                    {/* ADICIONAR PESSOA. A tela listava a equipe e nao
+                                        tinha caminho nenhum para incluir alguem: o
+                                        cadastro dependia de a pessoa se inscrever
+                                        sozinha no portal. */}
+                                    {souAdmin && (
+                                        <button
+                                            onClick={() => setCriandoPessoa(true)}
+                                            className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold bg-[#FABE01] hover:bg-[#FABE01]/90 text-black px-5 py-2.5 rounded-full transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" /> Adicionar pessoa
+                                        </button>
+                                    )}
                                 </div>
 
-                                {/* Cartoes em vez de tabela.
-                                    A tabela tinha 800px de largura minima, entao rolava
-                                    lateralmente em qualquer tela media, e empilhava
-                                    e-mail, dois selects e dois icones na mesma linha.
-                                    Separar por papel tambem elimina a coluna "Vínculo"
-                                    vazia com "Global" repetido em toda linha de agencia. */}
-                                {filteredUsers.length === 0 ? (
-                                    <div className="py-14 px-6 text-center border border-dashed border-white/10 rounded-card">
-                                        <Users className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                                        <p className="text-zinc-300 font-bold mb-1">Nenhum usuário encontrado</p>
-                                        <p className="text-zinc-500 text-sm">
-                                            {searchTerm
-                                                ? <>Nada corresponde a “{searchTerm}”. <button onClick={() => setSearchTerm('')} className="text-[#FABE01] hover:underline font-bold">Limpar busca</button></>
-                                                : 'Os usuários aparecem aqui depois de criarem conta no portal.'}
+                                {/* CONTAS AGUARDANDO VINCULO.
+                                    Vem primeiro porque e a unica coisa nesta tela que
+                                    exige acao hoje: enquanto nao tiverem empresa, essas
+                                    contas entram no portal e veem so um aviso.
+
+                                    Elas ficam AQUI, e nao na aba Clientes, porque ainda
+                                    nao sao cliente de ninguem - nao ha cliente sob o qual
+                                    listar. Depois de vinculadas, somem daqui e passam a
+                                    viver dentro do cliente (aba Acessos do cliente). */}
+                                {semVinculo.length > 0 && (
+                                    <section>
+                                        <div className="flex items-center gap-2.5 mb-1">
+                                            <h3 className="text-lg font-bold text-white tracking-tight">Aguardando vínculo</h3>
+                                            <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-full">
+                                                {semVinculo.length}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-zinc-500 mb-4">
+                                            Criaram conta e ainda não têm função. Abra a ficha para tornar colaborador da agência
+                                        ou vincular a um cliente — sem isso, entram e veem apenas um aviso.
                                         </p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-8">
-                                        {([
-                                            ['Equipe da agência', equipeFiltrada, 'Acesso a todos os clientes.'],
-                                            ['Clientes', clientesFiltrados, 'Cada um vê apenas a própria empresa.']
-                                        ] as const).map(([titulo, lista, legenda]) => lista.length > 0 && (
-                                            <section key={titulo}>
-                                                <div className="flex items-center gap-2.5 mb-1">
-                                                    <h3 className="text-lg font-bold text-white tracking-tight">{titulo}</h3>
-                                                    <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">{lista.length}</span>
-                                                </div>
-                                                <p className="text-xs text-zinc-500 mb-4">{legenda}</p>
 
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-                                                    {lista.map(user => {
-                                                        const isMe = user.id === auth.currentUser?.uid;
-                                                        const semVinculo = user.role !== 'agencia' && !user.empresaId;
-                                                        const isEditing = editingUserId === user.id;
-                                                        const empresaAtual = empresas.find(e => e.id === user.empresaId);
-                                                        // Vinculo orfao: aponta para uma empresa que nao existe mais.
-                                                        // Sem tratar, o card se contradizia - selo "Ativo" no canto e
-                                                        // "Nenhuma" no campo Empresa. A conta funciona pela metade:
-                                                        // passa pelo gate de empresa mas nao acha dado nenhum.
-                                                        const vinculoOrfao = Boolean(user.empresaId) && !empresaAtual;
-
-                                                        // Selo de situacao. Ate agora o unico jeito de saber que uma
-                                                        // conta estava sem empresa era ler o texto de aviso; um selo
-                                                        // no canto responde isso varrendo a grade com o olho.
-                                                        const selo = user.role === 'agencia'
-                                                            ? { texto: 'Agência', cor: 'bg-[#FABE01]/15 text-[#FABE01]' }
-                                                            : semVinculo
-                                                                ? { texto: 'Sem empresa', cor: 'bg-amber-500/15 text-amber-400' }
-                                                                : vinculoOrfao
-                                                                    ? { texto: 'Vínculo quebrado', cor: 'bg-red-500/15 text-red-400' }
-                                                                    : { texto: 'Ativo', cor: 'bg-emerald-500/15 text-emerald-400' };
-
-                                                        return (
-                                                            <div
-                                                                key={user.id}
-                                                                className={`bg-[#1A1A1A] border rounded-card p-4 flex flex-col transition-colors ${
-                                                                    vinculoOrfao ? 'border-red-500/30'
-                                                                        : semVinculo ? 'border-[#FABE01]/25'
-                                                                        : 'border-white/5 hover:border-white/15'
-                                                                }`}
-                                                            >
-                                                                {/* IDENTIDADE */}
-                                                                <div className="flex items-start gap-3">
-                                                                    {isSafeImageSrc(user.fotoUrl) ? (
-                                                                        <img src={user.fotoUrl!} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
-                                                                    ) : (
-                                                                        <div className="w-11 h-11 shrink-0 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 font-bold text-sm">
-                                                                            {getInitials(user)}
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <p className="font-bold text-white truncate">{getDisplayName(user)}</p>
-                                                                            {isMe && <span className="text-[9px] font-bold uppercase tracking-wider text-[#FABE01] shrink-0">você</span>}
-                                                                        </div>
-                                                                        <p className="text-xs text-zinc-500 truncate">
-                                                                            {user.role === 'agencia'
-                                                                                ? 'Equipe da agência'
-                                                                                : empresaAtual?.nome || (vinculoOrfao ? 'Empresa não encontrada' : 'Cliente sem empresa')}
-                                                                        </p>
-                                                                    </div>
-                                                                    <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${selo.cor}`}>
-                                                                        {selo.texto}
-                                                                    </span>
-                                                                </div>
-
-                                                                {/* CAMPOS. Em leitura sao texto; so viram controle no
-                                                                    modo de edicao. Antes os dois selects ficavam sempre
-                                                                    abertos no card, e nada dizia se aquilo era o valor
-                                                                    atual ou uma alteracao pendente. */}
-                                                                <div className="grid grid-cols-2 gap-3 mt-4">
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-1">Permissão</p>
-                                                                        {isEditing && !isMe ? (
-                                                                            <select
-                                                                                value={pendingRoleChanges[user.id] ?? user.role}
-                                                                                onChange={(e) => setPendingRoleChanges(prev => ({ ...prev, [user.id]: e.target.value }))}
-                                                                                className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                            >
-                                                                                <option value="cliente">Cliente</option>
-                                                                                <option value="agencia">Agência</option>
-                                                                            </select>
-                                                                        ) : (
-                                                                            <p className="text-sm text-zinc-200 truncate">
-                                                                                {user.role === 'agencia' ? 'Administrador' : 'Cliente'}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-1">Empresa</p>
-                                                                        {user.role === 'agencia' ? (
-                                                                            <p className="text-sm text-zinc-500 truncate">Todos os clientes</p>
-                                                                        ) : isEditing ? (
-                                                                            creatingCompanyForUser === user.id ? (
-                                                                                <div className="flex items-center gap-1.5">
-                                                                                    <input
-                                                                                        value={newCompanyIdInput}
-                                                                                        onChange={e => setNewCompanyIdInput(e.target.value)}
-                                                                                        placeholder="Nome da empresa"
-                                                                                        autoFocus
-                                                                                        className="min-w-0 flex-1 bg-[#111111] border border-[#FABE01] text-white text-xs px-2 py-2 rounded-control outline-none"
-                                                                                    />
-                                                                                    <button onClick={() => handleCreateAndAssignCompany(user.id)} aria-label="Criar e vincular" className="shrink-0 p-2 bg-[#FABE01] text-black rounded-control">
-                                                                                        <Save className="w-3.5 h-3.5" />
-                                                                                    </button>
-                                                                                    <button onClick={() => setCreatingCompanyForUser(null)} aria-label="Cancelar nova empresa" className="shrink-0 p-2 text-zinc-500 hover:text-white">
-                                                                                        <X className="w-3.5 h-3.5" />
-                                                                                    </button>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <select
-                                                                                    value={pendingEmpresaChanges[user.id] ?? user.empresaId ?? 'null'}
-                                                                                    onChange={(e) => handleEmpresaSelection(user.id, e.target.value)}
-                                                                                    className="w-full bg-[#111111] border border-zinc-700 text-zinc-200 text-xs rounded-control px-2 py-2 outline-none focus:border-[#FABE01]"
-                                                                                >
-                                                                                    <option value="null">— sem empresa —</option>
-                                                                                    {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                                                                                    <option value="create_new">+ Nova empresa</option>
-                                                                                </select>
-                                                                            )
-                                                                        ) : (
-                                                                            <p
-                                                                                className={`text-sm truncate ${vinculoOrfao ? 'text-red-400' : semVinculo ? 'text-amber-400' : 'text-zinc-200'}`}
-                                                                                title={vinculoOrfao ? `ID gravado: ${user.empresaId}` : undefined}
-                                                                            >
-                                                                                {empresaAtual?.nome || (vinculoOrfao ? user.empresaId : 'Nenhuma')}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* CONTATO em poco proprio: o e-mail e longo e estava
-                                                                    competindo com o nome na mesma coluna de texto. */}
-                                                                <div className="mt-3 flex items-center gap-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2.5 min-w-0">
-                                                                    <Mail className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                                                                    <span className="text-xs text-zinc-400 truncate" title={user.email}>{user.email}</span>
-                                                                </div>
-
-                                                                {!isEditing && semVinculo && (
-                                                                    <p className="text-[11px] text-amber-400/90 mt-3 leading-relaxed">
-                                                                        Sem empresa, esta conta entra no portal e vê apenas um aviso.
-                                                                    </p>
-                                                                )}
-                                                                {!isEditing && vinculoOrfao && (
-                                                                    <p className="text-[11px] text-red-400/90 mt-3 leading-relaxed">
-                                                                        A empresa vinculada não existe mais. Escolha outra em Editar, ou a conta entra e não encontra nada.
-                                                                    </p>
-                                                                )}
-
-                                                                {/* ACOES */}
-                                                                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
-                                                                    {isEditing ? (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={() => cancelUserEdit(user.id)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
-                                                                            >
-                                                                                Cancelar
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => saveUserEdit(user.id)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors"
-                                                                            >
-                                                                                Salvar
-                                                                            </button>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={() => startUserEdit(user.id)}
-                                                                                disabled={isMe && user.role === 'agencia'}
-                                                                                title={isMe ? 'Você não pode alterar a própria permissão' : undefined}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                                            >
-                                                                                Editar
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handlePasswordReset(user.email)}
-                                                                                className="flex-1 py-2 text-xs font-semibold rounded-control bg-white/5 text-zinc-300 hover:bg-white/10 transition-colors"
-                                                                            >
-                                                                                Enviar senha
-                                                                            </button>
-                                                                            {!isMe && (
-                                                                                <button
-                                                                                    onClick={() => handleDeleteUser(user.id)}
-                                                                                    title="Remover usuário"
-                                                                                    aria-label={`Remover ${getDisplayName(user)}`}
-                                                                                    className="shrink-0 p-2 text-zinc-600 hover:text-red-400 hover:bg-red-400/5 rounded-control transition-colors"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </section>
-                                        ))}
-                                    </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                            {semVinculo.map(user => (
+                                                <PersonCard
+                                                    key={user.id}
+                                                    pessoa={user}
+                                                    selo={SELO_SEM_EMPRESA}
+                                                    borda="atencao"
+                                                    subtitulo="Conta sem cliente"
+                                                    onAbrir={() => setFichaPessoa(user)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </section>
                                 )}
+
+                                {/* EQUIPE DA AGENCIA.
+                                    Cliente NAO aparece nesta tela: o acesso de um cliente
+                                    pertence ao cliente, e vive dentro dele (aba Acessos).
+                                    Listar os dois aqui repetia o nome da empresa em dois
+                                    campos e mostrava "Permissão: Cliente" embaixo de um
+                                    titulo que ja dizia Clientes. */}
+                                <section>
+                                    <div className="flex items-center gap-2.5 mb-1">
+                                        <h3 className="text-lg font-bold text-white tracking-tight">Equipe da agência</h3>
+                                        <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+                                            {equipeFiltrada.length}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 mb-4">
+                                        Acesso a todos os clientes. Administrador é definido pela lista de e-mails do
+                                        sistema, não por esta tela — por isso o nível não aparece como campo editável.
+                                    </p>
+
+                                    {equipeFiltrada.length === 0 ? (
+                                        <EmptyState
+                                            icon={Users}
+                                            title={searchTerm ? 'Nenhum resultado' : 'Nenhuma pessoa na equipe'}
+                                            description={searchTerm
+                                                ? `Nada corresponde a “${searchTerm}”.`
+                                                : 'A pessoa cria conta no portal, aparece em “Aguardando vínculo” e você a torna colaboradora pela ficha dela.'}
+                                            action={searchTerm ? { label: 'Limpar busca', onClick: () => setSearchTerm('') } : undefined}
+                                        />
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                            {equipeFiltrada.map(user => {
+                                                const nivel = permissionLevel(user);
+                                                const isMe = user.id === auth.currentUser?.uid;
+                                                return (
+                                                    <PersonCard
+                                                        key={user.id}
+                                                        pessoa={user}
+                                                        ehVoce={isMe}
+                                                        selo={nivel === 'admin' ? SELO_ADMIN : SELO_COLABORADOR}
+                                                        subtitulo={user.cargo || 'Cargo não definido'}
+                                                        campos={[{ rotulo: 'Permissão', valor: PERMISSION_LABEL[nivel] }]}
+                                                        onAbrir={() => setFichaPessoa(user)}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </section>
                             </div>
                         )}
+
                     </>
                 )}
                 </div>
             </main>
+
+            {/* FICHA DA PESSOA. Uma tela para colaborador e para conta sem
+                vinculo: o que muda e o que a ficha oferece fazer, nao o layout.
+                Cliente vinculado nao abre por aqui - ele vive dentro do cliente,
+                na aba Acessos. */}
+            {fichaPessoa && (() => {
+                const pessoa = fichaPessoa;
+                const isMe = pessoa.id === auth.currentUser?.uid;
+                const daEquipe = pessoa.role === 'agencia';
+                const acoes: PersonDetailAcao[] = [
+                    { label: 'Enviar redefinição de senha', onClick: () => handlePasswordReset(pessoa.email) }
+                ];
+                if (souAdmin && !isMe) {
+                    acoes.push({
+                        label: daEquipe ? 'Remover da equipe' : 'Remover conta',
+                        destrutiva: true,
+                        onClick: async () => {
+                            await handleDeleteUser(pessoa.id);
+                            setFichaPessoa(null);
+                        }
+                    });
+                }
+                return (
+                    <PersonDetailModal
+                        pessoa={pessoa}
+                        selo={daEquipe
+                            ? (permissionLevel(pessoa) === 'admin' ? SELO_ADMIN : SELO_COLABORADOR)
+                            : SELO_SEM_EMPRESA}
+                        empresaNome={empresas.find(e => e.id === pessoa.empresaId)?.nome}
+                        // Equipe da agencia trabalha em TODOS os clientes, entao a
+                        // atividade dela e procurada em todos. Contato de cliente
+                        // so tem historico no cliente dele.
+                        empresasParaAtividade={daEquipe
+                            ? empresas.map(e => ({ id: e.id, nome: e.nome }))
+                            : empresas.filter(e => e.id === pessoa.empresaId).map(e => ({ id: e.id, nome: e.nome }))}
+                        ehVoce={isMe}
+                        souAdmin={souAdmin}
+                        autorEmail={auth.currentUser?.email}
+                        onSalvarCargo={souAdmin ? (cargo) => salvarCargoDaFicha(pessoa.id, cargo) : undefined}
+                        acoes={acoes}
+                        onClose={() => setFichaPessoa(null)}
+                    >
+                        {/* O QUE ESTA CONTA E. Duas saidas para a mesma conta sem
+                            vinculo - virar colaborador da agencia ou virar contato
+                            de um cliente -, lado a lado, porque a duvida de quem
+                            abre a ficha e exatamente essa. Antes so a segunda
+                            existia: quem criava conta para trabalhar na agencia
+                            ficava parado na fila para sempre. */}
+                        {souAdmin && !isMe && (
+                            <Bloco titulo="Permissão" icone={Shield}>
+                                <p className="text-xs text-zinc-400 leading-relaxed mb-3">
+                                    {daEquipe
+                                        ? 'Colaborador da agência: vê e edita o conteúdo de todos os clientes.'
+                                        : pessoa.empresaId
+                                            ? 'Contato do cliente: vê apenas o portal do próprio cliente.'
+                                            : 'Conta sem função. Entra no portal e vê apenas um aviso.'}
+                                </p>
+                                <button
+                                    onClick={() => handleAlterarPapel(pessoa, !daEquipe)}
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-control transition-colors ${
+                                        daEquipe
+                                            ? 'text-zinc-300 bg-white/5 hover:bg-white/10'
+                                            : 'bg-[#FABE01] text-black hover:bg-[#FABE01]/90'
+                                    }`}
+                                >
+                                    <UserCog className="w-3.5 h-3.5" />
+                                    {daEquipe ? 'Tirar da equipe' : 'Tornar colaborador da agência'}
+                                </button>
+                                {/* Nivel de admin nao e editavel aqui, e a ficha diz
+                                    por que - senao a ausencia do campo parece falta. */}
+                                <p className="text-[10px] text-zinc-600 mt-2.5 leading-relaxed">
+                                    Administrador não se define por esta tela: vem da lista de e-mails do sistema,
+                                    que nenhum acesso do app consegue escrever.
+                                </p>
+                            </Bloco>
+                        )}
+
+                        {/* VINCULO. So aparece para conta sem cliente, que e o
+                            unico caso em que ele esta faltando - depois de
+                            vinculada, mudar de empresa nao e rotina. */}
+                        {!daEquipe && !pessoa.empresaId && (
+                            <Bloco titulo="Vínculo com cliente" icone={Building2}>
+                                {souAdmin ? (
+                                    <>
+                                        <p className="text-xs text-amber-400/90 mb-3 leading-relaxed">
+                                            Se esta pessoa é do cliente e não da agência, vincule aqui para liberar o portal dela.
+                                        </p>
+                                        <div className="flex gap-1.5">
+                                            <select
+                                                value={pendingEmpresaChanges[pessoa.id] ?? 'null'}
+                                                onChange={(e) => handleEmpresaSelection(pessoa.id, e.target.value)}
+                                                className="min-w-0 flex-1 bg-[#0D0D0D] border border-zinc-700 text-zinc-200 text-sm rounded-control px-2.5 py-2 outline-none focus:border-[#FABE01]"
+                                            >
+                                                <option value="null">— escolha o cliente —</option>
+                                                {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                                <option value="create_new">+ Novo cliente</option>
+                                            </select>
+                                            {pendingEmpresaChanges[pessoa.id] && (
+                                                <button
+                                                    onClick={async () => { await salvarVinculo(pessoa.id); setFichaPessoa(null); }}
+                                                    className="shrink-0 px-3.5 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
+                                                >
+                                                    Vincular
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-xs text-zinc-500 leading-relaxed">
+                                        Só administradores vinculam contas a um cliente.
+                                    </p>
+                                )}
+                            </Bloco>
+                        )}
+                    </PersonDetailModal>
+                );
+            })()}
+
+            {criandoPessoa && (
+                <PersonFormModal
+                    onClose={() => setCriandoPessoa(false)}
+                    onCriado={nome => {
+                        setCriandoPessoa(false);
+                        showNotification(`${nome} cadastrado. Ele recebeu os e-mails de confirmação e senha.`);
+                        // Recarrega em vez de inserir na mao: o documento novo tem
+                        // campos que esta tela nao monta, e a lista viria incompleta.
+                        fetchData();
+                    }}
+                />
+            )}
+
+            {fichaAberta && (
+                <ClientFormModal
+                    empresa={fichaAberta === 'novo' ? null : fichaAberta}
+                    isAdmin={souAdmin}
+                    autorEmail={auth.currentUser?.email}
+                    onClose={() => { setFichaAberta(null); setVincularApos(null); }}
+                    onSaved={handleFichaSalva}
+                />
+            )}
         </div>
     );
 };
