@@ -12,6 +12,7 @@ import PersonDetailModal, { PersonDetailAcao, Bloco } from './PersonDetailModal'
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import SettingsView from './SettingsView';
 import AgencyOverview from './AgencyOverview';
+import AgencyCalendarView from './AgencyCalendarView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
@@ -40,7 +41,7 @@ type EmpresaData = Empresa;
 
 type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
 
-type Aba = 'overview' | 'clients' | 'team' | 'settings';
+type Aba = 'overview' | 'calendar' | 'clients' | 'team' | 'settings';
 
 interface AgencyDashboardProps {
     handleLogout: () => void;
@@ -658,6 +659,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
             title: 'Equipe',
             subtitle: 'Quem trabalha na agência. O acesso de cada cliente fica dentro do próprio cliente.'
         },
+        calendar: {
+            title: 'Calendário',
+            subtitle: 'Publicações de qualquer cliente, trocando pelo seletor de cima.'
+        },
         settings: {
             title: 'Configurações',
             subtitle: 'O que vale para a agência inteira: cargos, prazos e padrões do sistema.'
@@ -669,14 +674,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
             title: 'Geral',
             items: [
                 { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-                // NAO existe mais "Calendário Editorial" aqui.
-                //
-                // Aquela tela era o MESMO CalendarView do cliente com um seletor
-                // de cliente em cima - e ainda montava uma segunda previa do feed,
-                // que o proprio CalendarView ja tem dentro. Dois caminhos para a
-                // mesma tela, um deles com o titulo repetido no menu do cliente.
-                // O seletor tambem era redundante: esta aba Clientes JA e o
-                // seletor, e com mais informacao (pendencia, atraso, status).
+                // CALENDARIO GLOBAL. Foi removido e voltou: a remocao dizia que a
+                // tela era "o mesmo CalendarView com um seletor em cima", o que
+                // descrevia o componente e ignorava o que ela resolvia - trocar de
+                // cliente em um clique, em vez de voltar ao painel, achar o cartao,
+                // entrar e ir em Calendário. A duplicacao real (uma segunda previa
+                // do feed montada ao lado) essa sim nao voltou.
+                { id: 'calendar', label: 'Calendário', icon: Calendar },
                 { id: 'clients', label: 'Clientes', icon: Briefcase, badge: totalAjustes, badgeTone: 'amber' }
             ]
         },
@@ -751,7 +755,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                 <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto overflow-x-hidden">
                     {notification && <div className="fixed top-20 right-4 z-50 bg-[#FABE01] text-black px-4 py-3 rounded-control shadow-lg font-bold text-sm flex items-center gap-2"><div className="w-2 h-2 bg-black rounded-full animate-pulse" />{notification}</div>}
 
-                    <PageHeader title={HEADERS[activeTab].title} subtitle={HEADERS[activeTab].subtitle} />
+                    {/* O calendario traz o cabecalho DELE (com troca de visao e
+                        "Nova publicação"), e o seletor de cliente ja diz de quem e
+                        a agenda: um segundo titulo aqui seria dois cabecalhos
+                        empilhados dizendo a mesma coisa. */}
+                    {activeTab !== 'calendar' && (
+                        <PageHeader title={HEADERS[activeTab].title} subtitle={HEADERS[activeTab].subtitle} />
+                    )}
 
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-4"><Loader2 className="w-10 h-10 text-[#FABE01] animate-spin" /></div>
@@ -767,6 +777,15 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                 onOpenClient={onOpenClient}
                                 onIrParaClientes={() => { setActiveTab('clients'); onTrocarAba?.('clients'); setSearchTerm(''); }}
                                 onIrParaEquipe={() => { setActiveTab('team'); onTrocarAba?.('team'); setSearchTerm(''); }}
+                            />
+                        )}
+
+                        {activeTab === 'calendar' && (
+                            <AgencyCalendarView
+                                empresas={empresas}
+                                pendingByEmpresa={pendingByEmpresa}
+                                userEmail={userEmail}
+                                userName={userName}
                             />
                         )}
 

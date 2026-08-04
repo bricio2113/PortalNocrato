@@ -13,6 +13,7 @@
  *      editar `role` no console do Firebase
  *   9. peca que falhou na previa nao fica quebrada para sempre
  *  10. na tela de pastas, imagem e video ABREM em tamanho grande
+ *  11. o calendario global da agencia troca de cliente pelo seletor
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -346,6 +347,41 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(erros.length === 0, `10. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
 
     await page.screenshot({ path: 'dist-harness/v-viewer.png' });
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 11
+// CALENDARIO GLOBAL. Voltou depois de eu ter removido: o valor dele nao era o
+// componente (que e o mesmo CalendarView), era trocar de cliente em um clique.
+{
+    const { page, erros } = await abrir('painel');
+    const item = page.getByRole('button', { name: /^Calendário/ }).first();
+    checar(await existe(item), '11. o painel tem o item Calendário no menu');
+    await item.click();
+    await page.waitForTimeout(1200);
+
+    const circulos = page.locator('button[aria-pressed]');
+    checar(await circulos.count() >= 4,
+        `11. o seletor lista os clientes em círculos (${await circulos.count()})`);
+    checar(await page.getByText('Calendário Editorial').isVisible(),
+        '11. e o calendário do cliente selecionado aparece embaixo');
+
+    // Um cabecalho, nao dois: a tela tem o do calendario e nao repete o do painel.
+    checar(await page.getByRole('heading', { name: 'Calendário', exact: true }).count() === 0,
+        '11. sem cabeçalho duplicado do painel');
+
+    // A previa do feed identifica de QUEM e a agenda - e como se prova que a troca
+    // de cliente trocou o conteudo, e nao apenas o circulo destacado.
+    checar(await page.locator('p:text("Agencia Mara")').first().count() > 0,
+        '11. abre no cliente que espera a agência');
+
+    await page.getByRole('button', { name: /^Marcio Fisio/ }).first().click();
+    await page.waitForTimeout(1200);
+    checar(await page.locator('p:text("Marcio Fisio")').first().count() > 0,
+        '11. clicar em outro cliente troca a agenda mostrada');
+    checar(erros.length === 0, `11. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+
+    await page.screenshot({ path: 'dist-harness/v-calendario-global.png' });
     await page.close();
 }
 

@@ -16,6 +16,7 @@ import PersonDetailModal from '../components/PersonDetailModal';
 import SettingsView from '../components/SettingsView';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
+import AgencyCalendarView from '../components/AgencyCalendarView';
 import ProfileView from '../components/ProfileView';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 import Login from '../components/Login';
@@ -178,6 +179,19 @@ const SCREENS: Record<string, React.ReactNode> = {
     </div>,
     'midia-e-pastas': <MidiaEPastas />,
     'previa-carrossel': <PreviaCarrossel />,
+    // CALENDARIO GLOBAL isolado, para medir o seletor sem o painel em volta.
+    'calendario-agencia': <div className="p-4 bg-[#111111] min-h-screen">
+        <AgencyCalendarView
+            empresas={[
+                { id: 'Agencia Mara', nome: 'Agencia Mara', handle: 'agenciamara' },
+                { id: 'Dra.SylviaFisio', nome: 'Dra. Sylvia Fisio', handle: 'drasylviafisio' },
+                { id: 'MarcioFisio', nome: 'Marcio Fisio', handle: 'marciofisio' }
+            ] as any}
+            pendingByEmpresa={{ 'MarcioFisio': { aguardandoAgencia: 3 } as any }}
+            userEmail={profile.email}
+            userName="Pedro Vidal"
+        />
+    </div>,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}
