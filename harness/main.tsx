@@ -121,7 +121,22 @@ const SCREENS: Record<string, React.ReactNode> = {
     verificacao: <VerificationPending user={{ email: 'pedro@x.com', sendEmailVerification: async () => {}, reload: async () => {}, emailVerified: false } as any} handleLogout={noop} />,
     'perfil-obrigatorio': <CompleteProfileModal profile={{ ...profile, nome: '', sobrenome: '' }} onSaved={noop} handleLogout={noop} />,
     perfil: <div className="p-4 bg-[#111111] min-h-screen"><ProfileView profile={profile} /></div>,
-    painel: <AgencyDashboard handleLogout={noop} onOpenClient={noop} onOpenProfile={noop} profile={profile} userEmail={profile.email} userName="Pedro Vidal" />,
+    // onOpenClient registra em vez de navegar: a navegacao vive no App, que o
+    // harness nao monta. Sem registrar, "clicou e nao aconteceu nada" e
+    // indistinguivel de "clicou e o painel pediu para abrir o conteudo certo".
+    painel: <AgencyDashboard
+        handleLogout={noop}
+        onOpenClient={(empresaId, nome, section, eventId) => {
+            (globalThis as any).__abriu = { empresaId, nome, section, eventId };
+        }}
+        onOpenProfile={noop} profile={profile} userEmail={profile.email} userName="Pedro Vidal"
+    />,
+    // A OUTRA METADE do caminho: o espaco de trabalho recebendo o conteudo a abrir.
+    'cliente-workspace-tarefa': <ClientWorkspace
+        empresaId="agencia-mara" empresaNome="Agencia Mara"
+        userEmail={profile.email} userName="Pedro Vidal"
+        initialSection="production" initialEventId="ev0" onBack={noop}
+    />,
     'cliente-workspace': <ClientWorkspace empresaId="agencia-mara" empresaNome="Agencia Mara" userEmail={profile.email} userName="Pedro Vidal" onBack={noop} />,
     calendario: <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" empresaNome="Agencia Mara" userRole="agencia" userEmail={profile.email} userName="Pedro Vidal" /></div>,
     // O MESMO calendario visto pelo cliente. Existe como tela propria porque a

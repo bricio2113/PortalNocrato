@@ -355,10 +355,25 @@ export const storage: any = {
 // de so contar chamadas.
 (globalThis as any).__arvore = ARVORE_MATERIAIS;
 
+/**
+ * Criacao de conta falsa.
+ *
+ * O util de verdade abre uma SEGUNDA instancia do Firebase para nao derrubar a
+ * sessao de quem esta logado. Aqui isso nao pode acontecer: `initializeApp` com a
+ * config real faria o harness falar com o projeto de producao - criando usuario de
+ * teste no Auth de verdade. Por isso a funcao e trocada junto do resto do modulo, e
+ * a auditoria consegue verificar o cadastro sem sair da maquina.
+ */
+export async function criarContaSemTrocarSessao(email: string, _senha: string): Promise<string> {
+    registrar('criar-conta', `auth/${email}`, { verificacaoEnviada: true });
+    return `uid-${email.replace(/[^a-z0-9]/gi, '-')}`;
+}
+
 export const db: any = { collection: (name: string) => makeCollection(name), batch: () => ({ update() {}, commit: async () => {} }) };
 export const auth: any = {
     currentUser: { uid: 'u0', email: 'pedro.vidal2608@gmail.com', emailVerified: true, reload: async () => {}, getIdToken: async () => 'tok', sendEmailVerification: async () => {}, updateProfile: async () => {} },
     onAuthStateChanged: () => () => {},
-    signOut: async () => {}, sendPasswordResetEmail: async () => {}
+    signOut: async () => {},
+    sendPasswordResetEmail: async (email: string) => registrar('reset-senha', `auth/${email}`)
 };
 export default { db, auth, storage };

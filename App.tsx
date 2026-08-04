@@ -160,7 +160,13 @@ const App: React.FC = () => {
     // outro para producao -, o que obrigava voltar ao painel so para trocar de
     // secao. Agora e um espaco de trabalho com submenu proprio.
     const [agencyWorkspace, setAgencyWorkspace] = useState<
-        { empresaId: string; nome: string; section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' } | null
+        {
+            empresaId: string;
+            nome: string;
+            section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+            /** Conteudo a abrir de imediato, quando se chega por uma tarefa. */
+            eventId?: string;
+        } | null
     >(null);
     const [showProfile, setShowProfile] = useState(false);
     /**
@@ -322,6 +328,7 @@ const App: React.FC = () => {
                     userEmail={user.email}
                     userName={getDisplayName({ nome: profile?.nome, sobrenome: profile?.sobrenome, email: user.email })}
                     initialSection={agencyWorkspace.section}
+                    initialEventId={agencyWorkspace.eventId}
                     onBack={backToDashboard}
                 />
             );
@@ -331,7 +338,7 @@ const App: React.FC = () => {
             handleLogout={handleLogout}
             abaInicial={abaPainel}
             onTrocarAba={setAbaPainel}
-            onOpenClient={(empresaId, nome, section) => setAgencyWorkspace({ empresaId, nome, section })}
+            onOpenClient={(empresaId, nome, section, eventId) => setAgencyWorkspace({ empresaId, nome, section, eventId })}
             onOpenProfile={() => setShowProfile(true)}
             profile={profile}
             userEmail={user.email}

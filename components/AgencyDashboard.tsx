@@ -13,6 +13,7 @@ import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './Pe
 import SettingsView from './SettingsView';
 import AgencyOverview from './AgencyOverview';
 import AgencyCalendarView from './AgencyCalendarView';
+import PersonFormModal from './PersonFormModal';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
@@ -52,7 +53,8 @@ interface AgencyDashboardProps {
      * obrigavam voltar ao painel so para sair do calendario e entrar na
      * producao do MESMO cliente.
      */
-    onOpenClient: (empresaId: string, nome: string, section?: ClientSection) => void;
+    /** `eventId` abre o cliente JA com o conteudo aberto (ver AgencyOverview). */
+    onOpenClient: (empresaId: string, nome: string, section?: ClientSection, eventId?: string) => void;
     /**
      * Aba em que abrir. Vem de fora porque entrar num cliente DESMONTA este
      * componente: sem isso, voltar caia sempre na Visao Geral.
@@ -333,6 +335,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
     // Uma assinatura por empresa - aceitavel no volume de um portal de agencia,
     // e o unico jeito de saber sem manter contadores denormalizados.
     const [pendingByEmpresa, setPendingByEmpresa] = useState<Record<string, PendingCounts>>({});
+    /** Cadastro de pessoa da equipe aberto. So admin chega aqui. */
+    const [criandoPessoa, setCriandoPessoa] = useState(false);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -878,6 +882,18 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                             <> · <span className="text-amber-400 font-semibold">{semVinculo.length}</span> aguardando vínculo</>
                                         )}
                                     </p>
+                                    {/* ADICIONAR PESSOA. A tela listava a equipe e nao
+                                        tinha caminho nenhum para incluir alguem: o
+                                        cadastro dependia de a pessoa se inscrever
+                                        sozinha no portal. */}
+                                    {souAdmin && (
+                                        <button
+                                            onClick={() => setCriandoPessoa(true)}
+                                            className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold bg-[#FABE01] hover:bg-[#FABE01]/90 text-black px-5 py-2.5 rounded-full transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" /> Adicionar pessoa
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* CONTAS AGUARDANDO VINCULO.
@@ -1088,6 +1104,19 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                     </PersonDetailModal>
                 );
             })()}
+
+            {criandoPessoa && (
+                <PersonFormModal
+                    onClose={() => setCriandoPessoa(false)}
+                    onCriado={nome => {
+                        setCriandoPessoa(false);
+                        showNotification(`${nome} cadastrado. Ele recebeu os e-mails de confirmação e senha.`);
+                        // Recarrega em vez de inserir na mao: o documento novo tem
+                        // campos que esta tela nao monta, e a lista viria incompleta.
+                        fetchData();
+                    }}
+                />
+            )}
 
             {fichaAberta && (
                 <ClientFormModal

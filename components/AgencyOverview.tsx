@@ -3,6 +3,7 @@ import { Empresa, UserProfile } from '../types';
 import { PendingCounts } from '../utils/posts';
 import { ClientStage, CLIENT_STAGES, stageView } from '../utils/eventState';
 import { Subtarefa, subscribeSubtarefas, SUBTAREFA_STATUS } from '../utils/subtarefas';
+import TarefasAbertasModal, { TarefaAberta } from './TarefasAbertasModal';
 import { indexarPorUid } from '../utils/equipe';
 import { getDisplayName } from '../utils/avatar';
 import { AvatarBubble } from './AvatarBubble';
@@ -30,7 +31,11 @@ interface AgencyOverviewProps {
     pendingByEmpresa: Record<string, PendingCounts>;
     souAdmin: boolean;
     semVinculo: number;
-    onOpenClient: (empresaId: string, nome: string, section?: 'calendar' | 'production') => void;
+    /**
+     * Abre o cliente. `eventId` abre JA no conteudo indicado - e o que faz a lista
+     * de tarefas levar direto na tarefa, em vez de largar a pessoa no quadro.
+     */
+    onOpenClient: (empresaId: string, nome: string, section?: 'calendar' | 'production', eventId?: string) => void;
     onIrParaClientes: () => void;
     onIrParaEquipe: () => void;
 }
@@ -97,6 +102,8 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
      */
     const LIMITE_CLIENTES = 12;
     const [subtarefas, setSubtarefas] = useState<Record<string, Subtarefa[]>>({});
+    /** Lista de tarefas abertas aberta sobre a tela. */
+    const [verTarefas, setVerTarefas] = useState(false);
 
     useEffect(() => {
         if (empresas.length === 0) return;
@@ -155,6 +162,24 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
             .sort((a, b) => b.n - a.n);
         return { total: todas.length, porStatus, carga, semDono, abertas: porStatus.aberta + porStatus.fazendo };
     }, [subtarefas, indice]);
+
+    /**
+     * Tarefas abertas com o cliente de cada uma, para a lista clicavel.
+     *
+     * Separada de `tarefas` de proposito: aquele calculo produz CONTAGEM, e a
+     * contagem nao guarda de qual cliente cada tarefa veio - informacao que a lista
+     * precisa para poder abrir o conteudo certo.
+     */
+    const tarefasAbertas = useMemo<TarefaAberta[]>(() => {
+        const lista: TarefaAberta[] = [];
+        for (const empresa of empresas) {
+            for (const tarefa of subtarefas[empresa.id] || []) {
+                if (tarefa.status === 'feita') continue;
+                lista.push({ empresaId: empresa.id, empresaNome: empresa.nome, tarefa });
+            }
+        }
+        return lista;
+    }, [empresas, subtarefas]);
 
     /** Proximas entregas de todos os clientes, misturadas e em ordem. */
     const proximas = useMemo(() => {
@@ -263,6 +288,9 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
                     value={tarefas.abertas}
                     icon={ListChecks}
                     hint={tarefas.semDono > 0 ? `${tarefas.semDono} sem responsável` : 'Todas com responsável'}
+                    // Numero que nao levava a lugar nenhum: dizia 7 e nao dizia
+                    // quais, de quem, nem onde.
+                    onClick={tarefas.abertas > 0 ? () => setVerTarefas(true) : undefined}
                 />
                 <StatTile
                     label="Aguardando vínculo"
@@ -508,6 +536,18 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
                     )}
                 </Painel>
             </div>
+
+            {verTarefas && (
+                <TarefasAbertasModal
+                    itens={tarefasAbertas}
+                    indice={indice}
+                    onAbrir={(empresaId, nome, eventId) => {
+                        setVerTarefas(false);
+                        onOpenClient(empresaId, nome, 'production', eventId);
+                    }}
+                    onFechar={() => setVerTarefas(false)}
+                />
+            )}
         </div>
     );
 };

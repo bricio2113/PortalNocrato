@@ -14,6 +14,8 @@
  *   9. peca que falhou na previa nao fica quebrada para sempre
  *  10. na tela de pastas, imagem e video ABREM em tamanho grande
  *  11. o calendario global da agencia troca de cliente pelo seletor
+ *  12. admin CRIA a conta de um colaborador pelo painel
+ *  13. "Tarefas abertas" abre a lista e cada linha leva ao conteudo da tarefa
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -382,6 +384,99 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(erros.length === 0, `11. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
 
     await page.screenshot({ path: 'dist-harness/v-calendario-global.png' });
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 12
+// CRIAR COLABORADOR. A tela Equipe listava a equipe e nao tinha caminho para
+// incluir ninguem: dependia de a pessoa se cadastrar sozinha no portal.
+{
+    const { page, erros } = await abrir('painel');
+    await page.getByRole('button', { name: /^Equipe/ }).first().click();
+    await page.waitForTimeout(700);
+
+    const botao = page.getByRole('button', { name: /Adicionar pessoa/ });
+    checar(await existe(botao), '12. a aba Equipe tem "Adicionar pessoa"');
+    await botao.click();
+    await page.waitForTimeout(500);
+
+    const form = page.getByRole('dialog', { name: 'Nova pessoa na equipe' });
+    checar(await existe(form), '12. o cadastro abre');
+    checar(!(await page.getByLabel(/senha/i).count()),
+        '12. e NÃO pede senha - quem define é a pessoa, pelo e-mail');
+
+    await page.getByLabel('E-mail *').fill('novo.colaborador@agencianocrato.com');
+    await page.getByLabel('Nome *').fill('Rita');
+    await page.getByLabel('Sobrenome').fill('Souza');
+    await page.getByLabel('Cargo').selectOption('Designer');
+    await page.getByRole('button', { name: /Criar acesso/ }).click();
+    await page.waitForTimeout(1200);
+
+    const w = await writes(page);
+    const conta = w.find(x => x.op === 'criar-conta');
+    checar(Boolean(conta) && conta.path === 'auth/novo.colaborador@agencianocrato.com',
+        `12. cria a conta no Auth: ${conta ? conta.path : '(nenhuma)'}`);
+    checar(Boolean(conta) && conta.data.verificacaoEnviada === true,
+        '12. com e-mail de confirmação - sem isso as regras negam tudo');
+
+    const doc = w.find(x => x.op === 'set' && x.path.startsWith('usuarios/uid-'));
+    checar(Boolean(doc) && doc.data.role === 'agencia' && doc.data.empresaId === null
+        && doc.data.cargo === 'Designer' && doc.data.nome === 'Rita',
+        `12. e o documento nasce colaborador com cargo: ${doc ? JSON.stringify(doc.data) : '(nenhum)'}`);
+    checar(w.some(x => x.op === 'reset-senha' && x.path.includes('novo.colaborador')),
+        '12. e o convite para criar a senha sai');
+    checar(erros.length === 0, `12. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 13
+// TAREFAS ABERTAS: o numero levava a lugar nenhum.
+{
+    const { page, erros } = await abrir('painel');
+    const tile = page.getByRole('button', { name: /Tarefas abertas/ });
+    checar(await existe(tile), '13. o número de tarefas abertas é clicável');
+    await tile.click();
+    await page.waitForTimeout(600);
+
+    const lista = page.getByRole('dialog', { name: 'Tarefas abertas' });
+    checar(await existe(lista), '13. abre a lista das tarefas');
+    const linhas = lista.locator('li button');
+    checar(await linhas.count() > 0, `13. com as tarefas em aberto (${await linhas.count()})`);
+    checar(await lista.getByText(/sem responsável/).first().count() > 0,
+        '13. e marca a que não tem responsável');
+
+    await page.screenshot({ path: 'dist-harness/v-tarefas.png' });
+
+    // Clicar PEDE o conteudo da tarefa. A navegacao em si vive no App (que o
+    // harness nao monta), entao o que se verifica aqui e o pedido: cliente, secao
+    // e o eventId da tarefa clicada.
+    const alvo = await linhas.first().getAttribute('aria-label');
+    await linhas.first().click();
+    await page.waitForTimeout(600);
+    checar(!(await existe(page.getByRole('dialog', { name: 'Tarefas abertas' }))),
+        '13. a lista fecha ao escolher');
+    const pedido = await page.evaluate(() => globalThis.__abriu || null);
+    checar(Boolean(pedido) && pedido.section === 'production' && Boolean(pedido.eventId),
+        `13. e pede o conteúdo da tarefa: ${JSON.stringify(pedido)}${alvo ? '' : ''}`);
+    checar(erros.length === 0, `13. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// --------------------------------------------------------------------- 13b
+// A OUTRA METADE: chegando com um conteudo pedido, o espaco de trabalho abre ELE,
+// em vez de largar a pessoa no quadro procurando o card.
+{
+    const { page, erros } = await abrir('cliente-workspace-tarefa');
+    await page.waitForTimeout(1800);
+    checar(await existe(page.getByRole('dialog', { name: /publicação/i })),
+        '13b. o conteúdo indicado abre sozinho ao entrar no cliente');
+    // role="tab", nao "button": a aba declara o papel dela e o papel implicito de
+    // <button> deixa de valer.
+    checar(await existe(page.getByRole('tab', { name: /Gestão/ })),
+        '13b. com a aba de gestão disponível, que é onde a tarefa vive');
+    checar(await page.getByRole('tab', { name: /Gestão/ }).first().getAttribute('aria-selected') === 'true',
+        '13b. e ela já vem ABERTA: quem vem de uma tarefa quer a gestão, não a legenda');
+    checar(erros.length === 0, `13b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.close();
 }
 

@@ -36,6 +36,14 @@ interface ClientWorkspaceProps {
     onBack: () => void;
     /** Secao inicial: o card do painel abre direto no que foi clicado. */
     initialSection?: Section;
+    /**
+     * Conteudo a abrir de imediato.
+     *
+     * Vem de quem clicou numa TAREFA na visao geral: parar no quadro de producao
+     * deixaria a pessoa procurando entre dezenas de cards qual era o conteudo da
+     * tarefa que ela acabou de clicar.
+     */
+    initialEventId?: string | null;
 }
 
 const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
@@ -62,7 +70,8 @@ const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
  * uma para outra. Aqui as secoes convivem num submenu proprio.
  */
 const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
-    empresaId, empresaNome, userEmail, userName, onBack, initialSection = 'overview'
+    empresaId, empresaNome, userEmail, userName, onBack, initialSection = 'overview',
+    initialEventId = null
 }) => {
     const [section, setSection] = useState<Section>(initialSection);
     const [isNavOpen, setIsNavOpen] = useState(false);
@@ -89,7 +98,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
      * aqui, a visao geral TROCA DE SECAO pedindo o post - uma fonte para as
      * escritas, e o modal abre igual em qualquer caminho.
      */
-    const [abrirEventoId, setAbrirEventoId] = useState<string | null>(null);
+    const [abrirEventoId, setAbrirEventoId] = useState<string | null>(initialEventId);
     const abrirConteudo = (eventId: string) => {
         setAbrirEventoId(eventId);
         setSection('production');
