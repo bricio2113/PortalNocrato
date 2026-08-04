@@ -3,22 +3,24 @@ import { nomeSeguro } from './midia';
 import { ehImagem, ehVideo } from './thumbnail';
 
 /**
- * Pastas de materiais de um cliente, dentro do proprio app.
+ * ARVORE de materiais de um cliente, dentro do proprio app.
  *
- * Substitui o link de pasta do Drive: o material passa a viver em
- * `empresas/{empresaId}/materiais/{pasta}/{arquivo}`, com as regras de
- * storage.rules valendo - cliente le e escreve na propria pasta, colaborador em
- * todas, ninguem em pasta de outro cliente.
+ * Substitui o link de pasta do Drive: o material vive em
+ * `empresas/{empresaId}/materiais/...`, com storage.rules valendo - cliente le e
+ * escreve na propria pasta, colaborador em todas, ninguem em pasta de outro
+ * cliente. A regra usa `{arquivo=**}`, que casa qualquer profundidade, entao
+ * aninhar pasta nao exigiu mexer em permissao.
+ *
+ * PROFUNDIDADE LIVRE. A primeira versao tinha UM nivel: o caminho era uma string
+ * unica e `nomePastaSeguro` removia barras, entao "Imagens/Agosto" virava
+ * "Imagens-Agosto". Agora o caminho e uma LISTA de segmentos, e pasta dentro de
+ * pasta funciona como no Drive.
  *
  * NAO EXISTE "CRIAR PASTA" NO CLOUD STORAGE.
  * O bucket e uma lista plana de objetos; "pasta" e so um prefixo no nome. Por
- * isso a criacao de pasta grava um marcador vazio (`.pasta`): sem nenhum objeto
- * com aquele prefixo, a pasta simplesmente nao existe para o listAll e
- * desapareceria da tela ao recarregar.
- *
- * O TEMPLATE PADRAO existe porque pasta vazia sem sugestao vira bagunca: cada
- * pessoa da equipe inventa um nome diferente para a mesma coisa, e seis meses
- * depois ninguem acha nada.
+ * isso a criacao grava um marcador vazio (`.pasta`): sem nenhum objeto com aquele
+ * prefixo, a pasta nao existe para o listAll e desapareceria ao recarregar. E por
+ * isso tambem que apagar pasta e RECURSIVO na mao - nao ha "delete prefix".
  */
 
 export const TEMPLATE_PASTAS = [
@@ -32,13 +34,31 @@ export const TEMPLATE_PASTAS = [
 /** Marcador que faz a pasta existir para o listAll. */
 const MARCADOR = '.pasta';
 
+/**
+ * Teto de profundidade.
+ *
+ * Nao e limite do Storage - e para o app ter um fim. Sem teto, um caminho montado
+ * errado (ou uma listagem que se referencia) faria a exclusao recursiva descer
+ * para sempre, e a migalha de navegacao nao caberia em tela nenhuma. Oito niveis
+ * e mais do que qualquer organizacao de material de agencia usa.
+ */
+export const PROFUNDIDADE_MAX = 8;
+
+/** Caminho relativo a raiz de materiais. Vazio = raiz. */
+export type Caminho = string[];
+
 const raiz = (empresaId: string) => `empresas/${empresaId}/materiais`;
+
+/** Caminho completo no bucket. */
+export const prefixo = (empresaId: string, caminho: Caminho) =>
+    [raiz(empresaId), ...caminho].join('/');
 
 /**
  * Nome de pasta seguro.
  *
- * Barra criaria uma subpasta sem o usuario pedir, e o resto quebra a URL. Acento
- * e mantido: e nome que aparece na tela, e "Vídeos" com acento e o certo.
+ * Barra continua proibida DENTRO do nome: aninhar e decisao de navegacao, feita
+ * entrando na pasta, nao um efeito colateral de digitar "a/b" no campo de nome.
+ * Acento e mantido - e nome que aparece na tela, e "Vídeos" com acento e o certo.
  */
 export function nomePastaSeguro(nome: string): string {
     return nome.trim().replace(/[\/\\?%*:|"<>#]+/g, '-').replace(/^\.+/, '').slice(0, 60);
@@ -55,28 +75,42 @@ export interface ArquivoMaterial {
 
 export interface PastaMaterial {
     nome: string;
-    path: string;
+    /** Caminho completo, incluindo os pais. Usado para navegar e excluir. */
+    caminho: Caminho;
 }
 
-/** Lista as pastas de um cliente. Ignora arquivos soltos na raiz. */
-export async function listarPastas(empresaId: string): Promise<PastaMaterial[]> {
-    const res = await storage.ref(raiz(empresaId)).listAll();
-    return (res.prefixes as { name: string; fullPath: string }[])
-        .map(p => ({ nome: p.name, path: p.fullPath }))
-        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+export interface ConteudoPasta {
+    pastas: PastaMaterial[];
+    arquivos: ArquivoMaterial[];
 }
+
+type ItemStorage = {
+    name: string;
+    fullPath: string;
+    getDownloadURL: () => Promise<string>;
+    getMetadata: () => Promise<{ size?: number; contentType?: string }>;
+};
 
 /**
- * Lista os arquivos de uma pasta.
+ * Lista pastas E arquivos de um nivel, numa ida so.
  *
- * Busca url e metadados em paralelo por arquivo. Em serie, uma pasta com 40
- * fotos faria 80 idas ao servidor uma depois da outra - a tela levaria dezenas
- * de segundos para pintar.
+ * Antes eram duas funcoes - uma para as pastas da raiz, outra para os arquivos de
+ * dentro - porque o modelo tinha um nivel e cada tela mostrava um dos dois. Numa
+ * arvore, todo nivel pode ter os dois ao mesmo tempo, e o `listAll` do Storage ja
+ * devolve `prefixes` e `items` na mesma resposta: separar em duas chamadas seria
+ * pagar duas vezes pelo mesmo dado.
+ *
+ * Url e metadados vao em paralelo por arquivo. Em serie, uma pasta com 40 fotos
+ * faria 80 idas ao servidor uma depois da outra.
  */
-export async function listarArquivos(empresaId: string, pasta: string): Promise<ArquivoMaterial[]> {
-    const res = await storage.ref(`${raiz(empresaId)}/${pasta}`).listAll();
-    const itens = (res.items as { name: string; fullPath: string; getDownloadURL: () => Promise<string>; getMetadata: () => Promise<{ size?: number; contentType?: string }> }[])
-        .filter(item => item.name !== MARCADOR);
+export async function listar(empresaId: string, caminho: Caminho): Promise<ConteudoPasta> {
+    const res = await storage.ref(prefixo(empresaId, caminho)).listAll();
+
+    const pastas: PastaMaterial[] = (res.prefixes as { name: string }[])
+        .map(p => ({ nome: p.name, caminho: [...caminho, p.name] }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+
+    const itens = (res.items as ItemStorage[]).filter(item => item.name !== MARCADOR);
 
     const arquivos = await Promise.all(itens.map(async (item): Promise<ArquivoMaterial | null> => {
         try {
@@ -91,41 +125,47 @@ export async function listarArquivos(empresaId: string, pasta: string): Promise<
         }
     }));
 
-    return arquivos
-        .filter((a): a is ArquivoMaterial => a !== null)
-        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+    return {
+        pastas,
+        arquivos: arquivos
+            .filter((a): a is ArquivoMaterial => a !== null)
+            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }))
+    };
 }
 
-/** Cria a pasta gravando o marcador. */
-export async function criarPasta(empresaId: string, nome: string): Promise<string> {
+/** Cria a pasta DENTRO de `caminho`, gravando o marcador. */
+export async function criarPasta(empresaId: string, caminho: Caminho, nome: string): Promise<string> {
     const limpo = nomePastaSeguro(nome);
     if (!limpo) throw new Error('Dê um nome à pasta.');
+    if (caminho.length >= PROFUNDIDADE_MAX) {
+        throw new Error(`Limite de ${PROFUNDIDADE_MAX} níveis de pasta.`);
+    }
     // Blob vazio com content-type de texto: storage.rules aceita text/plain, e um
     // marcador com tipo desconhecido seria recusado pela regra de tipo.
     const vazio = new Blob([''], { type: 'text/plain' });
-    await storage.ref(`${raiz(empresaId)}/${limpo}/${MARCADOR}`).put(vazio);
+    await storage.ref(`${prefixo(empresaId, [...caminho, limpo])}/${MARCADOR}`).put(vazio);
     return limpo;
 }
 
 /**
- * Cria a estrutura padrao. Idempotente: rodar de novo nao duplica nada, porque
- * gravar o mesmo marcador por cima e inofensivo.
+ * Cria a estrutura padrao na raiz. Idempotente: rodar de novo nao duplica nada,
+ * porque gravar o mesmo marcador por cima e inofensivo.
  */
 export async function criarTemplate(empresaId: string): Promise<void> {
     // Em serie de proposito: cinco uploads paralelos de 0 byte nao ganham nada e
     // multiplicam a chance de um estourar limite de requisicao.
     for (const nome of TEMPLATE_PASTAS) {
-        await criarPasta(empresaId, nome);
+        await criarPasta(empresaId, [], nome);
     }
 }
 
 export async function enviarMaterial(
     empresaId: string,
-    pasta: string,
+    caminho: Caminho,
     file: File,
     onProgress?: (pct: number) => void
 ): Promise<ArquivoMaterial> {
-    const path = `${raiz(empresaId)}/${pasta}/${nomeSeguro(file.name)}`;
+    const path = `${prefixo(empresaId, caminho)}/${nomeSeguro(file.name)}`;
     const ref = storage.ref(path);
 
     const url = await new Promise<string>((resolve, reject) => {
@@ -157,18 +197,39 @@ export async function removerArquivo(path: string): Promise<void> {
 }
 
 /**
- * Apaga a pasta e tudo dentro.
+ * Apaga a pasta, as subpastas e todos os arquivos.
  *
- * O Storage nao apaga prefixo: e preciso listar e apagar objeto por objeto. Sem
- * isto, "excluir pasta" removeria so o marcador e a pasta voltaria na proxima
- * listagem, com os arquivos intactos - o pior dos dois mundos.
+ * DESCE A ARVORE. O Storage nao apaga prefixo: e preciso listar e apagar objeto
+ * por objeto, e `listAll` de um nivel NAO traz o conteudo dos filhos - so os
+ * nomes deles. A versao anterior apagava um nivel e pronto; numa arvore isso
+ * deixaria as subpastas orfas, invisiveis na tela e ocupando espaco pago, com a
+ * pasta "excluida" reaparecendo na proxima listagem por causa delas.
+ *
+ * Os filhos vao em paralelo, os objetos de cada nivel tambem: sao dezenas de
+ * DELETEs independentes e em serie a exclusao de uma pasta grande levaria minutos.
  */
-export async function removerPasta(empresaId: string, pasta: string): Promise<void> {
-    const ref = storage.ref(`${raiz(empresaId)}/${pasta}`);
-    const res = await ref.listAll();
-    await Promise.all(
-        (res.items as { delete: () => Promise<void> }[]).map(item => item.delete())
-    );
+export async function removerPasta(
+    empresaId: string,
+    caminho: Caminho,
+    profundidade = 0
+): Promise<void> {
+    if (profundidade > PROFUNDIDADE_MAX) {
+        console.error('Profundidade máxima atingida ao excluir', caminho.join('/'));
+        return;
+    }
+    const res = await storage.ref(prefixo(empresaId, caminho)).listAll();
+
+    await Promise.all([
+        ...(res.items as { delete: () => Promise<void> }[]).map(item =>
+            item.delete().catch(erro => {
+                // Objeto que ja nao existe nao e falha: a exclusao continua.
+                if ((erro as { code?: string })?.code !== 'storage/object-not-found') throw erro;
+            })
+        ),
+        ...(res.prefixes as { name: string }[]).map(sub =>
+            removerPasta(empresaId, [...caminho, sub.name], profundidade + 1)
+        )
+    ]);
 }
 
 /** Icone/categoria para a tela decidir como exibir. */

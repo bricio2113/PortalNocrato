@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-    PastaMaterial, ArquivoMaterial, listarPastas, listarArquivos, criarPasta,
+    Caminho, PastaMaterial, ArquivoMaterial, ConteudoPasta, listar, criarPasta,
     criarTemplate, enviarMaterial, removerArquivo, removerPasta,
-    tipoDoArquivo, TEMPLATE_PASTAS
+    tipoDoArquivo, TEMPLATE_PASTAS, PROFUNDIDADE_MAX
 } from '../utils/pastas';
 import { PageHeader, EmptyState, Card } from './ui';
 import { db } from '../utils/firebase';
 import { toSafeHref } from '../utils/url';
 import {
     Folder, FolderPlus, Upload, ArrowLeft, Trash2, Loader2, AlertTriangle,
-    FileText, Play, Download, Sparkles, ExternalLink, Link as LinkIcon
+    FileText, Play, Download, Sparkles, ExternalLink, Link as LinkIcon,
+    ChevronRight, HardDrive
 } from 'lucide-react';
 
 interface LinkLegado { id: string; title: string; url: string; category?: string }
@@ -25,11 +26,16 @@ const formatarBytes = (bytes?: number) =>
     bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 
 /**
- * Materiais do cliente, em pastas, dentro do app.
+ * Materiais do cliente, em ARVORE de pastas, dentro do app.
  *
- * Substitui a lista de links do Drive: o arquivo passa a morar no bucket, com as
- * regras de storage.rules valendo. O que o cliente enxerga e a propria pasta e
- * nada mais - o isolamento e por caminho, verificado no servidor.
+ * Substitui a lista de links do Drive: o arquivo mora no bucket, com as regras de
+ * storage.rules valendo. O que o cliente enxerga e a propria pasta e nada mais - o
+ * isolamento e por caminho, verificado no servidor.
+ *
+ * ERAM DUAS TELAS - "lista de pastas" e "dentro da pasta" -, uma por nivel, o que
+ * so funcionava com um nivel. Agora e UMA tela navegando por caminho: pastas em
+ * cima, arquivos embaixo, migalha para subir. Cada nivel pode ter os dois, como no
+ * Drive.
  *
  * O CLIENTE SOBE, MAS NAO APAGA. Ele manda foto de produto, logo e referencia;
  * remover material que a producao esta usando nao e decisao dele. A regra do
@@ -37,9 +43,10 @@ const formatarBytes = (bytes?: number) =>
  */
 const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) => {
     const ehAgencia = userRole === 'agencia';
-    const [pastas, setPastas] = useState<PastaMaterial[]>([]);
-    const [aberta, setAberta] = useState<string | null>(null);
-    const [arquivos, setArquivos] = useState<ArquivoMaterial[]>([]);
+
+    /** Onde estamos. Vazio = raiz de materiais. */
+    const [caminho, setCaminho] = useState<Caminho>([]);
+    const [conteudo, setConteudo] = useState<ConteudoPasta>({ pastas: [], arquivos: [] });
     const [carregando, setCarregando] = useState(true);
     const [ocupado, setOcupado] = useState('');
     const [erro, setErro] = useState('');
@@ -65,33 +72,30 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
             );
     }, [empresaId]);
 
-    const recarregarPastas = useCallback(async () => {
+    const carregar = useCallback(async (alvo: Caminho) => {
         setCarregando(true);
         setErro('');
         try {
-            setPastas(await listarPastas(empresaId));
+            setConteudo(await listar(empresaId, alvo));
         } catch (e) {
             console.error(e);
-            setErro('Não foi possível carregar as pastas. Verifique sua conexão.');
+            setErro('Não foi possível carregar esta pasta. Verifique sua conexão.');
+            setConteudo({ pastas: [], arquivos: [] });
         } finally {
             setCarregando(false);
         }
     }, [empresaId]);
 
-    useEffect(() => { void recarregarPastas(); }, [recarregarPastas]);
+    // Recarrega a cada mudanca de caminho. A dependencia e o caminho SERIALIZADO:
+    // o array e recriado a cada render e um efeito que dependesse dele rodaria
+    // para sempre.
+    const chave = caminho.join('/');
+    useEffect(() => { void carregar(chave ? chave.split('/') : []); }, [chave, carregar]);
 
-    const abrirPasta = async (nome: string) => {
-        setAberta(nome);
-        setCarregando(true);
+    const navegar = (alvo: Caminho) => {
+        setCriandoNome(null);
         setErro('');
-        try {
-            setArquivos(await listarArquivos(empresaId, nome));
-        } catch (e) {
-            console.error(e);
-            setErro('Não foi possível listar os arquivos desta pasta.');
-        } finally {
-            setCarregando(false);
-        }
+        setCaminho(alvo);
     };
 
     const handleTemplate = async () => {
@@ -99,7 +103,7 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
         setErro('');
         try {
             await criarTemplate(empresaId);
-            await recarregarPastas();
+            await carregar(caminho);
         } catch (e) {
             console.error(e);
             setErro('Não foi possível criar as pastas. Verifique as permissões.');
@@ -112,9 +116,9 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
         setOcupado('Criando pasta...');
         setErro('');
         try {
-            await criarPasta(empresaId, nome);
+            await criarPasta(empresaId, caminho, nome);
             setCriandoNome(null);
-            await recarregarPastas();
+            await carregar(caminho);
         } catch (e) {
             console.error(e);
             setErro(e instanceof Error ? e.message : 'Não foi possível criar a pasta.');
@@ -122,13 +126,13 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
     };
 
     const handleUpload = async (files: FileList | null) => {
-        if (!files?.length || !aberta) return;
+        if (!files?.length) return;
         setErro('');
         // Em serie: em paralelo o navegador divide a banda e nenhum termina.
         for (const file of Array.from(files)) {
             try {
                 setEnviando({ nome: file.name, pct: 0 });
-                await enviarMaterial(empresaId, aberta, file, pct => setEnviando({ nome: file.name, pct }));
+                await enviarMaterial(empresaId, caminho, file, pct => setEnviando({ nome: file.name, pct }));
             } catch (e) {
                 console.error(e);
                 setErro(`Não foi possível enviar ${file.name}. Confira o tamanho e o tipo do arquivo.`);
@@ -136,7 +140,7 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
             } finally { setEnviando(null); }
         }
         if (inputRef.current) inputRef.current.value = '';
-        await abrirPasta(aberta);
+        await carregar(caminho);
     };
 
     const handleRemoverArquivo = async (arquivo: ArquivoMaterial) => {
@@ -144,144 +148,52 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
         setErro('');
         try {
             await removerArquivo(arquivo.path);
-            setArquivos(prev => prev.filter(a => a.path !== arquivo.path));
+            setConteudo(prev => ({ ...prev, arquivos: prev.arquivos.filter(a => a.path !== arquivo.path) }));
         } catch (e) {
             console.error(e);
             setErro('Não foi possível remover o arquivo.');
         }
     };
 
-    const handleRemoverPasta = async (nome: string) => {
-        if (!window.confirm(`Excluir a pasta "${nome}" e TODOS os arquivos dentro dela? Isso não tem volta.`)) return;
+    const handleRemoverPasta = async (pasta: PastaMaterial) => {
+        // O aviso diz SUBPASTAS: numa arvore, quem apaga "Imagens" pode nao ter
+        // ideia de quantos niveis vao junto.
+        if (!window.confirm(
+            `Excluir a pasta "${pasta.nome}" com TODAS as subpastas e arquivos dentro dela? Isso não tem volta.`
+        )) return;
         setOcupado('Excluindo pasta...');
         setErro('');
         try {
-            await removerPasta(empresaId, nome);
-            if (aberta === nome) { setAberta(null); setArquivos([]); }
-            await recarregarPastas();
+            await removerPasta(empresaId, pasta.caminho);
+            await carregar(caminho);
         } catch (e) {
             console.error(e);
             setErro('Não foi possível excluir a pasta.');
         } finally { setOcupado(''); }
     };
 
-    // --- PASTA ABERTA ---
-    if (aberta) {
-        return (
-            <div>
-                <PageHeader
-                    title={aberta}
-                    subtitle={`${arquivos.length} arquivo(s)`}
-                    actions={
-                        <>
-                            <button
-                                onClick={() => { setAberta(null); setArquivos([]); setErro(''); }}
-                                className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-300 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-full transition-colors"
-                            >
-                                <ArrowLeft className="w-4 h-4" /> Pastas
-                            </button>
-                            <button
-                                onClick={() => inputRef.current?.click()}
-                                disabled={Boolean(enviando)}
-                                className="inline-flex items-center gap-2 text-sm font-semibold bg-[#FABE01] hover:bg-[#FABE01]/90 text-black px-5 py-2.5 rounded-full transition-colors disabled:opacity-40"
-                            >
-                                <Upload className="w-4 h-4" /> Enviar arquivos
-                            </button>
-                        </>
-                    }
-                />
+    const vazio = conteudo.pastas.length === 0 && conteudo.arquivos.length === 0;
+    const naRaiz = caminho.length === 0;
+    const podeAninhar = caminho.length < PROFUNDIDADE_MAX;
 
-                <input ref={inputRef} type="file" multiple onChange={e => handleUpload(e.target.files)} className="hidden" />
-
-                {enviando && (
-                    <Card className="p-4 mb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                            <Loader2 className="w-4 h-4 text-[#FABE01] animate-spin shrink-0" />
-                            <span className="text-sm text-zinc-300 truncate flex-1">{enviando.nome}</span>
-                            <span className="text-sm text-zinc-500">{enviando.pct}%</span>
-                        </div>
-                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#FABE01] transition-all" style={{ width: `${enviando.pct}%` }} />
-                        </div>
-                    </Card>
-                )}
-
-                {erro && (
-                    <p className="text-red-400 text-sm mb-4 flex items-start gap-1.5">
-                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erro}
-                    </p>
-                )}
-
-                {carregando ? (
-                    <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 text-[#FABE01] animate-spin" /></div>
-                ) : arquivos.length === 0 ? (
-                    <EmptyState
-                        icon={Upload}
-                        title="Pasta vazia"
-                        description="Envie imagens, vídeos ou documentos. Imagem até 15 MB, vídeo até 300 MB, documento até 25 MB."
-                    />
-                ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                        {arquivos.map(arquivo => {
-                            const tipo = tipoDoArquivo(arquivo);
-                            return (
-                                <div key={arquivo.path} className="group bg-[#1A1A1A] border border-white/5 rounded-card overflow-hidden">
-                                    <div className="aspect-square bg-[#111111] relative">
-                                        {tipo === 'imagem' ? (
-                                            <img src={arquivo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                {tipo === 'video'
-                                                    ? <Play className="w-7 h-7 text-zinc-600 fill-current" />
-                                                    : <FileText className="w-7 h-7 text-zinc-600" />}
-                                            </div>
-                                        )}
-                                        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                            <a
-                                                href={arquivo.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                aria-label={`Abrir ${arquivo.nome}`}
-                                                className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-white"
-                                            >
-                                                <Download className="w-3 h-3" />
-                                            </a>
-                                            {/* O cliente nao apaga: nao remove material que a
-                                                producao esta usando. A regra do Storage recusa
-                                                de qualquer forma. */}
-                                            {ehAgencia && (
-                                                <button
-                                                    onClick={() => handleRemoverArquivo(arquivo)}
-                                                    aria-label={`Remover ${arquivo.nome}`}
-                                                    className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-red-400"
-                                                >
-                                                    <Trash2 className="w-3 h-3" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="p-2">
-                                        <p className="text-[11px] text-zinc-300 truncate" title={arquivo.nome}>{arquivo.nome}</p>
-                                        <p className="text-[10px] text-zinc-600">{formatarBytes(arquivo.bytes)}</p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-        );
-    }
-
-    // --- LISTA DE PASTAS ---
     return (
         <div>
             <PageHeader
-                title="Arquivos & Materiais"
-                subtitle="Tudo do cliente em um lugar só, sem sair do portal."
-                actions={ehAgencia ? (
+                title={naRaiz ? 'Arquivos & Materiais' : caminho[caminho.length - 1]}
+                subtitle={naRaiz
+                    ? 'Tudo do cliente em um lugar só, sem sair do portal.'
+                    : `${conteudo.pastas.length} pasta(s) · ${conteudo.arquivos.length} arquivo(s)`}
+                actions={
                     <>
-                        {pastas.length === 0 && (
+                        {!naRaiz && (
+                            <button
+                                onClick={() => navegar(caminho.slice(0, -1))}
+                                className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-300 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-full transition-colors"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Voltar
+                            </button>
+                        )}
+                        {ehAgencia && naRaiz && conteudo.pastas.length === 0 && (
                             <button
                                 onClick={handleTemplate}
                                 disabled={Boolean(ocupado)}
@@ -290,20 +202,67 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                                 <Sparkles className="w-4 h-4" /> Criar estrutura padrão
                             </button>
                         )}
+                        {ehAgencia && podeAninhar && (
+                            <button
+                                onClick={() => setCriandoNome('')}
+                                disabled={Boolean(ocupado)}
+                                className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-300 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-full transition-colors disabled:opacity-40"
+                            >
+                                <FolderPlus className="w-4 h-4" /> Nova pasta
+                            </button>
+                        )}
+                        {/* Enviar em QUALQUER nivel, inclusive na raiz - no Drive
+                            tambem da, e obrigar a entrar numa pasta para subir um
+                            arquivo solto e uma trava sem motivo. */}
                         <button
-                            onClick={() => setCriandoNome('')}
-                            disabled={Boolean(ocupado)}
+                            onClick={() => inputRef.current?.click()}
+                            disabled={Boolean(enviando)}
                             className="inline-flex items-center gap-2 text-sm font-semibold bg-[#FABE01] hover:bg-[#FABE01]/90 text-black px-5 py-2.5 rounded-full transition-colors disabled:opacity-40"
                         >
-                            <FolderPlus className="w-4 h-4" /> Nova pasta
+                            <Upload className="w-4 h-4" /> Enviar arquivos
                         </button>
                     </>
-                ) : undefined}
+                }
             />
+
+            {/* MIGALHA. Numa arvore, "voltar" nao basta: sem ela, quem esta em
+                Imagens > 2026 > Agosto nao sabe onde esta nem sobe dois niveis de
+                uma vez. */}
+            <nav aria-label="Caminho" className="flex items-center gap-1 flex-wrap mb-4 text-xs">
+                <button
+                    onClick={() => navegar([])}
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors ${
+                        naRaiz ? 'text-white font-semibold' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                    }`}
+                >
+                    <HardDrive className="w-3.5 h-3.5" /> Materiais
+                </button>
+                {caminho.map((segmento, i) => {
+                    const ultimo = i === caminho.length - 1;
+                    return (
+                        <React.Fragment key={`${segmento}-${i}`}>
+                            <ChevronRight className="w-3 h-3 text-zinc-700 shrink-0" />
+                            <button
+                                onClick={() => navegar(caminho.slice(0, i + 1))}
+                                disabled={ultimo}
+                                className={`px-2 py-1 rounded-full max-w-[12rem] truncate transition-colors ${
+                                    ultimo ? 'text-white font-semibold' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                }`}
+                            >
+                                {segmento}
+                            </button>
+                        </React.Fragment>
+                    );
+                })}
+            </nav>
+
+            <input ref={inputRef} type="file" multiple onChange={e => handleUpload(e.target.files)} className="hidden" />
 
             {criandoNome !== null && (
                 <Card className="p-4 mb-4">
-                    <label className="block text-[11px] font-semibold text-zinc-500 mb-1.5">Nome da pasta</label>
+                    <label className="block text-[11px] font-semibold text-zinc-500 mb-1.5">
+                        Nome da pasta {naRaiz ? '' : `dentro de “${caminho[caminho.length - 1]}”`}
+                    </label>
                     <div className="flex gap-2">
                         <input
                             autoFocus
@@ -315,6 +274,19 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                         />
                         <button onClick={handleCriar} className="shrink-0 px-4 py-2.5 text-sm font-semibold bg-[#FABE01] text-black rounded-control">Criar</button>
                         <button onClick={() => setCriandoNome(null)} className="shrink-0 px-4 py-2.5 text-sm font-semibold bg-white/5 text-zinc-300 rounded-control">Cancelar</button>
+                    </div>
+                </Card>
+            )}
+
+            {enviando && (
+                <Card className="p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Loader2 className="w-4 h-4 text-[#FABE01] animate-spin shrink-0" />
+                        <span className="text-sm text-zinc-300 truncate flex-1">{enviando.nome}</span>
+                        <span className="text-sm text-zinc-500">{enviando.pct}%</span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#FABE01] transition-all" style={{ width: `${enviando.pct}%` }} />
                     </div>
                 </Card>
             )}
@@ -332,45 +304,113 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
 
             {carregando ? (
                 <div className="py-16 flex justify-center"><Loader2 className="w-7 h-7 text-[#FABE01] animate-spin" /></div>
-            ) : pastas.length === 0 ? (
+            ) : vazio ? (
                 <EmptyState
-                    icon={Folder}
-                    title="Nenhuma pasta ainda"
-                    description={ehAgencia
-                        ? `Crie a estrutura padrão (${TEMPLATE_PASTAS.join(', ')}) ou monte as suas.`
-                        : 'A agência ainda não organizou as pastas deste cliente.'}
+                    icon={naRaiz ? Folder : Upload}
+                    title={naRaiz ? 'Nenhuma pasta ainda' : 'Pasta vazia'}
+                    description={naRaiz
+                        ? (ehAgencia
+                            ? `Crie a estrutura padrão (${TEMPLATE_PASTAS.join(', ')}) ou monte as suas.`
+                            : 'A agência ainda não organizou as pastas deste cliente.')
+                        : 'Envie arquivos ou crie uma subpasta. Imagem até 15 MB, vídeo até 300 MB, documento até 25 MB.'}
                 />
             ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {pastas.map(pasta => (
-                        <div key={pasta.path} className="group relative">
-                            <button
-                                onClick={() => abrirPasta(pasta.nome)}
-                                className="w-full text-left bg-[#1A1A1A] border border-white/5 hover:border-[#FABE01]/40 rounded-card p-4 flex items-center gap-3 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01]"
-                            >
-                                <span className="w-10 h-10 shrink-0 rounded-chip bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
-                                    <Folder className="w-5 h-5" />
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                    <span className="block text-sm font-semibold text-white truncate">{pasta.nome}</span>
-                                    <span className="block text-[11px] text-zinc-600">abrir</span>
-                                </span>
-                            </button>
-                            {ehAgencia && (
-                                <button
-                                    onClick={() => handleRemoverPasta(pasta.nome)}
-                                    aria-label={`Excluir pasta ${pasta.nome}`}
-                                    className="absolute top-2 right-2 p-1.5 rounded-full text-zinc-700 hover:text-red-400 hover:bg-red-400/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                                >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
-                    ))}
+                <div className="space-y-6">
+                    {conteudo.pastas.length > 0 && (
+                        <section>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">
+                                Pastas
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                                {conteudo.pastas.map(pasta => (
+                                    <div key={pasta.caminho.join('/')} className="group relative">
+                                        <button
+                                            onClick={() => navegar(pasta.caminho)}
+                                            className="w-full text-left bg-[#1A1A1A] border border-white/5 hover:border-[#FABE01]/40 rounded-card p-4 flex items-center gap-3 transition-colors focus:outline-none focus-visible:border-[#FABE01]"
+                                        >
+                                            <span className="w-10 h-10 shrink-0 rounded-chip bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
+                                                <Folder className="w-5 h-5" />
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-sm font-semibold text-white truncate">{pasta.nome}</span>
+                                                <span className="block text-[11px] text-zinc-600">abrir</span>
+                                            </span>
+                                            <ChevronRight className="w-4 h-4 text-zinc-700 group-hover:text-[#FABE01] shrink-0 transition-colors" />
+                                        </button>
+                                        {ehAgencia && (
+                                            <button
+                                                onClick={() => handleRemoverPasta(pasta)}
+                                                aria-label={`Excluir pasta ${pasta.nome}`}
+                                                className="absolute top-2 right-2 p-1.5 rounded-full text-zinc-700 hover:text-red-400 hover:bg-red-400/5 bg-[#1A1A1A] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {conteudo.arquivos.length > 0 && (
+                        <section>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">
+                                Arquivos
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                                {conteudo.arquivos.map(arquivo => {
+                                    const tipo = tipoDoArquivo(arquivo);
+                                    return (
+                                        <div key={arquivo.path} className="group bg-[#1A1A1A] border border-white/5 rounded-card overflow-hidden">
+                                            <div className="aspect-square bg-[#111111] relative">
+                                                {tipo === 'imagem' ? (
+                                                    <img src={arquivo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center">
+                                                        {tipo === 'video'
+                                                            ? <Play className="w-7 h-7 text-zinc-600 fill-current" />
+                                                            : <FileText className="w-7 h-7 text-zinc-600" />}
+                                                    </div>
+                                                )}
+                                                <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                    <a
+                                                        href={arquivo.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        aria-label={`Abrir ${arquivo.nome}`}
+                                                        className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-white"
+                                                    >
+                                                        <Download className="w-3 h-3" />
+                                                    </a>
+                                                    {/* O cliente nao apaga: nao remove material que a
+                                                        producao esta usando. A regra do Storage recusa
+                                                        de qualquer forma. */}
+                                                    {ehAgencia && (
+                                                        <button
+                                                            onClick={() => handleRemoverArquivo(arquivo)}
+                                                            aria-label={`Remover ${arquivo.nome}`}
+                                                            className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-red-400"
+                                                        >
+                                                            <Trash2 className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="p-2">
+                                                <p className="text-[11px] text-zinc-300 truncate" title={arquivo.nome}>{arquivo.nome}</p>
+                                                <p className="text-[10px] text-zinc-600">{formatarBytes(arquivo.bytes)}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
                 </div>
             )}
 
-            {legados.length > 0 && (
+            {/* Links antigos so na raiz: eles nao pertencem a pasta nenhuma. */}
+            {naRaiz && legados.length > 0 && (
                 <div className="mt-8">
                     <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-sm font-semibold text-white">Links do Drive</h3>

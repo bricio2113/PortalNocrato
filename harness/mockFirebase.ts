@@ -200,27 +200,73 @@ const makeDoc = (path: string): any => ({
  * https plausivel, porque isSafeImageSrc recusa qualquer coisa que nao seja
  * https ou data URI de imagem.
  */
-// Pastas e arquivos falsos, para a tela de materiais ter o que listar.
-const PASTAS_MOCK = ['Imagens', 'Vídeos', 'Identidade Visual', 'Contratos e Documentos'];
-const ARQUIVOS_MOCK = ['capa-01.jpg', 'capa-02.jpg', 'briefing.pdf', 'reel-bruto.mp4', '.pasta'];
+/**
+ * ARVORE de materiais falsa.
+ *
+ * Era um par de listas com uma regex decidindo "raiz devolve pastas, dentro de
+ * pasta devolve arquivos". Isso so descrevia o modelo de UM NIVEL: numa arvore,
+ * qualquer nivel pode ter pasta E arquivo, e a navegacao de dois niveis para
+ * baixo nao tinha o que devolver - a auditoria via a tela funcionando por acidente
+ * porque nunca descia. Agora e uma arvore de verdade, entao migalha, subpasta e
+ * exclusao recursiva sao exercitados.
+ */
+type NoArvore = { [nome: string]: NoArvore | null };
+
+const ARVORE_MATERIAIS: NoArvore = {
+    'Imagens': {
+        '.pasta': null,
+        'capa-01.jpg': null,
+        'capa-02.jpg': null,
+        '2026': {
+            '.pasta': null,
+            'Agosto': {
+                '.pasta': null,
+                'post-01.jpg': null,
+                'post-02.jpg': null,
+                'Selecionadas': { '.pasta': null, 'final.jpg': null }
+            },
+            'Setembro': { '.pasta': null }
+        }
+    },
+    'Vídeos': { '.pasta': null, 'reel-bruto.mp4': null },
+    'Identidade Visual': { '.pasta': null, 'manual-marca.pdf': null },
+    'Contratos e Documentos': { '.pasta': null }
+};
+
 const tipoPorNome = (n: string) =>
     n.endsWith('.pdf') ? 'application/pdf' : n.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
+
+/** Desce a arvore pelo caminho depois de `materiais/`. Null = nao existe. */
+const noDoCaminho = (caminho: string): NoArvore | null => {
+    const marca = '/materiais';
+    const i = caminho.indexOf(marca);
+    if (i === -1) return null;
+    const resto = caminho.slice(i + marca.length).replace(/^\/+/, '');
+    let no: NoArvore | null = ARVORE_MATERIAIS;
+    if (!resto) return no;
+    for (const seg of resto.split('/')) {
+        if (!no || typeof no[seg] === 'undefined' || no[seg] === null) return null;
+        no = no[seg] as NoArvore;
+    }
+    return no;
+};
 
 export const storage: any = {
     ref: (caminho: string) => ({
         fullPath: caminho,
         listAll: async () => {
-            // Raiz de materiais devolve PASTAS; dentro de uma pasta, ARQUIVOS.
-            const dentroDePasta = /\/materiais\/[^/]+$/.test(caminho);
+            const no = noDoCaminho(caminho);
+            if (!no) return { prefixes: [], items: [] };
+            const nomes = Object.keys(no);
             return {
-                prefixes: dentroDePasta ? [] : PASTAS_MOCK.map(nome => ({ name: nome, fullPath: `${caminho}/${nome}` })),
-                items: dentroDePasta ? ARQUIVOS_MOCK.map(nome => ({
+                prefixes: nomes.filter(n => no[n] !== null).map(nome => ({ name: nome, fullPath: `${caminho}/${nome}` })),
+                items: nomes.filter(n => no[n] === null).map(nome => ({
                     name: nome,
                     fullPath: `${caminho}/${nome}`,
                     getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(nome)}`,
                     getMetadata: async () => ({ size: 1024 * 420, contentType: tipoPorNome(nome) }),
                     delete: async () => registrar('delete-storage', `${caminho}/${nome}`)
-                })) : []
+                }))
             };
         },
         put: (arquivo: any) => {
