@@ -43,6 +43,17 @@ interface ClientProductionViewProps {
     onIrParaCalendario?: () => void;
     /** @ do cliente, para a simulacao do post no modal. */
     perfilHandle?: string | null;
+    /**
+     * Post a abrir assim que o quadro carregar.
+     *
+     * A visao geral do cliente lista os conteudos atrasados e manda abrir um
+     * direto. Ela nao monta o editor: ele precisa dos handlers de salvar e
+     * excluir, que vivem aqui. Duplicar isso la seria uma segunda fonte de
+     * escrita para o mesmo documento.
+     */
+    abrirEventoId?: string | null;
+    /** Avisa que o pedido foi atendido, para nao reabrir a cada render. */
+    onEventoAberto?: () => void;
 }
 
 /**
@@ -64,7 +75,7 @@ interface ClientProductionViewProps {
  * tudo em colunas, com prazo, responsavel e progresso das subtarefas a vista.
  */
 const ClientProductionView: React.FC<ClientProductionViewProps> = ({
-    empresaId, userEmail, userName, onIrParaCalendario, perfilHandle
+    empresaId, userEmail, userName, onIrParaCalendario, perfilHandle, abrirEventoId, onEventoAberto
 }) => {
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [subtarefas, setSubtarefas] = useState<Subtarefa[]>([]);
@@ -153,6 +164,20 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
             .catch(() => { /* colecao pode nao existir - nao e erro */ });
         return () => { vivo = false; };
     }, [empresaId]);
+
+    /**
+     * Atende o pedido da visao geral.
+     *
+     * Espera os eventos chegarem: sem isso, o pedido feito antes da assinatura
+     * responder nao encontraria o post e sumiria em silencio.
+     */
+    useEffect(() => {
+        if (!abrirEventoId || events.length === 0) return;
+        const alvo = events.find(e => e.id === abrirEventoId);
+        if (alvo) setSelectedEvent(alvo);
+        onEventoAberto?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [abrirEventoId, events.length]);
 
     const showNotice = (msg: string) => {
         setNotice(msg);

@@ -5,7 +5,7 @@ import 'firebase/compat/firestore';
 import { CalendarEvent, UserProfile, Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
 import { getClientStage, CLIENT_STAGES, stageView, needsClientAction, needsAgencyAction } from '../utils/eventState';
-import { summarizeSla } from '../utils/sla';
+import { summarizeSla, slaAtual, slaClasses } from '../utils/sla';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
 import WeeklyUpdatesView from './WeeklyUpdatesView';
@@ -19,10 +19,11 @@ import { PERMISSION_LABEL } from '../utils/permissions';
 import { auth } from '../utils/firebase';
 import { isAdmin } from '../utils/permissions';
 import { PageHeader, StatTile, Card } from './ui';
+import { getTypeStyles } from '../utils/eventStyles';
 import {
     ArrowLeft, LayoutDashboard, Calendar, ClipboardList, Target,
     DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock, KeyRound, Users,
-    ImageOff, ArrowRight, Check
+    ImageOff, ArrowRight, Check, ChevronDown
 } from 'lucide-react';
 
 type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' | 'acessos';
@@ -77,6 +78,22 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const [avisoAcesso, setAvisoAcesso] = useState('');
     /** Contato com a ficha aberta. O card da lista e so a porta de entrada. */
     const [fichaPessoa, setFichaPessoa] = useState<UserProfile | null>(null);
+
+    /** Qual pendencia da visao geral esta expandida. Uma por vez. */
+    const [expandida, setExpandida] = useState<string | null>(null);
+    /**
+     * Conteudo a abrir no quadro de producao.
+     *
+     * A visao geral nao monta o editor de post: ele precisa dos handlers de
+     * salvar e excluir, que ja vivem no quadro. Em vez de duplicar essa logica
+     * aqui, a visao geral TROCA DE SECAO pedindo o post - uma fonte para as
+     * escritas, e o modal abre igual em qualquer caminho.
+     */
+    const [abrirEventoId, setAbrirEventoId] = useState<string | null>(null);
+    const abrirConteudo = (eventId: string) => {
+        setAbrirEventoId(eventId);
+        setSection('production');
+    };
 
     /**
      * Ficha do cliente - @, nicho e situacao.
@@ -190,6 +207,8 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         userName={userName}
                         onIrParaCalendario={() => setSection('calendar')}
                         perfilHandle={ficha?.handle}
+                        abrirEventoId={abrirEventoId}
+                        onEventoAberto={() => setAbrirEventoId(null)}
                     />
                 );
             case 'weekly':
@@ -270,48 +289,59 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
      * identifica o cliente de verdade: @ do Instagram, nicho e situacao.
      */
     const renderOverview = () => {
+        /**
+         * As pendencias, com OS CONTEUDOS dentro.
+         *
+         * A contagem vem do tamanho da lista, e nao de um contador calculado em
+         * outro lugar: com duas fontes, o numero e a lista podiam discordar - a
+         * linha dizendo "6" e a expansao mostrando 5.
+         */
+        const atrasadoPor = (dono: 'agencia' | 'cliente') => events.filter(e => {
+            const sla = slaAtual(e);
+            return sla?.estourado && sla.dono === dono;
+        });
+
         const pendencias = [
             {
                 chave: 'atrasoEquipe',
-                n: stats.prazos.atrasadoAgencia,
                 titulo: 'Atrasado com a equipe',
                 detalhe: 'Produção vencida ou ajuste passado de 2 dias úteis.',
                 tom: 'erro' as const,
                 icone: AlertTriangle,
-                acao: 'Ver na produção',
-                ir: () => setSection('production')
+                itens: atrasadoPor('agencia')
             },
             {
                 chave: 'ajuste',
-                n: stats.ajustePedido,
                 titulo: 'Ajuste pedido pelo cliente',
                 detalhe: 'Ele decidiu e está esperando a equipe voltar com a correção.',
                 tom: 'atencao' as const,
                 icone: ClipboardList,
-                acao: 'Abrir calendário',
-                ir: () => setSection('calendar')
+                itens: events.filter(needsAgencyAction)
             },
             {
                 chave: 'atrasoCliente',
-                n: stats.prazos.atrasadoCliente,
                 titulo: 'Atrasado com o cliente',
                 detalhe: 'A janela de revisão fechou sem decisão — cabe renegociar ou publicar.',
                 tom: 'atencao' as const,
                 icone: Clock,
-                acao: 'Ver quais',
-                ir: () => setSection('calendar')
+                itens: atrasadoPor('cliente')
             },
             {
                 chave: 'semCapa',
-                n: stats.semCapa,
                 titulo: 'Sem capa definida',
                 detalhe: 'A prévia do feed mostra um espaço vazio no lugar da peça.',
                 tom: 'neutro' as const,
                 icone: ImageOff,
-                acao: 'Resolver capas',
-                ir: () => setSection('calendar')
+                itens: events.filter(e => !e.midias?.length && !e.previewUrl && !e.coverUrl)
             }
-        ].filter(p => p.n > 0);
+        ]
+            .map(p => ({
+                ...p,
+                // Mais urgente primeiro dentro da propria linha: quem expande quer
+                // atacar o pior, nao ler em ordem de cadastro.
+                itens: [...p.itens].sort((a, b) => a.date.getTime() - b.date.getTime())
+            }))
+            .filter(p => p.itens.length > 0);
 
         const TONS = {
             erro: 'border-red-500/25 bg-red-500/[0.06] text-red-400',
@@ -379,14 +409,20 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                     <ul className="divide-y divide-white/5">
                                         {pendencias.map(p => {
                                             const Icone = p.icone;
+                                            const aberta = expandida === p.chave;
                                             return (
                                                 <li key={p.chave}>
+                                                    {/* A linha ABRE a lista em vez de sair da tela.
+                                                        Antes ela levava para o quadro inteiro e a
+                                                        pessoa tinha que reencontrar ali os 6 posts
+                                                        que a linha acabou de contar. */}
                                                     <button
-                                                        onClick={p.ir}
+                                                        onClick={() => setExpandida(aberta ? null : p.chave)}
+                                                        aria-expanded={aberta}
                                                         className="w-full flex items-center gap-3.5 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors group"
                                                     >
                                                         <span className={`w-11 h-11 shrink-0 rounded-control border flex items-center justify-center font-bold ${TONS[p.tom]}`}>
-                                                            {p.n}
+                                                            {p.itens.length}
                                                         </span>
                                                         <span className="min-w-0 flex-1">
                                                             <span className="flex items-center gap-1.5 text-sm font-semibold text-white">
@@ -397,10 +433,52 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                                                 {p.detalhe}
                                                             </span>
                                                         </span>
-                                                        <span className="shrink-0 hidden sm:flex items-center gap-1 text-[11px] font-semibold text-zinc-500 group-hover:text-[#FABE01] transition-colors">
-                                                            {p.acao} <ArrowRight className="w-3 h-3" />
+                                                        <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-zinc-500 group-hover:text-[#FABE01] transition-colors">
+                                                            <span className="hidden sm:inline">{aberta ? 'fechar' : 'ver quais'}</span>
+                                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${aberta ? 'rotate-180' : ''}`} />
                                                         </span>
                                                     </button>
+
+                                                    {aberta && (
+                                                        <ul className="bg-black/25 border-t border-white/5 divide-y divide-white/[0.04]">
+                                                            {p.itens.map(evento => {
+                                                                const sla = slaAtual(evento);
+                                                                const styles = getTypeStyles(evento.type);
+                                                                return (
+                                                                    <li key={evento.id}>
+                                                                        {/* Clicar CAI NO CONTEUDO: abre o
+                                                                            post no quadro de produção, com
+                                                                            as duas abas na mão. */}
+                                                                        <button
+                                                                            onClick={() => abrirConteudo(evento.id)}
+                                                                            className="w-full flex items-center gap-3 pl-5 pr-4 py-2.5 text-left hover:bg-white/[0.04] transition-colors group"
+                                                                        >
+                                                                            <span className={`w-1 h-8 rounded-full shrink-0 ${styles.dot}`} />
+                                                                            <span className="min-w-0 flex-1">
+                                                                                <span className="block text-[13px] text-zinc-100 truncate">
+                                                                                    {evento.title || '(sem título)'}
+                                                                                </span>
+                                                                                <span className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                                    <span className="text-[10px] text-zinc-500">
+                                                                                        {evento.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                                                                    </span>
+                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-chip uppercase tracking-wider ${styles.label}`}>
+                                                                                        {evento.type || 'sem formato'}
+                                                                                    </span>
+                                                                                    {sla && (
+                                                                                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border ${slaClasses(sla.tone)}`}>
+                                                                                            {sla.label}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </span>
+                                                                            </span>
+                                                                            <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-[#FABE01] shrink-0 transition-colors" />
+                                                                        </button>
+                                                                    </li>
+                                                                );
+                                                            })}
+                                                        </ul>
+                                                    )}
                                                 </li>
                                             );
                                         })}
