@@ -14,12 +14,13 @@ import SettingsView from './SettingsView';
 import AgencyOverview from './AgencyOverview';
 import AgencyCalendarView from './AgencyCalendarView';
 import PersonFormModal from './PersonFormModal';
+import TasksView from './TasksView';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
     LogOut, Calendar, Mail, Trash2, UserCog, Building2, Plus,
     X, Search, Loader2, Users, LayoutDashboard, Briefcase,
-    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, SlidersHorizontal
+    ArrowRight, Shield, ClipboardList, MessageSquareWarning, FileBarChart, Check, AlertTriangle, Pencil, SlidersHorizontal, ListChecks
 } from 'lucide-react';
 
 interface UserData {
@@ -42,7 +43,7 @@ type EmpresaData = Empresa;
 
 type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
 
-type Aba = 'overview' | 'calendar' | 'clients' | 'team' | 'settings';
+type Aba = 'overview' | 'calendar' | 'tasks' | 'clients' | 'team' | 'settings';
 
 interface AgencyDashboardProps {
     handleLogout: () => void;
@@ -337,6 +338,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
     const [pendingByEmpresa, setPendingByEmpresa] = useState<Record<string, PendingCounts>>({});
     /** Cadastro de pessoa da equipe aberto. So admin chega aqui. */
     const [criandoPessoa, setCriandoPessoa] = useState(false);
+    /**
+     * Pessoa pre-filtrada ao entrar em Tarefas.
+     *
+     * Vem de clicar num nome em "Tarefas da equipe": o clique diz de quem se quer
+     * ver a fila, e chegar na tela sem o filtro obrigaria a repetir a escolha.
+     */
+    const [filtroTarefaPessoa, setFiltroTarefaPessoa] = useState<string | null>(null);
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -667,6 +675,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
             title: 'Calendário',
             subtitle: 'Publicações de qualquer cliente, trocando pelo seletor de cima.'
         },
+        tasks: {
+            title: 'Tarefas',
+            subtitle: 'Tudo o que ainda não foi entregue, por conteúdo, com prazo de cada etapa.'
+        },
         settings: {
             title: 'Configurações',
             subtitle: 'O que vale para a agência inteira: cargos, prazos e padrões do sistema.'
@@ -685,6 +697,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                 // entrar e ir em Calendário. A duplicacao real (uma segunda previa
                 // do feed montada ao lado) essa sim nao voltou.
                 { id: 'calendar', label: 'Calendário', icon: Calendar },
+                // SEM contador no menu: o numero viria de assinar as subtarefas dos
+                // 12 clientes aqui tambem, so para desenhar uma bolinha - a mesma
+                // leitura que a Visao Geral e a propria tela de Tarefas ja fazem.
+                { id: 'tasks', label: 'Tarefas', icon: ListChecks },
                 { id: 'clients', label: 'Clientes', icon: Briefcase, badge: totalAjustes, badgeTone: 'amber' }
             ]
         },
@@ -773,6 +789,13 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                     <>
                         {activeTab === 'overview' && (
                             <AgencyOverview
+                                onIrParaTarefas={(uid) => {
+                                    setFiltroTarefaPessoa(uid || null);
+                                    setActiveTab('tasks');
+                                    // O App tambem precisa saber: e ele que lembra da
+                                    // aba quando se entra num cliente e volta.
+                                    onTrocarAba?.('tasks');
+                                }}
                                 empresas={empresas}
                                 users={users as UserProfile[]}
                                 pendingByEmpresa={pendingByEmpresa}
@@ -790,6 +813,15 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                 pendingByEmpresa={pendingByEmpresa}
                                 userEmail={userEmail}
                                 userName={userName}
+                            />
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <TasksView
+                                empresas={empresas}
+                                users={users}
+                                onOpenClient={onOpenClient}
+                                pessoaInicial={filtroTarefaPessoa}
                             />
                         )}
 

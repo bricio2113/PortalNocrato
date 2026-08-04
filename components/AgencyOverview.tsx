@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Empresa, UserProfile } from '../types';
 import { PendingCounts } from '../utils/posts';
 import { ClientStage, CLIENT_STAGES, stageView } from '../utils/eventState';
-import { Subtarefa, subscribeSubtarefas, SUBTAREFA_STATUS } from '../utils/subtarefas';
+import { Subtarefa, subscribeSubtarefas, SUBTAREFA_STATUS, FILTRO_SEM_DONO } from '../utils/subtarefas';
 import TarefasAbertasModal, { TarefaAberta } from './TarefasAbertasModal';
 import { indexarPorUid } from '../utils/equipe';
 import { getDisplayName } from '../utils/avatar';
@@ -38,6 +38,8 @@ interface AgencyOverviewProps {
     onOpenClient: (empresaId: string, nome: string, section?: 'calendar' | 'production', eventId?: string) => void;
     onIrParaClientes: () => void;
     onIrParaEquipe: () => void;
+    /** Abre a tela de Tarefas, opcionalmente ja filtrada por uma pessoa. */
+    onIrParaTarefas: (uid?: string) => void;
 }
 
 /** Cartao de painel. Titulo, acao opcional no canto, corpo. */
@@ -91,7 +93,7 @@ const Barra: React.FC<{ fatias: { chave: string; n: number; cor: string }[]; tot
  */
 const AgencyOverview: React.FC<AgencyOverviewProps> = ({
     empresas, users, pendingByEmpresa, souAdmin, semVinculo,
-    onOpenClient, onIrParaClientes, onIrParaEquipe
+    onOpenClient, onIrParaClientes, onIrParaEquipe, onIrParaTarefas
 }) => {
     /**
      * Subtarefas de todos os clientes.
@@ -148,16 +150,26 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
     const tarefas = useMemo(() => {
         const todas = Object.values(subtarefas).flat();
         const porStatus = { aberta: 0, fazendo: 0, feita: 0 };
-        const porPessoa: Record<string, number> = {};
+        /**
+         * Por pessoa, SEPARADO POR STATUS.
+         *
+         * Era um numero unico por pessoa: "Marcos · 3" nao dizia se eram tres
+         * paradas ou tres em andamento - a diferenca entre "ele nao comecou" e "ele
+         * esta tocando tres coisas ao mesmo tempo".
+         */
+        const porPessoa: Record<string, { aberta: number; fazendo: number }> = {};
         let semDono = 0;
         for (const s of todas) {
             porStatus[s.status] = (porStatus[s.status] || 0) + 1;
             if (s.status === 'feita') continue;
-            if (s.responsavelUid) porPessoa[s.responsavelUid] = (porPessoa[s.responsavelUid] || 0) + 1;
-            else semDono++;
+            if (s.responsavelUid) {
+                const atual = porPessoa[s.responsavelUid] || { aberta: 0, fazendo: 0 };
+                atual[s.status] += 1;
+                porPessoa[s.responsavelUid] = atual;
+            } else semDono++;
         }
         const carga = Object.entries(porPessoa)
-            .map(([uid, n]) => ({ pessoa: indice[uid], n }))
+            .map(([uid, c]) => ({ pessoa: indice[uid], ...c, n: c.aberta + c.fazendo }))
             .filter(c => c.pessoa)
             .sort((a, b) => b.n - a.n);
         return { total: todas.length, porStatus, carga, semDono, abertas: porStatus.aberta + porStatus.fazendo };
@@ -420,27 +432,57 @@ const AgencyOverview: React.FC<AgencyOverviewProps> = ({
                                 <p className="text-xs text-zinc-500">Nada em aberto.</p>
                             ) : (
                                 <ul className="space-y-2">
-                                    {tarefas.carga.slice(0, 5).map(({ pessoa, n }) => (
-                                        <li key={pessoa.id} className="flex items-center gap-2.5">
-                                            <AvatarBubble pessoa={pessoa} tamanho="sm" anel={false} />
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-xs text-zinc-200 truncate">{getDisplayName(pessoa)}</span>
-                                                {pessoa.cargo && <span className="block text-[10px] text-zinc-600 truncate">{pessoa.cargo}</span>}
-                                            </span>
-                                            <span className="shrink-0 text-[11px] font-bold text-zinc-300 bg-white/5 px-2 py-0.5 rounded-full">
-                                                {n}
-                                            </span>
+                                    {/* CADA LINHA E UM CAMINHO. Antes era so nome e um
+                                        numero: dizia que a pessoa tem 3 tarefas e nao
+                                        dizia quais, nem levava a elas. Agora o clique
+                                        abre a tela de Tarefas ja filtrada nela, e a
+                                        contagem vem separada por status. */}
+                                    {tarefas.carga.slice(0, 5).map(({ pessoa, aberta, fazendo, n }) => (
+                                        <li key={pessoa.id}>
+                                            <button
+                                                onClick={() => onIrParaTarefas(pessoa.id)}
+                                                className="w-full flex items-center gap-2.5 -mx-1 px-1 py-1 rounded-control hover:bg-white/[0.04] transition-colors text-left group"
+                                                aria-label={`Ver as ${n} tarefas de ${getDisplayName(pessoa)}`}
+                                            >
+                                                <AvatarBubble pessoa={pessoa} tamanho="sm" anel={false} />
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-xs text-zinc-200 truncate group-hover:text-[#FABE01] transition-colors">
+                                                        {getDisplayName(pessoa)}
+                                                    </span>
+                                                    <span className="flex items-center gap-2.5 mt-0.5">
+                                                        {fazendo > 0 && (
+                                                            <span className="flex items-center gap-1 text-[10px] text-[#FABE01]">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-[#FABE01]" />
+                                                                {fazendo} fazendo
+                                                            </span>
+                                                        )}
+                                                        {aberta > 0 && (
+                                                            <span className="flex items-center gap-1 text-[10px] text-zinc-500">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                                                                {aberta} a fazer
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </span>
+                                                <ArrowRight className="w-3.5 h-3.5 text-zinc-700 group-hover:text-[#FABE01] shrink-0 transition-colors" />
+                                            </button>
                                         </li>
                                     ))}
                                     {tarefas.semDono > 0 && (
-                                        <li className="flex items-center gap-2.5 pt-2 border-t border-white/5">
-                                            <span className="w-6 h-6 rounded-full border border-dashed border-white/20 flex items-center justify-center shrink-0">
-                                                <Users className="w-3 h-3 text-zinc-500" />
-                                            </span>
-                                            <span className="text-xs text-amber-400/90 flex-1">Sem responsável</span>
-                                            <span className="shrink-0 text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                                                {tarefas.semDono}
-                                            </span>
+                                        <li className="pt-2 border-t border-white/5">
+                                            <button
+                                                onClick={() => onIrParaTarefas(FILTRO_SEM_DONO)}
+                                                className="w-full flex items-center gap-2.5 -mx-1 px-1 py-1 rounded-control hover:bg-white/[0.04] transition-colors text-left group"
+                                            >
+                                                <span className="w-6 h-6 rounded-full border border-dashed border-amber-500/50 flex items-center justify-center shrink-0">
+                                                    <Users className="w-3 h-3 text-amber-400" />
+                                                </span>
+                                                <span className="text-xs text-amber-400/90 flex-1">Sem responsável</span>
+                                                <span className="shrink-0 text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                                    {tarefas.semDono}
+                                                </span>
+                                                <ArrowRight className="w-3.5 h-3.5 text-amber-500/50 group-hover:text-amber-400 shrink-0 transition-colors" />
+                                            </button>
                                         </li>
                                     )}
                                 </ul>

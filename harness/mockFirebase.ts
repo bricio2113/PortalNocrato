@@ -108,11 +108,15 @@ const CONFIGURACOES = [{
 // Subtarefas: um conteudo com progresso parcial, um concluido e um sem nenhuma.
 // Sem os tres casos o quadro so exercitava um deles.
 const SUBTAREFAS = [
-    { id: 's1', eventId: 'ev0', titulo: 'Roteiro do carrossel', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-5)) },
-    { id: 's2', eventId: 'ev0', titulo: 'Design das 5 lâminas', status: 'fazendo', responsavelUid: 'u3', criadoEm: ts(d(-4)) },
-    { id: 's3', eventId: 'ev0', titulo: 'Revisão ortográfica', status: 'aberta', responsavelUid: null, criadoEm: ts(d(-3)) },
-    { id: 's4', eventId: 'ev1', titulo: 'Gravar o reel', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-2)) },
-    { id: 's5', eventId: 'ev1', titulo: 'Editar e legendar', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-2)) }
+    // Prazos espalhados de proposito: vencida, hoje, futura e SEM prazo. Sem os
+    // quatro casos a tela de tarefas so exercitaria um deles, e "sem prazo" e
+    // justamente o estado que a interface tem que mostrar sem inventar data.
+    { id: 's1', eventId: 'ev0', titulo: 'Roteiro do carrossel', status: 'feita', responsavelUid: 'u0', prazo: ts(d(-4)), criadoEm: ts(d(-5)) },
+    { id: 's2', eventId: 'ev0', titulo: 'Design das 5 lâminas', status: 'fazendo', responsavelUid: 'u3', prazo: ts(d(-1)), criadoEm: ts(d(-4)) },
+    { id: 's3', eventId: 'ev0', titulo: 'Revisão ortográfica', status: 'aberta', responsavelUid: null, prazo: ts(hoje), criadoEm: ts(d(-3)) },
+    { id: 's4', eventId: 'ev0', titulo: 'Agendar no Meta', status: 'aberta', responsavelUid: 'u0', prazo: ts(d(3)), criadoEm: ts(d(-2)) },
+    { id: 's5', eventId: 'ev1', titulo: 'Gravar depoimento', status: 'aberta', responsavelUid: 'u3', criadoEm: ts(d(-1)) },
+    { id: 's6', eventId: 'ev1', titulo: 'Edição do reel', status: 'fazendo', responsavelUid: 'u0', prazo: ts(d(1)), criadoEm: ts(d(-1)) }
 ];
 
 const pick = (path: string) => {

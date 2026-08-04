@@ -3,11 +3,13 @@ import { db } from '../utils/firebase';
 import { CalendarEvent, UserProfile } from '../types';
 import {
     Subtarefa, SubtarefaStatus, SUBTAREFA_STATUS, subtarefaStatusInfo,
-    subscribeSubtarefas, criarSubtarefa, atualizarSubtarefa, removerSubtarefa, progresso
+    subscribeSubtarefas, criarSubtarefa, atualizarSubtarefa, removerSubtarefa, progresso,
+    situacaoPrazo, TONS_PRAZO
 } from '../utils/subtarefas';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
 import { slaAtual, slaClasses, slaTipoLabel } from '../utils/sla';
 import { getDisplayName } from '../utils/avatar';
+import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import { AvatarBubble } from './AvatarBubble';
 import { Dropdown, OpcaoDropdown } from './Dropdown';
 import {
@@ -53,6 +55,8 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
     const [carregando, setCarregando] = useState(true);
     const [novo, setNovo] = useState('');
     const [criando, setCriando] = useState(false);
+    /** Prazo digitado junto do titulo da etapa nova. Vazio = sem prazo. */
+    const [novoPrazo, setNovoPrazo] = useState('');
     const [erro, setErro] = useState('');
     const [abrindoPessoas, setAbrindoPessoas] = useState(false);
 
@@ -100,8 +104,9 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
         setCriando(true);
         setErro('');
         try {
-            await criarSubtarefa(empresaId, event.id, titulo, autorEmail);
+            await criarSubtarefa(empresaId, event.id, titulo, autorEmail, null, fromDateInputValue(novoPrazo));
             setNovo('');
+            setNovoPrazo('');
         } catch (e) {
             console.error(e);
             setErro('Não foi possível criar a subtarefa.');
@@ -127,6 +132,22 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
         } catch (e) {
             console.error(e);
             setErro('Não foi possível atribuir a subtarefa.');
+        }
+    };
+
+    /**
+     * Prazo da etapa.
+     *
+     * DIA, sem hora: etapa de producao se combina por dia ("design fica pronto
+     * quinta"), e um campo de hora aqui daria uma precisao que ninguem usa e que
+     * faria "vence hoje" depender do horario.
+     */
+    const mudarPrazo = async (sub: Subtarefa, valor: string) => {
+        try {
+            await atualizarSubtarefa(empresaId, sub.id, { prazo: fromDateInputValue(valor) });
+        } catch (e) {
+            console.error(e);
+            setErro('Não foi possível mudar o prazo da subtarefa.');
         }
     };
 
@@ -287,8 +308,30 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
                                         {sub.titulo}
                                     </span>
 
+                                    {/* PRAZO da etapa, ao lado do titulo: e o dado que
+                                        diz se ela esta atrasada, e ficava invisivel. */}
+                                    {(() => {
+                                        const p = situacaoPrazo(sub.prazo);
+                                        if (sub.status === 'feita' || (!sub.prazo && podeEditar)) return null;
+                                        return (
+                                            <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-chip border ${TONS_PRAZO[p.tone]}`}>
+                                                {p.label}
+                                            </span>
+                                        );
+                                    })()}
+
                                     {podeEditar ? (
                                         <>
+                                            <div className="w-[8.5rem] shrink-0">
+                                                <input
+                                                    type="date"
+                                                    value={sub.prazo ? toDateInputValue(sub.prazo) : ''}
+                                                    onChange={e => mudarPrazo(sub, e.target.value)}
+                                                    aria-label={`Prazo de ${sub.titulo}`}
+                                                    max={toDateInputValue(event.date)}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-control px-2 py-1.5 text-xs text-white outline-none focus:border-[#FABE01] [color-scheme:dark]"
+                                                />
+                                            </div>
                                             <Dropdown<SubtarefaStatus>
                                                 compacto
                                                 className="w-[7.5rem] shrink-0"
@@ -336,14 +379,28 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
                 )}
 
                 {podeEditar && (
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex flex-wrap gap-2 mt-3">
                         <input
                             value={novo}
                             onChange={e => setNovo(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionar(); } }}
                             placeholder="Nova subtarefa. Ex: Roteiro do reel"
-                            className="min-w-0 flex-1 bg-black/40 border border-white/10 rounded-control px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all"
+                            className="min-w-[10rem] flex-1 bg-black/40 border border-white/10 rounded-control px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all"
                         />
+                        {/* PRAZO JA NA CRIACAO. Etapa sem prazo nao aparece em
+                            nenhuma fila de urgencia - pedir a data depois significa
+                            que quase nenhuma teria. O campo aceita vazio: nem toda
+                            etapa precisa de data propria. */}
+                        <div className="w-[9.5rem] shrink-0">
+                            <input
+                                type="date"
+                                value={novoPrazo}
+                                onChange={e => setNovoPrazo(e.target.value)}
+                                aria-label="Prazo da nova subtarefa"
+                                max={toDateInputValue(event.date)}
+                                className="w-full bg-black/40 border border-white/10 rounded-control px-2.5 py-2.5 text-sm text-white outline-none focus:border-[#FABE01] [color-scheme:dark]"
+                            />
+                        </div>
                         <button
                             type="button"
                             onClick={adicionar}
@@ -353,6 +410,10 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
                             {criando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                             Adicionar
                         </button>
+                        <p className="w-full text-[10px] text-zinc-600 leading-relaxed">
+                            O prazo da etapa vence ANTES da publicação ({event.date.toLocaleDateString('pt-BR')}) —
+                            por isso o campo não aceita data depois dela.
+                        </p>
                     </div>
                 )}
 

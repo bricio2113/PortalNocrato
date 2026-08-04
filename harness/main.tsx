@@ -17,6 +17,7 @@ import SettingsView from '../components/SettingsView';
 import ClientWorkspace from '../components/ClientWorkspace';
 import AgencyDashboard from '../components/AgencyDashboard';
 import AgencyCalendarView from '../components/AgencyCalendarView';
+import TasksView from '../components/TasksView';
 import ProfileView from '../components/ProfileView';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 import Login from '../components/Login';
@@ -194,6 +195,22 @@ const SCREENS: Record<string, React.ReactNode> = {
     </div>,
     'midia-e-pastas': <MidiaEPastas />,
     'previa-carrossel': <PreviaCarrossel />,
+    // TAREFAS isolada, para medir a faixa de tempo e os filtros sem o painel.
+    tarefas: <div className="p-4 bg-[#111111] min-h-screen">
+        <TasksView
+            empresas={[
+                { id: 'Agencia Mara', nome: 'Agencia Mara' },
+                { id: 'MarcioFisio', nome: 'Marcio Fisio' }
+            ] as any}
+            users={[
+                { id: 'u0', email: 'pedro.vidal2608@gmail.com', role: 'agencia', empresaId: null, nome: 'Maria', sobrenome: 'Silva', cargo: 'Social Media' },
+                { id: 'u3', email: 'briciomarketing@gmail.com', role: 'agencia', empresaId: null, nome: 'Carlos', sobrenome: 'Teixeira', cargo: 'Designer' }
+            ] as any}
+            onOpenClient={(empresaId, nome, section, eventId) => {
+                (globalThis as any).__abriu = { empresaId, nome, section, eventId };
+            }}
+        />
+    </div>,
     // CALENDARIO GLOBAL isolado, para medir o seletor sem o painel em volta.
     'calendario-agencia': <div className="p-4 bg-[#111111] min-h-screen">
         <AgencyCalendarView

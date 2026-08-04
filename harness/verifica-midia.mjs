@@ -16,6 +16,8 @@
  *  11. o calendario global da agencia troca de cliente pelo seletor
  *  12. admin CRIA a conta de um colaborador pelo painel
  *  13. "Tarefas abertas" abre a lista e cada linha leva ao conteudo da tarefa
+ *  14. a tela de Tarefas agrupa por conteudo, mostra os dois prazos e filtra
+ *  15. a etapa tem PRAZO, editavel na gestao do conteudo
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -477,6 +479,76 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(await page.getByRole('tab', { name: /Gestão/ }).first().getAttribute('aria-selected') === 'true',
         '13b. e ela já vem ABERTA: quem vem de uma tarefa quer a gestão, não a legenda');
     checar(erros.length === 0, `13b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 14
+// TELA DE TAREFAS. Agrupada pelo conteudo pai, com o prazo do post E o de cada
+// etapa, filtravel por cliente e por pessoa.
+{
+    const { page, erros } = await abrir('tarefas');
+    await page.waitForTimeout(1500);
+
+    const grupos = page.locator('p:text("etapa(s) em aberto")');
+    checar(await grupos.count() >= 2, `14. agrupa por conteúdo (${await grupos.count()} grupos)`);
+    checar(await page.getByText(/publica 0/).first().count() > 0,
+        '14. cada grupo mostra o prazo do conteúdo pai');
+    checar(await page.getByText('vence hoje').first().count() > 0
+        && await page.getByText(/atrasada/).first().count() > 0,
+        '14. e o prazo de cada etapa, com atraso destacado');
+    checar(await page.getByText('sem prazo').first().count() > 0,
+        '14. etapa sem prazo diz "sem prazo" em vez de inventar data');
+
+    // Somente o que NAO esta feito: 's1' esta feita e nao pode aparecer.
+    checar(await page.getByText('Roteiro do carrossel').count() === 0,
+        '14. etapa concluída fica fora da fila');
+
+    const antes = await page.locator('li').count();
+    // Filtro por pessoa: Carlos (u3) tem menos etapas que a equipe toda.
+    await page.getByRole('button', { name: /Filtrar por responsável/ }).click();
+    await page.waitForTimeout(400);
+    await page.getByRole('option', { name: /Carlos/ }).click();
+    await page.waitForTimeout(700);
+    const depois = await page.locator('li').count();
+    checar(depois > 0 && depois < antes,
+        `14. filtrar por pessoa reduz a lista (${antes} → ${depois})`);
+    checar(await page.getByText(/de 10/).count() > 0,
+        '14. e a contagem diz que é um recorte do total');
+
+    await page.getByRole('button', { name: /limpar/ }).click();
+    await page.waitForTimeout(600);
+    checar(await page.locator('li').count() === antes, '14. limpar devolve tudo');
+
+    await page.getByRole('button', { name: /^abrir/ }).first().click();
+    await page.waitForTimeout(400);
+    const pedido = await page.evaluate(() => globalThis.__abriu || null);
+    checar(Boolean(pedido) && pedido.section === 'production' && Boolean(pedido.eventId),
+        `14. "abrir" leva ao conteúdo: ${JSON.stringify(pedido)}`);
+    checar(erros.length === 0, `14. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+
+    await page.screenshot({ path: 'dist-harness/v-tarefas-tela.png' });
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 15
+// PRAZO DA ETAPA, onde ela e gerenciada. Sem campo, nenhuma etapa teria prazo e a
+// tela de tarefas nasceria com a coluna de datas vazia.
+{
+    const { page, erros } = await abrir('modal-gestao');
+    const campo = page.getByLabel('Prazo de Design das 5 lâminas');
+    checar(await existe(campo), '15. cada etapa tem campo de prazo na gestão do conteúdo');
+    await campo.fill('2026-08-10');
+    await page.waitForTimeout(600);
+    const w = await writes(page);
+    const up = w.find(x => x.op === 'update' && x.path.includes('/subtarefas/'));
+    checar(Boolean(up) && typeof up.data.prazo === 'string' && up.data.prazo.startsWith('2026-08-10'),
+        `15. e gravar o prazo escreve na subtarefa: ${up ? JSON.stringify(up.data) : '(nada)'}`);
+
+    const novo = page.getByLabel('Prazo da nova subtarefa');
+    checar(await existe(novo), '15. a etapa nova também já nasce com prazo');
+    checar(await novo.getAttribute('max') !== null,
+        '15. limitado pela data de publicação - etapa não vence depois do post');
+    checar(erros.length === 0, `15. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.close();
 }
 
