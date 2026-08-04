@@ -5,6 +5,7 @@ import {
     EmpresaJaExisteError, EMPRESA_STATUS, ORIGEM_OPTIONS,
     slugify, centavosParaTexto, textoParaCentavos
 } from '../utils/empresas';
+import { criarTemplate, TEMPLATE_PASTAS } from '../utils/pastas';
 import { toDateInputValue, fromDateInputValue } from '../utils/date';
 import { SegmentedTabs } from './ui';
 import {
@@ -55,6 +56,14 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
     const editando = Boolean(empresa);
     const [aba, setAba] = useState<Aba>('basico');
     const [salvando, setSalvando] = useState(false);
+    /**
+     * Etapa em curso, para o botao dizer o que esta acontecendo.
+     *
+     * Criar cliente sao tres escritas em sequencia (ficha, financeiro, cinco
+     * marcadores de pasta): com um "Salvando..." mudo, os segundos extras das
+     * pastas pareceriam travamento e alguem clicaria de novo.
+     */
+    const [passo, setPasso] = useState('');
     const [erro, setErro] = useState('');
 
     const [ficha, setFicha] = useState<Partial<Empresa>>({
@@ -102,6 +111,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
         if (!nome) { setAba('basico'); return setErro('O nome do cliente é obrigatório.'); }
 
         setSalvando(true);
+        setPasso(editando ? 'Salvando...' : 'Criando o cliente...');
         setErro('');
         try {
             const empresaId = editando
@@ -122,7 +132,28 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
                     console.error(e);
                     setErro('A ficha foi salva, mas o financeiro não. Reabra a aba Financeiro e tente de novo.');
                     setSalvando(false);
+                    setPasso('');
                     return;
+                }
+            }
+
+            // PASTAS DO CLIENTE, na criacao.
+            //
+            // Cliente novo nascia com Arquivos & Materiais vazio, e a estrutura
+            // padrao dependia de alguem lembrar de clicar em "Criar estrutura
+            // padrao" naquela tela. Duas consequencias: o material do primeiro mes
+            // ia para onde der, e o seletor de pasta da midia do conteudo abria sem
+            // nenhuma opcao - "escolha a pasta" sem pasta para escolher.
+            //
+            // Falhar aqui NAO desfaz o cliente: o cadastro esta gravado e e o que
+            // importa. As pastas continuam disponiveis pelo botao da tela de
+            // materiais, que e a recuperacao honesta para este caso.
+            if (!editando) {
+                setPasso('Criando as pastas do cliente...');
+                try {
+                    await criarTemplate(empresaId);
+                } catch (e) {
+                    console.error('Cliente criado, mas as pastas padrão não:', e);
                 }
             }
 
@@ -133,6 +164,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
                 ? `Já existe um cliente com o ID "${e.empresaId}". Escolha outro nome.`
                 : e instanceof Error ? e.message : 'Não foi possível salvar. Tente novamente.');
             setSalvando(false);
+            setPasso('');
         }
     };
 
@@ -257,6 +289,13 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
                         </div>
                     )}
 
+                    {aba === 'basico' && !editando && (
+                        <p className="text-[10px] text-zinc-600 mt-4 leading-relaxed">
+                            Ao criar, as pastas padrão ({TEMPLATE_PASTAS.join(', ')}) já são
+                            montadas em Arquivos &amp; Materiais.
+                        </p>
+                    )}
+
                     {aba === 'redes' && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {([
@@ -373,7 +412,9 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({
                             className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {editando ? 'Salvar' : 'Criar cliente'}
+                            <span className="truncate">
+                                {salvando ? passo || 'Salvando...' : editando ? 'Salvar' : 'Criar cliente'}
+                            </span>
                         </button>
                     </div>
                 </footer>

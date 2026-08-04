@@ -1,10 +1,14 @@
 /**
- * Verifica o fluxo de midia da publicacao:
- *   1. campo aparece em publicacao NOVA (sem id)
+ * Verifica COMPORTAMENTO (o audit.mjs mede layout):
+ *
+ *   1. campo de midia aparece em publicacao NOVA (sem id)
  *   2. seletor de pasta oferece os DOIS desfechos
  *   3. "usar esta pasta" NAO cria subpasta
- *   4. "criar a pasta do conteudo" cria e sobe dentro dela
+ *   4. "criar a pasta do conteudo" cria e sobe dentro dela, e a capa viaja no save
  *   5. o arquivo enviado no conteudo APARECE na tela de pastas
+ *   6. cliente novo nasce com as pastas padrao - sem elas, "escolha a pasta" no
+ *      passo 2 nao teria o que oferecer
+ *   7. o telefone do proprio perfil tem onde ser digitado e e gravado
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -154,6 +158,45 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(erros.length === 0, `5. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
 
     await page.screenshot({ path: 'dist-harness/v-midia-pastas.png', fullPage: false });
+    await page.close();
+}
+
+// ------------------------------------------------------------------------ 6
+// CLIENTE NOVO TEM PASTA. E parte do mesmo fluxo: "escolha a pasta" sem pasta
+// nenhuma para escolher nao e uma escolha. Antes a estrutura padrao dependia de
+// alguem lembrar de clicar num botao na tela de materiais.
+{
+    const { page, erros } = await abrir('ficha-cliente');
+    await page.getByPlaceholder('Ex: Dra. Sylvia Fisio').fill('Cliente Novo Teste');
+    await page.getByRole('button', { name: /Criar cliente/ }).click();
+    await page.waitForTimeout(1500);
+
+    const w = await writes(page);
+    const marcadores = w.filter(x => x.op === 'upload' && x.path.endsWith('/.pasta'));
+    checar(marcadores.length === 5,
+        `6. cliente novo nasce com as 5 pastas padrão (${marcadores.length} criadas)`);
+    checar(marcadores.every(m => m.path.startsWith('empresas/cliente-novo-teste/materiais/')),
+        `6. as pastas vão para o cliente criado: ${marcadores[0] ? marcadores[0].path : '(nenhuma)'}`);
+    checar(erros.length === 0, `6. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ------------------------------------------------------------------------ 7
+// TELEFONE DO PROPRIO PERFIL. O campo existia no tipo e na ficha da pessoa, sem
+// nenhum lugar para digitar - a ficha dizia "sem telefone" para todo mundo.
+{
+    const { page, erros } = await abrir('perfil');
+    const campo = page.getByLabel('Telefone / WhatsApp');
+    checar(await campo.isVisible(), '7. campo de telefone existe no Meu Perfil');
+    await campo.fill('(13) 98888-7777');
+    await page.getByRole('button', { name: /Salvar perfil/ }).click();
+    await page.waitForTimeout(600);
+
+    const w = await writes(page);
+    const up = w.find(x => x.op === 'update' && x.path === 'usuarios/u0');
+    checar(Boolean(up) && up.data.telefone === '(13) 98888-7777',
+        `7. o telefone e gravado no proprio documento: ${up ? JSON.stringify(up.data.telefone) : '(nenhuma escrita)'}`);
+    checar(erros.length === 0, `7. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.close();
 }
 

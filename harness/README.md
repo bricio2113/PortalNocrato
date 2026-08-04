@@ -42,7 +42,7 @@ reporta:
 
 Screenshots de cada tela ficam em `dist-harness/shot-*.png`.
 
-## Verificação do fluxo de mídia
+## Verificação de comportamento
 
 ```bash
 node harness/verifica-midia.mjs
@@ -53,6 +53,8 @@ publicação nova, escolhe pasta pelos dois caminhos (criar subpasta com o títu
 do conteúdo / usar uma pasta existente), sobe um PNG de verdade e confere no
 `__writes` e na `__arvore` do mock que o arquivo foi para o caminho certo — e que
 ele **aparece na tela de Arquivos & Materiais**, que é a promessa da interface.
+Também cobre o cadastro de cliente (nasce com as pastas padrão) e o telefone do
+próprio perfil.
 
 Existe porque o campo de mídia sumiu da publicação nova sem nada acusar: ele
 estava atrás de `!isCreating` e nenhuma tela do harness renderizava um post sem
