@@ -11,6 +11,7 @@ import ClientFormModal from './ClientFormModal';
 import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import SettingsView from './SettingsView';
+import AgencyOverview from './AgencyOverview';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
@@ -360,15 +361,15 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
         return () => unsubscribes.forEach(fn => fn());
     }, [empresas]);
 
-    const empresasComAjuste = empresas.filter(e => (pendingByEmpresa[e.id]?.aguardandoAgencia || 0) > 0);
-    const totalAjustes = empresasComAjuste.reduce(
+    /**
+     * Ajustes pedidos, somados. Alimenta o badge da aba Clientes.
+     *
+     * Os outros agregados que existiam aqui foram para AgencyOverview, que e quem
+     * os desenha: manter a soma nos dois lugares e duas contas para o mesmo
+     * numero, e a que ninguem le fica sem manutencao.
+     */
+    const totalAjustes = empresas.reduce(
         (sum, e) => sum + (pendingByEmpresa[e.id]?.aguardandoAgencia || 0), 0
-    );
-
-    // ATRASO DE PRODUCAO, somado em todos os clientes. Interno da agencia.
-    const empresasAtrasadas = empresas.filter(e => (pendingByEmpresa[e.id]?.atrasados || 0) > 0);
-    const totalAtrasados = empresasAtrasadas.reduce(
-        (sum, e) => sum + (pendingByEmpresa[e.id]?.atrasados || 0), 0
     );
 
     const showNotification = (msg: string) => {
@@ -718,135 +719,16 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                 ) : (
                     <>
                         {activeTab === 'overview' && (
-                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
-                                    <StatTile label="Clientes" value={empresas.length} icon={Building2} tone="brand" />
-                                    {/* Producao atrasada vem antes de "usuarios
-                                        cadastrados": e a unica coisa aqui que
-                                        exige acao hoje. */}
-                                    <StatTile
-                                        label="Produção atrasada"
-                                        value={totalAtrasados}
-                                        icon={AlertTriangle}
-                                        tone={totalAtrasados > 0 ? 'attention' : 'positive'}
-                                        hint={totalAtrasados > 0
-                                            ? `Em ${empresasAtrasadas.length} cliente(s) · prazo vencido`
-                                            : 'Nenhum prazo de produção vencido'}
-                                        onClick={totalAtrasados > 0 ? () => { setActiveTab('clients'); setSearchTerm(''); } : undefined}
-                                    />
-                                    <StatTile label="Usuários cadastrados" value={users.length} icon={Users} />
-                                    <StatTile
-                                        label="Ajustes pedidos"
-                                        value={totalAjustes}
-                                        icon={MessageSquareWarning}
-                                        tone={totalAjustes > 0 ? 'attention' : 'positive'}
-                                        hint={totalAjustes > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe'}
-                                        onClick={totalAjustes > 0 ? () => { setActiveTab('clients'); setSearchTerm(''); } : undefined}
-                                    />
-                                    <StatTile
-                                        label="Aguardando vínculo"
-                                        value={unlinkedUsers.length}
-                                        icon={Shield}
-                                        tone={unlinkedUsers.length > 0 ? 'attention' : 'positive'}
-                                        hint={
-                                            unlinkedUsers.length === 0
-                                                ? 'Todo mundo com acesso liberado'
-                                                : souAdmin
-                                                    ? 'Sem empresa, não conseguem usar o portal'
-                                                    : 'Sem empresa. Peça a um administrador para vincular'
-                                        }
-                                        onClick={unlinkedUsers.length > 0 && souAdmin ? () => { setActiveTab('team'); setSearchTerm(''); } : undefined}
-                                    />
-                                </div>
-
-                                {/* A Visão Geral só mostrava três números - nenhum caminho para
-                                    a tarefa real. O trabalho do dia é entrar no calendário ou na
-                                    produção de um cliente, então esses atalhos passam a ficar
-                                    aqui, junto do que exige atenção. */}
-                                {/* Ajustes pedidos pelo cliente: e a fila de trabalho
-                                    mais urgente da agencia, porque alguem do outro
-                                    lado esta esperando. Vem antes do resto. */}
-                                {totalAjustes > 0 && (
-                                    <div className="border border-amber-500/30 bg-amber-500/5 rounded-card p-5">
-                                        <div className="flex items-start gap-3">
-                                            <MessageSquareWarning className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-white font-bold text-sm mb-1">
-                                                    {totalAjustes === 1
-                                                        ? '1 publicação com ajuste pedido pelo cliente'
-                                                        : `${totalAjustes} publicações com ajuste pedido pelo cliente`}
-                                                </h3>
-                                                <p className="text-zinc-400 text-sm leading-relaxed mb-4">
-                                                    O cliente revisou e pediu mudanças. O detalhe está na conversa de cada publicação.
-                                                </p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {empresasComAjuste.map(empresa => (
-                                                        <button
-                                                            key={empresa.id}
-                                                            onClick={() => onOpenClient(empresa.id, empresa.nome, 'calendar')}
-                                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-amber-500/20 border border-amber-500/20 text-white text-xs font-bold px-3 py-2 rounded-control transition-colors"
-                                                        >
-                                                            {empresa.nome}
-                                                            <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-black text-[10px]">
-                                                                {pendingByEmpresa[empresa.id]?.aguardandoAgencia}
-                                                            </span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {totalAjustes === 0 && unlinkedUsers.length === 0 && (
-                                    <div className="border border-white/5 bg-[#1A1A1A] rounded-card p-6 flex flex-col sm:flex-row sm:items-center gap-4">
-                                        <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                                            <Check className="w-5 h-5" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white font-bold text-sm mb-0.5">Nada pendente com a equipe</p>
-                                            <p className="text-zinc-400 text-sm leading-relaxed">
-                                                Nenhum ajuste pedido e todo mundo com empresa vinculada.
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-                                            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold px-4 py-2.5 rounded-control uppercase tracking-wide transition-colors shrink-0"
-                                        >
-                                            Ver clientes <ArrowRight className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                )}
-
-                                {unlinkedUsers.length > 0 && (
-                                    <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-card p-5">
-                                        <div className="flex items-start gap-3">
-                                            <UserCog className="w-5 h-5 text-[#FABE01] shrink-0 mt-0.5" />
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-white font-bold text-sm mb-1">
-                                                    {unlinkedUsers.length === 1
-                                                        ? '1 usuário aguardando vínculo'
-                                                        : `${unlinkedUsers.length} usuários aguardando vínculo`}
-                                                </h3>
-                                                <p className="text-zinc-400 text-sm leading-relaxed mb-3">
-                                                    Enquanto não tiverem empresa, essas contas entram e veem apenas um aviso de conta não vinculada.
-                                                </p>
-                                                <p className="text-xs text-zinc-500 font-mono truncate mb-4">
-                                                    {unlinkedUsers.slice(0, 3).map(u => getDisplayName(u)).join(', ')}
-                                                    {unlinkedUsers.length > 3 && ` +${unlinkedUsers.length - 3}`}
-                                                </p>
-                                                <button
-                                                    onClick={() => { setActiveTab('team'); setSearchTerm(''); }}
-                                                    className="inline-flex items-center gap-2 bg-[#FABE01] hover:bg-[#FABE01]/90 text-black font-semibold text-xs px-4 py-2 rounded-full transition-colors"
-                                                >
-                                                    {souAdmin ? 'Resolver agora' : 'Ver quem está sem empresa'} <ArrowRight className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                            </div>
+                            <AgencyOverview
+                                empresas={empresas}
+                                users={users as UserProfile[]}
+                                pendingByEmpresa={pendingByEmpresa}
+                                souAdmin={souAdmin}
+                                semVinculo={unlinkedUsers.length}
+                                onOpenClient={onOpenClient}
+                                onIrParaClientes={() => { setActiveTab('clients'); onTrocarAba?.('clients'); setSearchTerm(''); }}
+                                onIrParaEquipe={() => { setActiveTab('team'); onTrocarAba?.('team'); setSearchTerm(''); }}
+                            />
                         )}
 
                         {activeTab === 'clients' && (

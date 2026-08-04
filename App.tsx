@@ -3,7 +3,7 @@ import firebase from 'firebase/compat/app';
 import { auth, db } from './utils/firebase';
 import { View, UserProfile } from './types';
 import { isAdmin } from './utils/permissions';
-import { subscribePendingCounts, PendingCounts } from './utils/posts';
+import { subscribePendingCounts, PendingCounts, CONTAGEM_VAZIA } from './utils/posts';
 
 // Componentes
 import Sidebar from './components/Sidebar';
@@ -66,7 +66,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
     // Contador de pendencia no menu. Para o cliente conta o que espera decisao
     // dele; para a agencia, os ajustes que o cliente pediu e ninguem resolveu.
     // Cada lado ve a propria fila.
-    const [pending, setPending] = useState<PendingCounts>({ aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0, semCapa: 0, atrasados: 0, atrasadosCliente: 0 });
+    const [pending, setPending] = useState<PendingCounts>(CONTAGEM_VAZIA);
 
     useEffect(() => {
         if (!targetEmpresaId) return;

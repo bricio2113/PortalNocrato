@@ -11,7 +11,7 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { db } from './firebase';
 import { ApprovalState, EventMetrics, PostComment } from '../types';
-import { needsClientAction, needsAgencyAction } from './eventState';
+import { needsClientAction, needsAgencyAction, getClientStage, ClientStage } from './eventState';
 import { registrar } from './historico';
 import { slaAtual } from './sla';
 
@@ -150,7 +150,40 @@ export interface PendingCounts {
     atrasados: number;
     /** SLA estourado com a bola no CLIENTE: janela de revisao fechou sem decisao. */
     atrasadosCliente: number;
+    /**
+     * Atraso ANTIGO - passou de 30 dias da data de publicacao.
+     *
+     * Separado de `atrasados` porque nao e a mesma coisa. Desde que o prazo
+     * passou a ser a data de publicacao, todo post de meses atras que ninguem
+     * marcou como Postado ou Cancelado conta como atrasado - e tecnicamente e,
+     * mas nao e trabalho de hoje: e cadastro para limpar. Somar os dois num
+     * numero so produzia "306 atrasados" no painel, que nao informa nada e
+     * dessensibiliza para o atraso que importa.
+     */
+    atrasadosAntigos: number;
+    /** Quantos conteudos em cada estagio visivel ao cliente. */
+    porEstagio: Record<ClientStage, number>;
+    /**
+     * Proximas entregas, ordenadas. Ate tres por cliente - o painel junta os de
+     * todos e corta na tela; guardar mais aqui nao servia para nada.
+     */
+    proximas: { id: string; title: string; date: Date; type?: string }[];
 }
+
+/**
+ * Zero de tudo.
+ *
+ * Existe para quem precisa de um estado inicial nao-nulo nao ter que enumerar os
+ * campos na mao - foi o que quebrou ao acrescentar contadores novos: cada lugar
+ * que montava o objeto literal virou um erro de compilacao, e um deles poderia
+ * ter passado com um campo faltando.
+ */
+export const CONTAGEM_VAZIA: PendingCounts = {
+    aguardandoCliente: 0, aguardandoAgencia: 0, total: 0, noMes: 0, publicados: 0,
+    semCapa: 0, atrasados: 0, atrasadosCliente: 0, atrasadosAntigos: 0,
+    porEstagio: { em_producao: 0, aguardando_voce: 0, aprovado: 0, publicado: 0, cancelado: 0 },
+    proximas: []
+};
 
 /**
  * Assina os contadores de pendencia de uma empresa.
@@ -174,12 +207,19 @@ export function subscribePendingCounts(
             let semCapa = 0;
             let atrasados = 0;
             let atrasadosCliente = 0;
+            let atrasadosAntigos = 0;
+            const porEstagio: Record<ClientStage, number> = {
+                em_producao: 0, aguardando_voce: 0, aprovado: 0, publicado: 0, cancelado: 0
+            };
+            const futuras: { id: string; title: string; date: Date; type?: string }[] = [];
+            const LIMITE_ANTIGO = 30 * 86400000;
 
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
                 const event = { status: data.status, approval: data.approval };
                 if (needsClientAction(event)) aguardandoCliente++;
                 if (needsAgencyAction(event)) aguardandoAgencia++;
+                porEstagio[getClientStage(event)]++;
                 if (data.status === 'Postado') publicados++;
                 if (!data.previewUrl && !data.coverUrl) semCapa++;
 
@@ -201,16 +241,26 @@ export function subscribePendingCounts(
                 }, agora);
                 if (sla) {
                     if (sla.estourado) {
-                        if (sla.dono === 'agencia') atrasados++;
+                        const antigo = sla.limite ? agora.getTime() - sla.limite.getTime() > LIMITE_ANTIGO : false;
+                        if (antigo) atrasadosAntigos++;
+                        else if (sla.dono === 'agencia') atrasados++;
                         else atrasadosCliente++;
                     }
                 }
+
+                // Proxima entrega: o que ainda vai sair, e nao foi cancelado.
+                if (date && date >= agora && data.status !== 'Cancelado' && data.status !== 'Postado') {
+                    futuras.push({ id: doc.id, title: data.title || '(sem título)', date, type: data.type });
+                }
             });
+
+            futuras.sort((a, b) => a.date.getTime() - b.date.getTime());
 
             onData({
                 aguardandoCliente, aguardandoAgencia,
                 total: snapshot.size, noMes, publicados, semCapa,
-                atrasados, atrasadosCliente
+                atrasados, atrasadosCliente, atrasadosAntigos,
+                porEstagio, proximas: futuras.slice(0, 3)
             });
         },
         error => console.error('Erro ao contar pendências:', error)
