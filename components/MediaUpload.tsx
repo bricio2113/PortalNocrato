@@ -10,19 +10,27 @@ import {
 
 interface MediaUploadProps {
     empresaId: string;
+    /**
+     * Id do post, ou VAZIO em publicacao ainda nao gravada.
+     *
+     * Vazio e estado previsto: o arquivo vai para a pasta escolhida em materiais/,
+     * que nao tem id no caminho. O id so faz falta para a miniatura (covers/{id}),
+     * que nesse caso e devolvida pelo onThumb para quem criar o post gravar.
+     */
     eventId: string;
     midias: MidiaArquivo[];
     /** Chamado a cada mudanca. O modal decide quando gravar. */
     onChange: (midias: MidiaArquivo[]) => void;
     /**
      * Capa do post. A primeira midia enviada define a capa automaticamente; o
-     * usuario pode trocar clicando em outra.
+     * usuario pode trocar clicando em outra. Em post sem id, este e o UNICO
+     * caminho da capa - ver a nota em handleFiles.
      */
     onThumb: (thumb: string | null) => void;
     disabled?: boolean;
     /**
-     * Titulo do conteudo. Vira o NOME DA PASTA criada dentro da pasta escolhida.
-     * Sem titulo nao ha como nomear a pasta, e o upload espera.
+     * Titulo do conteudo. Vira o NOME DA SUBPASTA quando a pessoa escolhe criar
+     * uma. Sem titulo, sobra a opcao de usar uma pasta existente.
      */
     titulo?: string;
     /** Pasta em materiais/ onde a midia deste conteudo mora. */
@@ -60,28 +68,42 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
     const nomeDaPasta = nomePastaSeguro(titulo || '');
 
     /**
-     * Recebe a pasta PAI, cria a pasta do conteudo dentro dela e abre o seletor
-     * de arquivos.
+     * Fecha o seletor de pasta e define o destino da midia.
      *
-     * A pasta e criada AQUI, e nao no primeiro upload, por dois motivos: ela
-     * aparece na arvore de materiais na hora (a equipe ja pode largar arquivo
-     * nela por fora), e se a permissao estiver errada o erro sai antes de a
-     * pessoa escolher 300 MB de video.
+     * DOIS DESFECHOS, decididos no PastaPicker:
+     *
+     *   criarSubpasta -> cria `nomeDaPasta` dentro de `alvo` e usa a nova pasta.
+     *                    A pasta e criada AQUI, e nao no primeiro upload, por dois
+     *                    motivos: aparece na arvore de materiais na hora (a equipe
+     *                    ja pode largar arquivo nela por fora) e, se a permissao
+     *                    estiver errada, o erro sai antes de a pessoa escolher
+     *                    300 MB de video.
+     *   senao         -> usa `alvo` como esta. Nada e criado: a pasta veio da
+     *                    listagem, ja existe.
      */
-    const definirPasta = async (pai: Caminho) => {
+    const definirPasta = async (alvo: Caminho, criarSubpasta: boolean) => {
         setEscolhendo(false);
+        setErro('');
+
+        // Abre o seletor em seguida: escolher a pasta e mandar o arquivo sao um
+        // gesto so na cabeca de quem esta subindo material.
+        const seguirParaArquivos = () => setTimeout(() => inputRef.current?.click(), 0);
+
+        if (!criarSubpasta) {
+            onPastaMidia(alvo);
+            seguirParaArquivos();
+            return;
+        }
+
         if (!nomeDaPasta) {
-            setErro('Dê um título à publicação primeiro: a pasta recebe o nome dele.');
+            setErro('Dê um título à publicação primeiro: a subpasta recebe o nome dele.');
             return;
         }
         setPreparando(true);
-        setErro('');
         try {
-            await criarPasta(empresaId, pai, nomeDaPasta);
-            onPastaMidia([...pai, nomeDaPasta]);
-            // Abre o seletor em seguida: escolher a pasta e mandar o arquivo sao
-            // um gesto so na cabeca de quem esta subindo material.
-            setTimeout(() => inputRef.current?.click(), 0);
+            await criarPasta(empresaId, alvo, nomeDaPasta);
+            onPastaMidia([...alvo, nomeDaPasta]);
+            seguirParaArquivos();
         } catch (e) {
             console.error(e);
             setErro(e instanceof Error ? e.message : 'Não foi possível criar a pasta.');
@@ -100,6 +122,16 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
     const handleFiles = async (files: FileList | null) => {
         if (!files?.length) return;
         setErro('');
+
+        // Post AINDA NAO GRAVADO exige pasta escolhida: sem ela o upload cairia no
+        // caminho antigo `posts/{eventId}/`, e com eventId vazio o arquivo iria
+        // para "posts//arquivo" - orfao, sem dono e impossivel de achar depois.
+        // Com pasta, o destino e materiais/, que nao depende de id nenhum.
+        if (!eventId && !pastaMidia?.length) {
+            setErro('Escolha a pasta antes de enviar.');
+            setEscolhendo(true);
+            return;
+        }
 
         // Um por vez, em serie. Em paralelo o navegador divide a banda entre os
         // uploads e TODOS ficam lentos, sem nenhum terminar - com um video de
@@ -127,9 +159,15 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 // Gravada aqui, e nao no salvar do modal, porque a capa e o que
                 // aparece na grade - perder isso por um "cancelar" seria pior
                 // que gravar antes da hora.
+                //
+                // SEM eventId nao ha onde gravar: a capa vive em covers/{eventId} e
+                // o post ainda nao tem id. Nesse caso ela sobe pelo onThumb e quem
+                // criou o post grava depois, com o id em maos. Antes esta chamada
+                // era incondicional - num post novo escreveria em covers/'' e o
+                // Firestore recusaria o caminho, derrubando o upload inteiro.
                 const jaTinhaCapa = midias.length > 0 || novas.length > 1;
                 if (enviada.thumb && !jaTinhaCapa) {
-                    await salvarThumb(empresaId, eventId, enviada.thumb);
+                    if (eventId) await salvarThumb(empresaId, eventId, enviada.thumb);
                     onThumb(enviada.thumb);
                 }
             } catch (e) {
@@ -199,31 +237,40 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                 para posts/{id}/, um caminho com id de documento que ninguem acha
                 no bucket. Agora o caminho e escolhido e fica escrito. */}
             {pastaMidia?.length ? (
-                <div className="flex items-center gap-2 mb-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2">
-                    <FolderOpen className="w-3.5 h-3.5 text-[#FABE01] shrink-0" />
-                    <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px] text-zinc-400 overflow-hidden">
-                        <span className="shrink-0">Materiais</span>
-                        {pastaMidia.map((seg, i) => (
-                            <React.Fragment key={`${seg}-${i}`}>
-                                <ChevronRight className="w-2.5 h-2.5 text-zinc-700 shrink-0" />
-                                <span className={`truncate ${i === pastaMidia.length - 1 ? 'text-zinc-200 font-medium' : ''}`}>
-                                    {seg}
-                                </span>
-                            </React.Fragment>
-                        ))}
-                    </span>
-                    {!disabled && midias.length === 0 && (
-                        // So troca de pasta enquanto nao ha arquivo: com midia
-                        // dentro, mudar o destino deixaria metade do carrossel numa
-                        // pasta e metade em outra.
-                        <button
-                            type="button"
-                            onClick={() => setEscolhendo(true)}
-                            className="shrink-0 text-[10px] font-semibold text-zinc-400 hover:text-white transition-colors"
-                        >
-                            trocar
-                        </button>
-                    )}
+                <div className="mb-2 bg-[#111111] border border-white/5 rounded-control px-3 py-2">
+                    <div className="flex items-center gap-2">
+                        <FolderOpen className="w-3.5 h-3.5 text-[#FABE01] shrink-0" />
+                        <span className="min-w-0 flex-1 flex items-center gap-1 text-[11px] text-zinc-400 overflow-hidden">
+                            <span className="shrink-0">Materiais</span>
+                            {pastaMidia.map((seg, i) => (
+                                <React.Fragment key={`${seg}-${i}`}>
+                                    <ChevronRight className="w-2.5 h-2.5 text-zinc-700 shrink-0" />
+                                    <span className={`truncate ${i === pastaMidia.length - 1 ? 'text-zinc-200 font-medium' : ''}`}>
+                                        {seg}
+                                    </span>
+                                </React.Fragment>
+                            ))}
+                        </span>
+                        {!disabled && midias.length === 0 && (
+                            // So troca de pasta enquanto nao ha arquivo: com midia
+                            // dentro, mudar o destino deixaria metade do carrossel
+                            // numa pasta e metade em outra.
+                            <button
+                                type="button"
+                                onClick={() => setEscolhendo(true)}
+                                className="shrink-0 text-[10px] font-semibold text-zinc-400 hover:text-white transition-colors"
+                            >
+                                trocar
+                            </button>
+                        )}
+                    </div>
+                    {/* O MESMO ARQUIVO NOS DOIS LUGARES, dito na tela. Nao e copia:
+                        a previa aqui e a lista em Arquivos & Materiais leem o mesmo
+                        objeto no bucket. Sem esta linha, quem sobe pelo modal nao
+                        tem como saber que o material ja esta na pasta do cliente. */}
+                    <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
+                        O que subir aqui aparece nesta pasta em Arquivos &amp; Materiais.
+                    </p>
                 </div>
             ) : null}
 
@@ -254,7 +301,7 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
                         <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed max-w-xs mx-auto">
                             {pastaMidia?.length
                                 ? 'Imagem até 15 MB · vídeo até 300 MB · pode selecionar vários'
-                                : 'Uma pasta com o nome do conteúdo é criada dentro da que você escolher, em Arquivos & Materiais.'}
+                                : 'Em Arquivos & Materiais: crie uma subpasta com o nome do conteúdo ou aproveite uma pasta que já existe.'}
                         </p>
                     )}
                 </button>

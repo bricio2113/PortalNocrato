@@ -8,27 +8,47 @@ interface PastaPickerProps {
     empresaId: string;
     /** Nome da pasta que sera criada dentro da escolhida. Vai no rodape. */
     nomeFinal: string;
-    /** Devolve a PASTA PAI escolhida. Quem cria a pasta do conteudo e o chamador. */
-    onEscolher: (pai: Caminho) => void;
+    /**
+     * Devolve a pasta em que estamos e O QUE FAZER com ela:
+     *
+     *   criarSubpasta = true  -> criar `nomeFinal` DENTRO dela e usar a nova
+     *   criarSubpasta = false -> usar esta pasta como esta, sem criar nada
+     */
+    onEscolher: (caminho: Caminho, criarSubpasta: boolean) => void;
     onFechar: () => void;
 }
 
 /**
  * Escolher onde a midia do conteudo vai morar.
  *
- * Navega a arvore de Arquivos & Materiais e devolve a pasta PAI. Nao e um select:
- * um combo achatado com "Imagens/2026/Agosto" em cada linha exigiria varrer a
- * arvore inteira antes de abrir - uma requisicao por pasta, em todos os niveis -
- * e ficaria ilegivel com dez pastas. Navegar custa uma requisicao por nivel
- * VISITADO, e e o gesto que a pessoa ja conhece do Drive.
+ * Navega a arvore de Arquivos & Materiais. Nao e um select: um combo achatado com
+ * "Imagens/2026/Agosto" em cada linha exigiria varrer a arvore inteira antes de
+ * abrir - uma requisicao por pasta, em todos os niveis - e ficaria ilegivel com
+ * dez pastas. Navegar custa uma requisicao por nivel VISITADO, e e o gesto que a
+ * pessoa ja conhece do Drive.
  *
- * O rodape mostra o caminho final ANTES de confirmar, com o nome da pasta que vai
- * ser criada. Sem isso, "criar pasta com o titulo do conteudo" e uma promessa que
- * so se confere depois, no bucket.
+ * DOIS DESFECHOS, nao um. A primeira versao SEMPRE criava uma subpasta com o
+ * titulo do conteudo: quem ja tinha "Imagens/Ensaio Agosto" pronta, com o material
+ * dentro, era obrigado a ganhar uma pasta nova e vazia ao lado. Agora "usar esta
+ * pasta" existe, e e o desfecho certo quando a pasta do material ja foi feita a
+ * mao.
+ *
+ * O rodape mostra o caminho final ANTES de confirmar, em cada uma das duas opcoes.
+ * Sem isso, "criar pasta com o titulo do conteudo" e uma promessa que so se
+ * confere depois, no bucket.
  */
 const PastaPicker: React.FC<PastaPickerProps> = ({ empresaId, nomeFinal, onEscolher, onFechar }) => {
     const [caminho, setCaminho] = useState<Caminho>([]);
     const [pastas, setPastas] = useState<{ nome: string; caminho: Caminho }[]>([]);
+    /**
+     * Quantos arquivos JA existem no nivel aberto.
+     *
+     * O seletor lista pastas e joga os arquivos fora - navegar e o que importa. Mas
+     * "usar esta pasta" e uma decisao sobre onde a peca vai morar, e uma pasta vazia
+     * e uma pasta com 40 fotos dentro sao escolhas diferentes. O `listar` ja traz a
+     * contagem na mesma resposta: mostrar custa zero requisicao.
+     */
+    const [arquivos, setArquivos] = useState(0);
     const [carregando, setCarregando] = useState(true);
     const [erro, setErro] = useState('');
     const [criando, setCriando] = useState<string | null>(null);
@@ -38,12 +58,14 @@ const PastaPicker: React.FC<PastaPickerProps> = ({ empresaId, nomeFinal, onEscol
         setCarregando(true);
         setErro('');
         try {
-            const { pastas: lista } = await listar(empresaId, alvo);
+            const { pastas: lista, arquivos: nivel } = await listar(empresaId, alvo);
             setPastas(lista);
+            setArquivos(nivel.length);
         } catch (e) {
             console.error(e);
             setErro('Não foi possível listar as pastas.');
             setPastas([]);
+            setArquivos(0);
         } finally {
             setCarregando(false);
         }
@@ -89,7 +111,7 @@ const PastaPicker: React.FC<PastaPickerProps> = ({ empresaId, nomeFinal, onEscol
                     <div className="min-w-0 flex-1">
                         <h2 className="text-sm font-bold text-white tracking-tight">Onde salvar a mídia</h2>
                         <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
-                            Escolha a pasta. Uma subpasta com o nome do conteúdo é criada dentro dela.
+                            Crie uma subpasta com o nome do conteúdo ou use uma pasta que já existe.
                         </p>
                     </div>
                     <button
@@ -196,26 +218,55 @@ const PastaPicker: React.FC<PastaPickerProps> = ({ empresaId, nomeFinal, onEscol
                     )}
                 </div>
 
-                <footer className="shrink-0 border-t border-white/5 p-4 bg-white/[0.02]">
-                    <p className="text-[10px] text-zinc-500 mb-2.5 leading-relaxed">
-                        Vai salvar em{' '}
-                        <span className="text-zinc-300 font-mono">
-                            Materiais/{caminho.length ? `${caminho.join('/')}/` : ''}
-                            <span className="text-[#FABE01]">{nomeFinal || '(título do conteúdo)'}</span>
-                        </span>
-                    </p>
+                <footer className="shrink-0 border-t border-white/5 p-3 bg-white/[0.02] space-y-2">
+                    {/* CRIAR SUBPASTA - o caminho principal: material novo, pasta
+                        propria com o nome do conteudo. */}
                     <button
-                        onClick={() => onEscolher(caminho)}
+                        onClick={() => onEscolher(caminho, true)}
                         disabled={!nomeFinal || !cabeMaisUm}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-40"
+                        className="w-full text-left px-3.5 py-2.5 rounded-control bg-[#FABE01] text-black hover:bg-[#FABE01]/90 transition-colors disabled:opacity-40"
                     >
-                        <Check className="w-4 h-4" />
-                        {caminho.length === 0 ? 'Salvar na raiz de Materiais' : `Salvar em “${caminho[caminho.length - 1]}”`}
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                            <FolderPlus className="w-4 h-4 shrink-0" />
+                            Criar a pasta do conteúdo aqui
+                        </span>
+                        <span className="block text-[10px] font-mono text-black/70 mt-0.5 truncate">
+                            Materiais/{caminho.length ? `${caminho.join('/')}/` : ''}
+                            <strong>{nomeFinal || '(título do conteúdo)'}</strong>
+                        </span>
                     </button>
+
+                    {/* USAR ESTA PASTA - para quando a pasta do material ja existe.
+                        Desligada na raiz: jogar midia de post soltas em Materiais/
+                        e o oposto de organizar, e sem pasta nao ha o que "usar". */}
+                    <button
+                        onClick={() => onEscolher(caminho, false)}
+                        disabled={caminho.length === 0}
+                        className="w-full text-left px-3.5 py-2.5 rounded-control bg-white/5 text-zinc-200 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-40"
+                    >
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                            <Check className="w-4 h-4 shrink-0" />
+                            {caminho.length === 0
+                                ? 'Usar esta pasta'
+                                : `Usar “${caminho[caminho.length - 1]}”`}
+                        </span>
+                        <span className="block text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
+                            {caminho.length === 0
+                                ? 'entre em uma pasta para usá-la como está'
+                                : `Materiais/${caminho.join('/')}${arquivos ? ` · já tem ${arquivos} arquivo(s)` : ' · vazia'}`}
+                        </span>
+                    </button>
+
+                    {!nomeFinal && (
+                        <p className="text-[10px] text-zinc-500 leading-relaxed px-1">
+                            Sem título na publicação não há nome para a subpasta — dê um título ou
+                            use uma pasta existente.
+                        </p>
+                    )}
                     {!cabeMaisUm && (
-                        <p className="text-[10px] text-amber-400/90 mt-2 leading-relaxed">
-                            Limite de {PROFUNDIDADE_MAX} níveis: escolha uma pasta menos profunda para caber
-                            a pasta do conteúdo.
+                        <p className="text-[10px] text-amber-400/90 leading-relaxed px-1">
+                            Limite de {PROFUNDIDADE_MAX} níveis: aqui só cabe “usar esta pasta”.
+                            Para criar a pasta do conteúdo, escolha um nível acima.
                         </p>
                     )}
                 </footer>

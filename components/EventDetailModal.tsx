@@ -22,9 +22,22 @@ import {
     ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock, ListChecks, FileText
 } from 'lucide-react';
 
+/**
+ * O que o modal precisa gravar mas nao cabe no documento do evento.
+ *
+ * Hoje e so a capa. Ela vive em `covers/{eventId}` e uma publicacao nova nao tem
+ * id enquanto nao e criada - quem chama o `onSave` recebe o id do `add()` e e o
+ * unico que pode gravar. Sem este caminho, todo post criado JA COM MIDIA nasceria
+ * sem miniatura na grade do calendario.
+ */
+export interface ExtrasDoSave {
+    /** Data URI da miniatura da primeira midia. Ausente = nada a gravar. */
+    thumb?: string | null;
+}
+
 interface EventDetailModalProps {
     event: CalendarEvent;
-    onSave: (event: CalendarEvent) => void;
+    onSave: (event: CalendarEvent, extras?: ExtrasDoSave) => void;
     onDelete: (eventId: string) => void;
     onClose: () => void;
     /** Trava os botoes enquanto a gravacao esta em curso. */
@@ -95,6 +108,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     const [showDiscardWarning, setShowDiscardWarning] = useState(false);
     const isCreating = !event.id;
     const titleRef = useRef<HTMLTextAreaElement>(null);
+
+    /**
+     * Miniatura da primeira midia enviada numa publicacao AINDA SEM ID.
+     *
+     * A capa vive em `empresas/{id}/covers/{eventId}` e o post novo nao tem
+     * eventId, entao o MediaUpload nao consegue gravar - ele devolve a miniatura
+     * por aqui e ela viaja no `onSave`, para quem cria o documento gravar com o id
+     * em maos. Em ref, e nao em estado: mudar a capa nao muda nada na tela e um
+     * setState aqui so causaria re-render no meio do upload.
+     */
+    const thumbPendente = useRef<string | null>(null);
 
     const isClient = userRole === 'cliente';
     // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
@@ -624,11 +648,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             existe fora do portal. Deixar o link primeiro
                             ensinaria o fluxo antigo a quem entra hoje.
 
-                            So aparece em post JA SALVO: o caminho no bucket
-                            inclui o eventId, e num post sem id o arquivo iria
-                            para "posts//arquivo" - orfao, sem dono e sem como
-                            achar depois. */}
-                        {!isCreating && empresaId && (
+                            APARECE TAMBEM EM PUBLICACAO NOVA. Antes so aparecia em
+                            post ja salvo, porque o caminho no bucket era
+                            `posts/{eventId}/` e sem id o arquivo iria para
+                            "posts//arquivo" - orfao. Com `pastaMidia` o destino e a
+                            pasta escolhida em materiais/, sem id no caminho, e o
+                            motivo da trava deixou de existir. Esconder o campo na
+                            criacao obrigava a salvar um post vazio e reabrir so para
+                            subir a midia. */}
+                        {empresaId && (
                             <div className="sm:col-span-2">
                                 <MediaUpload
                                     empresaId={empresaId}
@@ -638,7 +666,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     titulo={editableEvent.title}
                                     pastaMidia={editableEvent.pastaMidia}
                                     onPastaMidia={caminho => handleChange('pastaMidia', caminho)}
-                                    onThumb={() => { /* a capa vive em covers/, fora do evento */ }}
+                                    onThumb={thumb => { thumbPendente.current = thumb; }}
                                     disabled={isClient}
                                 />
                             </div>
@@ -647,6 +675,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         {/* Link Material Bruto */}
                         <div>
                             <label className={labelStyle}>Link do Material (Bruto)</label>
+                            {/* O DRIVE E A ALTERNATIVA, e a tela diz isso. O campo
+                                continua aqui - material que ja mora no Drive, ou
+                                arquivo grande demais para o bucket, precisa de um
+                                lugar -, mas quem esta cadastrando hoje tem que saber
+                                que a peca sobe acima e nao depende deste link. */}
+                            {!isClient && (
+                                <p className="text-[10px] text-zinc-600 -mt-1 mb-1.5 leading-relaxed">
+                                    Alternativa: use quando o material ficar no Drive em vez de subir acima.
+                                </p>
+                            )}
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
                                     <input type="text" disabled={isClient} value={editableEvent.url || ''} onChange={(e) => handleChange('url', e.target.value)} placeholder="Pasta do Drive..." className={inputStyle} />
@@ -848,14 +886,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 Firestore recusam a escrita do cliente aqui, entao
                                 exibir o botao so produziria erro de permissao. */}
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
+                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
                                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                     {isSaving ? 'Salvando...' : (isCreating ? 'Agendar' : 'Salvar')}
                                 </button>
                             )}
                             <button onClick={requestClose} disabled={isSaving} aria-label="Fechar" className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform disabled:opacity-50"><X className="w-6 h-6" /></button>
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent)} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
+                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
                                     {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />)}
                                 </button>
                             )}

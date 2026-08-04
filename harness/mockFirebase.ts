@@ -236,19 +236,56 @@ const ARVORE_MATERIAIS: NoArvore = {
 const tipoPorNome = (n: string) =>
     n.endsWith('.pdf') ? 'application/pdf' : n.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
 
-/** Desce a arvore pelo caminho depois de `materiais/`. Null = nao existe. */
-const noDoCaminho = (caminho: string): NoArvore | null => {
+/** Segmentos depois de `materiais/`, ou null se o caminho nao for de materiais. */
+const segmentosDeMateriais = (caminho: string): string[] | null => {
     const marca = '/materiais';
     const i = caminho.indexOf(marca);
     if (i === -1) return null;
     const resto = caminho.slice(i + marca.length).replace(/^\/+/, '');
+    return resto ? resto.split('/') : [];
+};
+
+/** Desce a arvore pelo caminho depois de `materiais/`. Null = nao existe. */
+const noDoCaminho = (caminho: string): NoArvore | null => {
+    const segs = segmentosDeMateriais(caminho);
+    if (!segs) return null;
     let no: NoArvore | null = ARVORE_MATERIAIS;
-    if (!resto) return no;
-    for (const seg of resto.split('/')) {
+    for (const seg of segs) {
         if (!no || typeof no[seg] === 'undefined' || no[seg] === null) return null;
         no = no[seg] as NoArvore;
     }
     return no;
+};
+
+/**
+ * Insere o objeto na arvore, criando os pais que faltarem.
+ *
+ * O `put` so registrava a subida em __writes. Isso provava que a chamada
+ * aconteceu com o caminho certo, e nada mais: no Storage de verdade o objeto passa
+ * a APARECER no listAll, e era exatamente isso que precisava ser verificado - a
+ * midia enviada pelo modal de conteudo tem que aparecer na tela de pastas. Sem
+ * inserir, a auditoria nunca conseguiria distinguir "gravou na pasta certa" de
+ * "gravou em lugar nenhum".
+ *
+ * Vale tambem para `criarPasta`, que sobe o marcador `.pasta`: criar pasta no
+ * seletor agora faz a pasta existir na listagem seguinte, como no bucket.
+ */
+const removerDaArvore = (caminho: string) => {
+    const segs = segmentosDeMateriais(caminho);
+    if (!segs || segs.length === 0) return;
+    const pai = noDoCaminho(caminho.split('/').slice(0, -1).join('/'));
+    if (pai) delete pai[segs[segs.length - 1]];
+};
+
+const inserirNaArvore = (caminho: string) => {
+    const segs = segmentosDeMateriais(caminho);
+    if (!segs || segs.length === 0) return;
+    let no = ARVORE_MATERIAIS;
+    for (const pasta of segs.slice(0, -1)) {
+        if (!no[pasta] || no[pasta] === null) no[pasta] = { '.pasta': null };
+        no = no[pasta] as NoArvore;
+    }
+    no[segs[segs.length - 1]] = null;
 };
 
 export const storage: any = {
@@ -265,12 +302,16 @@ export const storage: any = {
                     fullPath: `${caminho}/${nome}`,
                     getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(nome)}`,
                     getMetadata: async () => ({ size: 1024 * 420, contentType: tipoPorNome(nome) }),
-                    delete: async () => registrar('delete-storage', `${caminho}/${nome}`)
+                    delete: async () => {
+                        registrar('delete-storage', `${caminho}/${nome}`);
+                        removerDaArvore(`${caminho}/${nome}`);
+                    }
                 }))
             };
         },
         put: (arquivo: any) => {
             registrar('upload', caminho, { contentType: arquivo?.type, size: arquivo?.size });
+            inserirNaArvore(caminho);
             const task: any = {
                 on: (_ev: string, prog: any, _err: any, done: any) => {
                     prog?.({ bytesTransferred: arquivo?.size || 0, totalBytes: arquivo?.size || 1 });
@@ -281,10 +322,14 @@ export const storage: any = {
             };
             return task;
         },
-        delete: async () => registrar('delete-storage', caminho),
+        delete: async () => { registrar('delete-storage', caminho); removerDaArvore(caminho); },
         getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(caminho)}`
     })
 };
+
+// Arvore exposta para a auditoria conferir o bucket depois da interacao, em vez
+// de so contar chamadas.
+(globalThis as any).__arvore = ARVORE_MATERIAIS;
 
 export const db: any = { collection: (name: string) => makeCollection(name), batch: () => ({ update() {}, commit: async () => {} }) };
 export const auth: any = {

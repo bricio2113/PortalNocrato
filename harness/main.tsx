@@ -7,6 +7,7 @@ import ClientReportsView from '../components/ClientReportsView';
 import ClientFormModal from '../components/ClientFormModal';
 import ThumbBench from './ThumbBench';
 import MateriaisView from '../components/MateriaisView';
+import MediaUpload from '../components/MediaUpload';
 import ClientHomeView from '../components/ClientHomeView';
 import PostTimeline from '../components/PostTimeline';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA, SELO_ATIVO } from '../components/PersonCard';
@@ -36,6 +37,41 @@ const evento: any = {
         { url: 'https://exemplo.invalido/peca-3.mp4', path: 'p3', contentType: 'video/mp4', bytes: 5000 }
     ],
     copy: 'Legenda de exemplo '.repeat(10), approval: 'aguardando'
+};
+
+/**
+ * MIDIA E PASTAS LADO A LADO.
+ *
+ * Existe para verificar a promessa "o que subir no conteudo aparece nas pastas".
+ * Nenhuma tela isolada prova isso: o modal mostraria o arquivo na propria grade e
+ * a tela de pastas mostraria a listagem, sem nada ligando as duas. Aqui o upload
+ * acontece no componente de midia da esquerda e a listagem da direita e a mesma
+ * `MateriaisView` do app - se o arquivo nao chegar na pasta certa, a coluna da
+ * direita continua sem ele depois do "Atualizar".
+ *
+ * O modal inteiro nao serve aqui: e uma camada fixa sobre a tela e cobriria a
+ * listagem. O que precisa ser exercitado e o upload, que e este componente.
+ */
+const MidiaEPastas: React.FC = () => {
+    const [midias, setMidias] = React.useState<any[]>([]);
+    const [pasta, setPasta] = React.useState<string[] | null>(null);
+    return (
+        <div className="p-4 bg-[#111111] min-h-screen grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <div className="bg-[#1A1A1A] border border-white/5 rounded-card p-4">
+                <MediaUpload
+                    empresaId="agencia-mara"
+                    eventId=""
+                    midias={midias}
+                    onChange={setMidias}
+                    onThumb={noop}
+                    titulo="Reel de captação — agosto"
+                    pastaMidia={pasta}
+                    onPastaMidia={setPasta}
+                />
+            </div>
+            <MateriaisView empresaId="agencia-mara" userRole="agencia" />
+        </div>
+    );
 };
 
 const SCREENS: Record<string, React.ReactNode> = {
@@ -74,6 +110,33 @@ const SCREENS: Record<string, React.ReactNode> = {
             userEmail={profile.email} userName="Pedro Vidal"
         />
     </div>,
+    // PUBLICACAO NOVA (sem id). E a tela onde o campo de midia havia DESAPARECIDO:
+    // ele estava atras de `!isCreating`. Sem esta tela na auditoria, o caso "criar
+    // conteudo e ja subir a peca" nunca era renderizado - e foi assim que a
+    // regressao passou.
+    'modal-novo': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{
+                id: '', title: 'Reel de captação — agosto', date: new Date(),
+                type: 'Reel', status: 'Pendente', plataforma: 'Instagram'
+            } as any}
+            // Registra o que o "Agendar" entrega. A capa de um post sem id viaja
+            // aqui, e nao no documento: sem inspecionar este argumento, o teste nao
+            // consegue distinguir "capa gravada depois" de "capa perdida".
+            onSave={(ev, extras) => {
+                (globalThis as any).__save = {
+                    id: ev.id,
+                    pastaMidia: ev.pastaMidia || null,
+                    midias: (ev.midias || []).length,
+                    thumbBytes: extras?.thumb ? extras.thumb.length : 0
+                };
+            }}
+            onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
+            userEmail={profile.email} userName="Pedro Vidal"
+        />
+    </div>,
+    'midia-e-pastas': <MidiaEPastas />,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}

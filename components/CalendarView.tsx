@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent, UserProfile } from '../types';
-import EventDetailModal from './EventDetailModal';
+import EventDetailModal, { ExtrasDoSave } from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
 import { getClientStage, CLIENT_STAGES, stageView, stageCurto } from '../utils/eventState';
@@ -12,7 +12,7 @@ import { PageHeader, SegmentedTabs, EmptyState } from './ui';
 import FeedPreview from './FeedPreview';
 import { formatTime } from '../utils/date';
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
-import { subscribeThumbs } from '../utils/midia';
+import { subscribeThumbs, salvarThumb } from '../utils/midia';
 import { registrarMudancas } from '../utils/historico';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
 import { AvatarGroup } from './AvatarBubble';
@@ -349,7 +349,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     // Erros aqui eram apenas logados no console e o modal fechava de qualquer
     // forma - o usuario via a tela fechar e presumia que gravou. Agora a falha
     // mantem o modal aberto com a mensagem, para nao perder o que foi digitado.
-    const handleSaveEvent = async (eventData: CalendarEvent) => {
+    const handleSaveEvent = async (eventData: CalendarEvent, extras?: ExtrasDoSave) => {
         if (isSaving) return; // evita duplicar o evento com dois cliques
         setIsSaving(true);
         setSaveError('');
@@ -386,6 +386,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 const docRef = await db.collection('empresas').doc(empresaId).collection('events').add(stripUndefined(data));
                 registrarMudancas(empresaId, null, { ...eventData, id: docRef.id }, userEmail || '', userName || null, userRole);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
+
+                // CAPA DA MIDIA SUBIDA ANTES DE O POST EXISTIR. O upload acontece
+                // no modal, onde ainda nao ha id; a miniatura vem pelo `extras` e
+                // so aqui ha `docRef.id` para enderecar covers/{id}. Falhar nisto
+                // nao desfaz o post: sem miniatura o card cai no link de previa, o
+                // que e degradacao visual, nao perda de dado.
+                if (extras?.thumb) {
+                    await salvarThumb(empresaId, docRef.id, extras.thumb).catch(e =>
+                        console.error('Post criado, mas a capa não foi gravada:', e));
+                }
 
                 // Sem criar card de quadro: o post JA e o card. Ver a nota no
                 // cabecalho de ClientProductionView.

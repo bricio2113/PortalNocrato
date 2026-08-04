@@ -10,7 +10,7 @@ import { toSafeHref } from '../utils/url';
 import {
     Folder, FolderPlus, Upload, ArrowLeft, Trash2, Loader2, AlertTriangle,
     FileText, Play, Download, Sparkles, ExternalLink, Link as LinkIcon,
-    ChevronRight, HardDrive
+    ChevronRight, HardDrive, RefreshCw
 } from 'lucide-react';
 
 interface LinkLegado { id: string; title: string; url: string; category?: string }
@@ -193,6 +193,19 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                                 <ArrowLeft className="w-4 h-4" /> Voltar
                             </button>
                         )}
+                        {/* ATUALIZAR. O Cloud Storage nao tem onSnapshot: a
+                            listagem e uma requisicao, tirada no momento em que a
+                            pasta abriu. Quando a midia sobe pelo modal de conteudo -
+                            para uma pasta daqui -, esta tela nao fica sabendo. Sem
+                            este botao, a unica forma de ver o arquivo novo era sair
+                            da pasta e voltar. */}
+                        <button
+                            onClick={() => carregar(caminho)}
+                            disabled={carregando || Boolean(ocupado) || Boolean(enviando)}
+                            className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-300 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-full transition-colors disabled:opacity-40"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${carregando ? 'animate-spin' : ''}`} /> Atualizar
+                        </button>
                         {ehAgencia && naRaiz && conteudo.pastas.length === 0 && (
                             <button
                                 onClick={handleTemplate}
