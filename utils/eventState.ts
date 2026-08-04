@@ -27,8 +27,11 @@ export const CLIENT_STAGES: Record<ClientStage, StageStyle> = {
         bg: 'bg-white/5', text: 'text-zinc-400', border: 'border-white/10', dot: 'bg-zinc-500'
     },
     aguardando_voce: {
-        label: 'Aguardando você',
-        hint: 'Revise e aprove, ou peça um ajuste.',
+        // ACAO, nao estado. "Aguardando você" descreve o sistema esperando; nao
+        // diz o que a pessoa tem que fazer, e o cliente lia o selo sem entender
+        // que a decisao era dele.
+        label: 'Precisa da sua aprovação',
+        hint: 'Veja a peça ao lado e aprove, ou peça um ajuste.',
         bg: 'bg-[#FABE01]/10', text: 'text-[#FABE01]', border: 'border-[#FABE01]/30', dot: 'bg-[#FABE01]'
     },
     aprovado: {
@@ -47,6 +50,67 @@ export const CLIENT_STAGES: Record<ClientStage, StageStyle> = {
         bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30', dot: 'bg-red-500'
     }
 };
+
+/**
+ * O MESMO estagio, dito para quem esta lendo.
+ *
+ * `CLIENT_STAGES` foi escrito na segunda pessoa, para o portal do cliente - e
+ * vazou para o painel da agencia, onde "Aguardando você" acusava a propria
+ * equipe de estar segurando um post que esta, na verdade, esperando o cliente.
+ * O estado e um so; o que muda e de que lado da mesa a frase e lida.
+ */
+export function stageView(
+    stage: ClientStage,
+    papel: 'agencia' | 'cliente'
+): { label: string; hint: string } {
+    const base = CLIENT_STAGES[stage];
+    if (papel === 'cliente') return { label: base.label, hint: base.hint };
+
+    switch (stage) {
+        case 'aguardando_voce':
+            return {
+                label: 'Aguardando o cliente',
+                hint: 'Entregue. O cliente precisa revisar e decidir.'
+            };
+        case 'em_producao':
+            return { label: 'Em produção', hint: 'Com a equipe. O cliente ainda não vê para aprovar.' };
+        case 'aprovado':
+            return { label: 'Aprovado pelo cliente', hint: 'Liberado para publicar.' };
+        default:
+            return { label: base.label, hint: base.hint };
+    }
+}
+
+/**
+ * Palavra curta para o card do calendario, onde nao cabe a frase inteira.
+ *
+ * Substitui a BOLINHA que existia ali: um circulo de 8px com o estado so no
+ * `title` nao comunica nada de relance e nada nenhum no celular, onde nao ha
+ * hover. Cor sozinha tambem exige decorar a legenda. Uma palavra resolve as
+ * duas coisas, e cabe.
+ */
+export function stageCurto(
+    stage: ClientStage,
+    papel: 'agencia' | 'cliente'
+): { texto: string; classe: string } | null {
+    switch (stage) {
+        case 'aguardando_voce':
+            return papel === 'cliente'
+                // Verbo, nao estado: para o cliente isto e uma tarefa dele.
+                ? { texto: 'revisar', classe: 'bg-[#FABE01] text-black font-bold' }
+                : { texto: 'c/ cliente', classe: 'bg-[#FABE01]/15 text-[#FABE01]' };
+        case 'aprovado':
+            return { texto: 'aprovado', classe: 'bg-emerald-500/15 text-emerald-400' };
+        case 'publicado':
+            return { texto: 'no ar', classe: 'bg-green-600/15 text-green-400' };
+        case 'cancelado':
+            return { texto: 'cancelado', classe: 'bg-red-500/15 text-red-400' };
+        // Em producao nao ganha etiqueta: e o estado padrao da maioria dos posts,
+        // e etiquetar todo mundo faz nenhuma etiqueta chamar atencao.
+        default:
+            return null;
+    }
+}
 
 /** Aprovacao ausente conta como 'aguardando' - posts anteriores a este campo. */
 export function getApproval(event: Pick<CalendarEvent, 'approval'>): ApprovalState {

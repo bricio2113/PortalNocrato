@@ -4,7 +4,7 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { CalendarEvent, UserProfile, Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
-import { getClientStage, CLIENT_STAGES, needsClientAction, needsAgencyAction } from '../utils/eventState';
+import { getClientStage, CLIENT_STAGES, stageView, needsClientAction, needsAgencyAction } from '../utils/eventState';
 import { summarizeSla } from '../utils/sla';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
@@ -179,7 +179,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                             agencia, que era este mesmo componente com um seletor
                             de cliente em cima. */}
                         <ResolverCapas empresaId={empresaId} events={events} />
-                        <CalendarView empresaId={empresaId} empresaNome={empresaNome} userRole="agencia" userEmail={userEmail} userName={userName} />
+                        <CalendarView empresaId={empresaId} empresaNome={empresaNome} perfilHandle={ficha?.handle} userRole="agencia" userEmail={userEmail} userName={userName} />
                     </>
                 );
             case 'production':
@@ -189,6 +189,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         userEmail={userEmail}
                         userName={userName}
                         onIrParaCalendario={() => setSection('calendar')}
+                        perfilHandle={ficha?.handle}
                     />
                 );
             case 'weekly':
@@ -425,7 +426,7 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                                             } ${CLIENT_STAGES[getClientStage(stats.proximo)].text} ${
                                                 CLIENT_STAGES[getClientStage(stats.proximo)].border
                                             }`}>
-                                                {CLIENT_STAGES[getClientStage(stats.proximo)].label}
+                                                {stageView(getClientStage(stats.proximo), 'agencia').label}
                                             </span>
                                         </button>
                                     ) : (

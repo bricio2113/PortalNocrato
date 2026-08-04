@@ -28,6 +28,13 @@ const evento: any = {
     id: 'ev0', title: 'Carrossel institucional com título longo para testar quebra',
     date: new Date(), type: 'Carrossel', status: 'Concluído', plataforma: 'Instagram',
     url: 'https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrS',
+    // Tres pecas: o carrossel da previa so e exercitado com mais de uma, e a
+    // terceira e video, que segue outro caminho de render.
+    midias: [
+        { url: 'https://exemplo.invalido/peca-1.jpg', path: 'p1', contentType: 'image/jpeg', bytes: 1000 },
+        { url: 'https://exemplo.invalido/peca-2.jpg', path: 'p2', contentType: 'image/jpeg', bytes: 1000 },
+        { url: 'https://exemplo.invalido/peca-3.mp4', path: 'p3', contentType: 'video/mp4', bytes: 5000 }
+    ],
     copy: 'Legenda de exemplo '.repeat(10), approval: 'aguardando'
 };
 
@@ -48,12 +55,22 @@ const SCREENS: Record<string, React.ReactNode> = {
     producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" onIrParaCalendario={noop} /></div>,
     // O MESMO modal do calendario, aberto na aba de gestao - as duas abas do post
     // precisam ser medidas, e a de gestao so aparece para a agencia.
+    // MODAL visto pelo CLIENTE: a coluna da peca com o bloco de aprovacao, e
+    // nenhuma aba de gestao. Sem esta tela o caminho do cliente nao e medido.
+    'modal-cliente': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{ ...evento, id: 'ev0' } as any}
+            onSave={noop} onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="cliente" perfilHandle="drasylviafisio"
+            userEmail="cliente@exemplo.com" userName="Cliente Exemplo"
+        />
+    </div>,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}
             abaInicial="gestao"
             onSave={noop} onDelete={noop} onClose={noop}
-            empresaId="agencia-mara" userRole="agencia"
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
             userEmail={profile.email} userName="Pedro Vidal"
         />
     </div>,

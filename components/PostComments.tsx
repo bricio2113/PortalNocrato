@@ -36,29 +36,48 @@ const PostComments: React.FC<PostCommentsProps> = ({ empresaId, eventId, userEma
     const [error, setError] = useState('');
     const endRef = useRef<HTMLDivElement>(null);
 
+    /**
+     * A PRIMEIRA remessa ja chegou.
+     *
+     * Marcado dentro do callback da assinatura, e nao por contagem: a versao
+     * anterior guardava o total anterior e tratava `null` como primeira carga.
+     * So que o efeito roda uma vez ANTES de qualquer dado, com a lista vazia, e
+     * gravava 0 - entao a chegada da primeira remessa parecia "mensagem nova" e
+     * rolava a tela. Resultado: quem abria um post com conversa caia direto nos
+     * comentarios, passando por cima da peca, dos campos e da aprovacao. So nao
+     * acontecia em post sem nenhum comentario, que era o caso testado.
+     */
+    const jaCarregou = useRef(false);
+    const totalAnterior = useRef(0);
+
     useEffect(() => {
         if (!eventId) return;
         setIsLoading(true);
+        jaCarregou.current = false;
+        totalAnterior.current = 0;
         const unsubscribe = subscribeComments(
             empresaId,
             eventId,
-            data => { setComments(data); setIsLoading(false); },
+            data => {
+                setComments(data);
+                setIsLoading(false);
+                if (!jaCarregou.current) {
+                    // A remessa inicial nao rola: ela e o passado da conversa.
+                    jaCarregou.current = true;
+                    totalAnterior.current = data.length;
+                }
+            },
             () => { setError('Não foi possível carregar os comentários.'); setIsLoading(false); }
         );
         return unsubscribe;
     }, [empresaId, eventId]);
 
-    // Rola para o fim so quando CHEGA mensagem nova, nunca na abertura.
-    //
-    // Sem o controle de primeira carga, o scrollIntoView disparava ao montar e
-    // levava o corpo do modal inteiro ate a conversa - o usuario abria um post
-    // e caia embaixo, passando por cima da previa, dos campos e da aprovacao.
-    const totalAnterior = useRef<number | null>(null);
+    // Rola para o fim so quando CHEGA mensagem nova depois da abertura.
     useEffect(() => {
-        if (totalAnterior.current !== null && comments.length > totalAnterior.current) {
+        if (jaCarregou.current && comments.length > totalAnterior.current) {
             endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
-        totalAnterior.current = comments.length;
+        if (jaCarregou.current) totalAnterior.current = comments.length;
     }, [comments.length]);
 
     const handleSend = async (e: React.FormEvent) => {

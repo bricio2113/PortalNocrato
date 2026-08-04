@@ -5,12 +5,13 @@ import { toSafeHref } from '../utils/url';
 import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTime } from '../utils/date';
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
-import { getClientStage, getApproval, CLIENT_STAGES } from '../utils/eventState';
+import { getClientStage, getApproval, CLIENT_STAGES, stageView } from '../utils/eventState';
 import { setApproval, saveMetrics } from '../utils/posts';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
 import PostTimeline from './PostTimeline';
 import ContentManagementPanel from './ContentManagementPanel';
+import PostPreview from './PostPreview';
 import { AvatarGroup } from './AvatarBubble';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
 import { UserProfile } from '../types';
@@ -45,6 +46,8 @@ interface EventDetailModalProps {
      * que levava de um ao outro fechava o primeiro sem volta.
      */
     abaInicial?: AbaConteudo;
+    /** @ do cliente, para a simulacao do post sair com o perfil certo. */
+    perfilHandle?: string | null;
 }
 
 export type AbaConteudo = 'conteudo' | 'gestao';
@@ -72,7 +75,7 @@ const getPlatformIcon = (platform: string) => {
 const EventDetailModal: React.FC<EventDetailModalProps> = ({
     event, onSave, onDelete, onClose, isSaving = false, errorMessage,
     empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange,
-    abaInicial = 'conteudo'
+    abaInicial = 'conteudo', perfilHandle
 }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
     const [aba, setAba] = useState<AbaConteudo>(abaInicial);
@@ -229,130 +232,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     // mas falha ao salvar e pior que um formulario visivelmente travado.
     const inputStyle = "w-full bg-[#111111] border border-zinc-700 rounded-control px-3 py-3 text-base text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-600 appearance-none disabled:opacity-60 disabled:cursor-not-allowed read-only:opacity-60";
 
-    return (
-        <div
-            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
-        >
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
-            <div className="relative w-full sm:max-w-3xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-2xl flex flex-col h-[90dvh] sm:h-auto sm:max-h-[90dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
 
-                {isDeleting && (
-                    <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
-                        <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
-                        {/* Antes dizia "Esta ação pode ser desfeita" - o oposto do que
-                            acontece. A exclusao apaga o evento, o espelho e o card do
-                            Kanban, sem retorno. */}
-                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
-                            Esta ação <strong className="text-white">não pode</strong> ser desfeita. O agendamento e o card correspondente na produção serão removidos.
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                            <button onClick={handleCancelDelete} disabled={isSaving} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors disabled:opacity-50">Cancelar</button>
-                            <button onClick={handleConfirmDelete} disabled={isSaving} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                                {isSaving ? 'Excluindo...' : 'Sim, Excluir'}
-                            </button>
-                        </div>
-                        {errorMessage && <p className="text-red-400 text-sm mt-4 max-w-xs">{errorMessage}</p>}
-                    </div>
-                )}
+    /**
+     * Bloco de aprovacao.
+     *
+     * Extraido para viver na COLUNA DA PECA: aprovar e olhar para o post sao a
+     * mesma acao, e o botao estava do outro lado da tela em relacao ao que ele
+     * julga.
+     */
+    const vista = stageView(stage, isClient ? 'cliente' : 'agencia');
 
-                {showDiscardWarning && (
-                    <div className="absolute inset-0 z-20 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
-                        <h3 className="text-xl font-bold text-white mb-2">Descartar alterações?</h3>
-                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
-                            Você editou esta publicação e ainda não salvou. Se sair agora, as alterações são perdidas.
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
-                            <button onClick={() => setShowDiscardWarning(false)} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Continuar editando</button>
-                            <button onClick={onClose} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Descartar</button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Header */}
-                <div className="flex items-start justify-between p-4 sm:p-6 border-b border-white/5 shrink-0 gap-3 sm:gap-4">
-                    <div className="flex-1">
-                        <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Título da Publicação</label>
-                        <div className="relative w-full min-h-[40px]">
-                            <div className="w-full text-xl sm:text-2xl font-bold text-transparent pointer-events-none whitespace-pre-wrap break-words px-0 py-0 leading-tight border-none" aria-hidden="true">
-                                {editableEvent.title || 'Placeholder'}
-                            </div>
-                            <textarea
-                                value={editableEvent.title}
-                                readOnly={isClient}
-                                onChange={(e) => handleChange('title', e.target.value)}
-                                placeholder="Digite o título aqui..."
-                                className="absolute inset-0 w-full h-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder:text-zinc-600 border-none focus:ring-0 p-0 resize-none overflow-hidden leading-tight break-words whitespace-pre-wrap"
-                                autoFocus={isCreating}
-                            />
-                        </div>
-                    </div>
-                    <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-control shrink-0"><X className="w-6 h-6" /></button>
-                </div>
-
-                {/* ABAS.
-                    O post tem duas metades - o que ele E (peca, legenda, data,
-                    aprovacao) e como ele SAI (quem faz, em que etapa). Eram dois
-                    modais; agora sao duas abas do mesmo, e alternar nao perde o
-                    que estava aberto. O cliente so ve a primeira: a divisao
-                    interna do trabalho nao e assunto dele. */}
-                {!isClient && (
-                    <div className="shrink-0 flex items-center gap-1 px-4 sm:px-6 border-b border-white/5" role="tablist">
-                        {([
-                            ['conteudo', 'Informação do conteúdo', FileText],
-                            ['gestao', 'Gestão do conteúdo', ListChecks]
-                        ] as const).map(([id, label, Icone]) => {
-                            const ativa = aba === id;
-                            return (
-                                <button
-                                    key={id}
-                                    role="tab"
-                                    aria-selected={ativa}
-                                    onClick={() => setAba(id)}
-                                    className={`flex items-center gap-2 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-                                        ativa
-                                            ? 'border-[#FABE01] text-white'
-                                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                                    }`}
-                                >
-                                    <Icone className="w-4 h-4" />
-                                    <span className="hidden sm:inline">{label}</span>
-                                    <span className="sm:hidden">{id === 'conteudo' ? 'Conteúdo' : 'Gestão'}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* GESTAO */}
-                {aba === 'gestao' && !isClient && (
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
-                        <ContentManagementPanel
-                            empresaId={empresaId || ''}
-                            event={editableEvent}
-                            autorEmail={userEmail}
-                            podeEditar={!isClient}
-                            equipe={equipe}
-                        />
-                    </div>
-                )}
-
-                {/* Body */}
-                <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar ${aba === 'gestao' && !isClient ? 'hidden' : ''}`}>
-
-                    {/* ESTAGIO + APROVACAO
-                        O cliente nao precisa entender os sete status internos da
-                        agencia; precisa saber se a bola esta com ele. */}
-                    {canReview && (
-                        <div className={`border rounded-card p-4 ${stageStyle.bg} ${stageStyle.border}`}>
+    const ApprovalBlock = () => (
                             <div className="flex items-start gap-3">
                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${stageStyle.dot}`} />
                                 <div className="flex-1 min-w-0">
-                                    <p className={`font-bold text-sm ${stageStyle.text}`}>{stageStyle.label}</p>
-                                    <p className="text-zinc-400 text-xs mt-0.5 leading-relaxed">{stageStyle.hint}</p>
+                                    <p className={`font-bold text-sm ${stageStyle.text}`}>{vista.label}</p>
+                                    <p className="text-zinc-400 text-xs mt-0.5 leading-relaxed">{vista.hint}</p>
 
                                     {localApproval === 'ajuste_solicitado' && (
                                         <p className="text-amber-400 text-xs mt-2 font-medium">
@@ -437,68 +332,145 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     )}
                                 </div>
                             </div>
+    );
+
+    return (
+        <div
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isCreating ? 'Nova publicação' : 'Editar publicação'}
+        >
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={requestClose} />
+            <div className="relative w-full sm:max-w-6xl bg-[#1A1A1A] border-t sm:border border-white/10 rounded-t-card sm:rounded-card shadow-2xl flex flex-col h-[92dvh] sm:max-h-[92dvh] animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 overflow-hidden">
+
+                {isDeleting && (
+                    <div className="absolute inset-0 z-10 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
+                        <h3 className="text-xl font-bold text-white mb-2">Excluir Agendamento?</h3>
+                        {/* Antes dizia "Esta ação pode ser desfeita" - o oposto do que
+                            acontece. A exclusao apaga o evento, o espelho e o card do
+                            Kanban, sem retorno. */}
+                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
+                            Esta ação <strong className="text-white">não pode</strong> ser desfeita. O agendamento e o card correspondente na produção serão removidos.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                            <button onClick={handleCancelDelete} disabled={isSaving} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors disabled:opacity-50">Cancelar</button>
+                            <button onClick={handleConfirmDelete} disabled={isSaving} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {isSaving ? 'Excluindo...' : 'Sim, Excluir'}
+                            </button>
+                        </div>
+                        {errorMessage && <p className="text-red-400 text-sm mt-4 max-w-xs">{errorMessage}</p>}
+                    </div>
+                )}
+
+                {showDiscardWarning && (
+                    <div className="absolute inset-0 z-20 bg-[#1A1A1A] flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-in fade-in duration-200">
+                        <h3 className="text-xl font-bold text-white mb-2">Descartar alterações?</h3>
+                        <p className="text-zinc-400 mb-8 max-w-xs leading-relaxed">
+                            Você editou esta publicação e ainda não salvou. Se sair agora, as alterações são perdidas.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                            <button onClick={() => setShowDiscardWarning(false)} className="w-full py-3 rounded-control border border-zinc-700 text-zinc-300 hover:text-white font-medium transition-colors">Continuar editando</button>
+                            <button onClick={onClose} className="w-full py-3 rounded-control bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Descartar</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Header */}
+                <div className="flex items-start justify-between p-4 sm:p-6 border-b border-white/5 shrink-0 gap-3 sm:gap-4">
+                    <div className="flex-1">
+                        <label className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Título da Publicação</label>
+                        <div className="relative w-full min-h-[40px]">
+                            <div className="w-full text-xl sm:text-2xl font-bold text-transparent pointer-events-none whitespace-pre-wrap break-words px-0 py-0 leading-tight border-none" aria-hidden="true">
+                                {editableEvent.title || 'Placeholder'}
+                            </div>
+                            <textarea
+                                value={editableEvent.title}
+                                readOnly={isClient}
+                                onChange={(e) => handleChange('title', e.target.value)}
+                                placeholder="Digite o título aqui..."
+                                className="absolute inset-0 w-full h-full bg-transparent text-xl sm:text-2xl font-bold text-white placeholder:text-zinc-600 border-none focus:ring-0 p-0 resize-none overflow-hidden leading-tight break-words whitespace-pre-wrap"
+                                autoFocus={isCreating}
+                            />
+                        </div>
+                    </div>
+                    <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-control shrink-0"><X className="w-6 h-6" /></button>
+                </div>
+
+                {/* DUAS COLUNAS.
+                    Esquerda: como o post FICA no perfil. Direita: o que se
+                    preenche sobre ele. Antes a previa era uma faixa no meio do
+                    formulario - uma imagem solta entre campos, que nao respondia
+                    "como isso aparece publicado?", que e a pergunta de quem
+                    aprova. Em tela estreita as duas viram uma coluna so, com a
+                    peca em cima: ela e o assunto. */}
+                <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
+
+                <aside className="lg:w-[360px] xl:w-[400px] shrink-0 lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/5 p-4 sm:p-5 bg-[#151515]">
+                    <PostPreview event={editableEvent} handle={perfilHandle} />
+
+                    {/* APROVACAO fica junto da peca: decidir sobre o post e olhar
+                        para ele sao a mesma acao. No formulario, do outro lado da
+                        tela, o botao ficava longe do que ele julga. */}
+                    {canReview && (
+                        <div className={`mt-4 border rounded-card p-4 ${stageStyle.bg} ${stageStyle.border}`}>
+                            <ApprovalBlock />
                         </div>
                     )}
+                </aside>
 
-                    {/* PREVIA DO CRIATIVO
-                        Antes o cliente precisava sair do portal, abrir o Drive e
-                        voltar para aprovar. */}
-                    <div>
-                        <label className={labelStyle}>Prévia</label>
-                        {preview && preview.kind === 'image' && !previewFailed && (
-                            <img
-                                src={preview.src}
-                                alt={`Prévia de ${editableEvent.title || 'publicação'}`}
-                                onError={() => setPreviewFailed(true)}
-                                loading="lazy"
-                                className="w-full max-h-[420px] object-contain bg-[#111111] border border-white/10 rounded-control"
-                            />
-                        )}
-                        {preview && preview.kind === 'video' && !previewFailed && (
-                            <video
-                                src={preview.src}
-                                controls
-                                onError={() => setPreviewFailed(true)}
-                                className="w-full max-h-[420px] bg-[#111111] border border-white/10 rounded-control"
-                            />
-                        )}
-                        {(!preview || preview.kind === 'external' || previewFailed) && (
-                            <div className="border border-dashed border-white/10 rounded-card p-6 text-center">
-                                {preview ? (
-                                    <>
-                                        {previewFailed ? <ImageOff className="w-8 h-8 text-zinc-700 mx-auto mb-2" /> : <FileVideo className="w-8 h-8 text-zinc-700 mx-auto mb-2" />}
-                                        <p className="text-zinc-400 text-sm mb-1">
-                                            {previewFailed
-                                                ? 'Não foi possível exibir a prévia aqui.'
-                                                : `O material está no ${getLinkLabel(preview.src)}.`}
-                                        </p>
-                                        <p className="text-zinc-600 text-xs mb-4">
-                                            {previewFailed
-                                                ? 'Verifique se o arquivo está compartilhado por link.'
-                                                : 'Arquivos de imagem e vídeo compartilhados por link aparecem direto nesta área.'}
-                                        </p>
-                                        <a
-                                            href={preview.src}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-2 text-sm font-bold text-[#FABE01] hover:underline"
-                                        >
-                                            Abrir material <ExternalLink className="w-4 h-4" />
-                                        </a>
-                                    </>
-                                ) : (
-                                    <>
-                                        <ImageOff className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-                                        <p className="text-zinc-500 text-sm">
-                                            {isClient
-                                                ? 'A equipe ainda não anexou o material desta publicação.'
-                                                : 'Preencha um dos links abaixo para a prévia aparecer aqui.'}
-                                        </p>
-                                    </>
-                                )}
-                            </div>
-                        )}
+                <div className="flex-1 min-w-0 flex flex-col lg:min-h-0">
+
+                {/* ABAS.
+                    O post tem duas metades - o que ele E (peca, legenda, data,
+                    aprovacao) e como ele SAI (quem faz, em que etapa). Eram dois
+                    modais; agora sao duas abas do mesmo, e alternar nao perde o
+                    que estava aberto. O cliente so ve a primeira: a divisao
+                    interna do trabalho nao e assunto dele. */}
+                {!isClient && (
+                    <div className="shrink-0 flex items-center gap-1 px-4 sm:px-6 border-b border-white/5" role="tablist">
+                        {([
+                            ['conteudo', 'Informação do conteúdo', FileText],
+                            ['gestao', 'Gestão do conteúdo', ListChecks]
+                        ] as const).map(([id, label, Icone]) => {
+                            const ativa = aba === id;
+                            return (
+                                <button
+                                    key={id}
+                                    role="tab"
+                                    aria-selected={ativa}
+                                    onClick={() => setAba(id)}
+                                    className={`flex items-center gap-2 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                                        ativa
+                                            ? 'border-[#FABE01] text-white'
+                                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                                    }`}
+                                >
+                                    <Icone className="w-4 h-4" />
+                                    <span className="hidden sm:inline">{label}</span>
+                                    <span className="sm:hidden">{id === 'conteudo' ? 'Conteúdo' : 'Gestão'}</span>
+                                </button>
+                            );
+                        })}
                     </div>
+                )}
+
+                {/* GESTAO */}
+                {aba === 'gestao' && !isClient && (
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+                        <ContentManagementPanel
+                            empresaId={empresaId || ''}
+                            event={editableEvent}
+                            autorEmail={userEmail}
+                            podeEditar={!isClient}
+                            equipe={equipe}
+                        />
+                    </div>
+                )}
+
+                {/* Body */}
+                <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar ${aba === 'gestao' && !isClient ? 'hidden' : ''}`}>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         {/* Data + hora ocupam DUAS colunas: numa so, o campo de
@@ -535,7 +507,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     importar a ordem das classes aqui. O campo de
                                     hora esticava para 100% e espremia o de data
                                     ate 26px, que aparecia cortado na tela. */}
-                                <div className="w-[7.5rem] shrink-0">
+                                <div className="w-[8.5rem] shrink-0">
                                     <input
                                         type="time"
                                         disabled={isClient}
@@ -833,6 +805,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             />
                         </div>
                     )}
+                </div>
+
+                </div>
                 </div>
 
                 {/* Footer */}

@@ -3,7 +3,7 @@ import { CalendarEvent, UserProfile } from '../types';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
-import { getClientStage, CLIENT_STAGES } from '../utils/eventState';
+import { getClientStage, CLIENT_STAGES, stageView, stageCurto } from '../utils/eventState';
 import { stripUndefined } from '../utils/firestore';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
@@ -29,6 +29,8 @@ interface CalendarViewProps {
     userName?: string | null;
     /** Nome da empresa, para a previa do perfil. Sem ele usa o proprio id. */
     empresaNome?: string;
+    /** @ do cliente, para a simulacao do post no modal. */
+    perfilHandle?: string | null;
 }
 
 // A grade mensal precisa de 1200px para caber sete colunas legiveis, o que no
@@ -150,7 +152,7 @@ const EventThumb: React.FC<{ event: CalendarEvent; size: string }> = ({ event, s
     );
 };
 
-const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName, empresaNome }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agencia', userEmail, userName, empresaNome, perfilHandle }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -585,12 +587,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         {/* Estagio direto no card: sem isso o contador do menu
                                                                             dizia "3 pendentes" e o usuario tinha que abrir post
                                                                             por post para descobrir quais. */}
-                                                                        {stageOf(event) !== 'em_producao' && (
-                                                                            <span
-                                                                                className={`w-2 h-2 rounded-full shrink-0 ${stage.dot}`}
-                                                                                title={stage.label}
-                                                                            />
-                                                                        )}
+                                                                        {(() => {
+                                                                            const curto = stageCurto(stageOf(event), userRole);
+                                                                            return curto ? (
+                                                                                <span
+                                                                                    className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-semibold ${curto.classe}`}
+                                                                                    title={stageView(stageOf(event), userRole).hint}
+                                                                                >
+                                                                                    {curto.texto}
+                                                                                </span>
+                                                                            ) : null;
+                                                                        })()}
                                                                         {/* Atraso de producao: so a agencia. */}
                                                                         {podeEditar && (() => {
                                                                             const prazo = slaAtual(event);
@@ -688,7 +695,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                                 <h4 className="text-white font-semibold text-sm leading-snug line-clamp-2">
                                                                                     {event.title || '(Sem título)'}
                                                                                 </h4>
-                                                                                <span className={`shrink-0 w-2 h-2 mt-1.5 rounded-full ${stage.dot}`} title={stage.label} />
                                                                             </div>
                                                                             <p className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1.5 truncate">
                                                                                 {formatTime(event.date) && (
@@ -734,7 +740,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                     <div className="flex items-center gap-1.5 flex-wrap mt-3 pt-2.5 border-t border-white/5">
                                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
                                                                         <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${stage.bg} ${stage.text} ${stage.border}`}>
-                                                                            {stage.label}
+                                                                            {stageView(stageOf(event), userRole).label}
                                                                         </span>
                                                                         {pediuAjuste && (
                                                                             <span className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
@@ -819,7 +825,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                 <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${
                                     CLIENT_STAGES[stageOf(hover.event)].bg
                                 } ${CLIENT_STAGES[stageOf(hover.event)].text} ${CLIENT_STAGES[stageOf(hover.event)].border}`}>
-                                    {CLIENT_STAGES[stageOf(hover.event)].label}
+                                    {stageView(stageOf(hover.event), userRole).label}
                                 </span>
                                 {podeEditar && (() => {
                                     const prazo = slaAtual(hover.event);
@@ -843,6 +849,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             {selectedEvent && (
                 <EventDetailModal
                     event={selectedEvent}
+                    perfilHandle={perfilHandle}
                     onSave={handleSaveEvent}
                     onDelete={handleDeleteEvent}
                     onClose={() => { setSelectedEvent(null); setSaveError(''); }}

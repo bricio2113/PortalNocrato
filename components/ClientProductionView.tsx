@@ -4,7 +4,7 @@ import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import {
     Loader2, Layout, ArrowRight, ArrowLeft, GripVertical, Search, X,
-    AlertTriangle, Filter, Layers, Clock, ListChecks, Trash2, CalendarPlus
+    AlertTriangle, Filter, Layers, Clock, ListChecks, Trash2, CalendarPlus, ImageOff
 } from 'lucide-react';
 import EventDetailModal from './EventDetailModal';
 import { AvatarGroup } from './AvatarBubble';
@@ -16,6 +16,7 @@ import { slaAtual, slaClasses } from '../utils/sla';
 import { Subtarefa, subscribeSubtarefas, progresso } from '../utils/subtarefas';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
 import { registrarMudancas } from '../utils/historico';
+import { getClientStage, CLIENT_STAGES, stageView } from '../utils/eventState';
 
 /** Sobra do modelo antigo: card de quadro que nunca teve post na agenda. */
 interface CardOrfao {
@@ -40,6 +41,8 @@ interface ClientProductionViewProps {
     userName?: string | null;
     /** Leva para o calendario - o unico lugar onde conteudo nasce. */
     onIrParaCalendario?: () => void;
+    /** @ do cliente, para a simulacao do post no modal. */
+    perfilHandle?: string | null;
 }
 
 /**
@@ -61,7 +64,7 @@ interface ClientProductionViewProps {
  * tudo em colunas, com prazo, responsavel e progresso das subtarefas a vista.
  */
 const ClientProductionView: React.FC<ClientProductionViewProps> = ({
-    empresaId, userEmail, userName, onIrParaCalendario
+    empresaId, userEmail, userName, onIrParaCalendario, perfilHandle
 }) => {
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [subtarefas, setSubtarefas] = useState<Subtarefa[]>([]);
@@ -526,7 +529,10 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                                         const sla = slaAtual(event);
                                         const subs = subsPorEvento[event.id] || [];
                                         const prog = progresso(subs);
+                                        const pendentes = prog.total - prog.feitas;
                                         const responsaveis = pessoasDeUids(event.responsaveis, indice);
+                                        const vista = stageView(getClientStage(event), 'agencia');
+                                        const semDono = responsaveis.length === 0;
                                         return (
                                             <div
                                                 key={event.id}
@@ -543,13 +549,28 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                                                     </p>
                                                 </div>
 
-                                                <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                                                {/* ETIQUETAS. Formato, plataforma, de quem e a bola
+                                                    e o prazo - o que se precisa saber sem abrir. */}
+                                                <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
                                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-chip uppercase tracking-widest ${styles.label}`}>
                                                         {event.type || 'Sem formato'}
                                                     </span>
-                                                    {/* PRAZO no lugar da etiqueta "na agenda": agora
-                                                        TODO card esta na agenda, entao dizer isso nao
-                                                        informa nada. O que informa e quanto falta. */}
+                                                    {event.plataforma && (
+                                                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-chip uppercase tracking-wider bg-white/5 text-zinc-400">
+                                                            {event.plataforma}
+                                                        </span>
+                                                    )}
+                                                    {/* De quem e a bola, na LINGUAGEM DA AGENCIA:
+                                                        o card mostrava "Aguardando você" para a
+                                                        propria equipe, acusando ela de segurar um
+                                                        post que espera o cliente. */}
+                                                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border ${
+                                                        CLIENT_STAGES[getClientStage(event)].bg
+                                                    } ${CLIENT_STAGES[getClientStage(event)].text} ${
+                                                        CLIENT_STAGES[getClientStage(event)].border
+                                                    }`}>
+                                                        {vista.label}
+                                                    </span>
                                                     {sla && (
                                                         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border flex items-center gap-1 ${slaClasses(sla.tone)}`}>
                                                             <Clock className="w-2.5 h-2.5" /> {sla.label}
@@ -557,26 +578,49 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                                                     )}
                                                 </div>
 
-                                                <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-2.5">
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <span className="text-[10px] text-zinc-500 font-mono shrink-0">
-                                                            {event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                                                        </span>
-                                                        {prog.total > 0 && (
-                                                            <span
-                                                                title={`${prog.feitas} de ${prog.total} subtarefas concluídas`}
-                                                                className={`text-[10px] flex items-center gap-1 shrink-0 ${
-                                                                    prog.feitas === prog.total ? 'text-emerald-400' : 'text-zinc-400'
-                                                                }`}
-                                                            >
+                                                {/* SUBTAREFAS: o que FALTA, nao o que ja foi.
+                                                    "1/3" obriga a subtrair de cabeca; num quadro
+                                                    de producao a pergunta e quantas ainda faltam. */}
+                                                {prog.total > 0 && (
+                                                    <div className="mb-2.5">
+                                                        <div className="flex items-center justify-between text-[10px] mb-1">
+                                                            <span className={`flex items-center gap-1 font-medium ${
+                                                                pendentes === 0 ? 'text-emerald-400' : 'text-zinc-400'
+                                                            }`}>
                                                                 <ListChecks className="w-3 h-3" />
-                                                                {prog.feitas}/{prog.total}
+                                                                {pendentes === 0
+                                                                    ? 'Todas as etapas prontas'
+                                                                    : `${pendentes} etapa${pendentes === 1 ? '' : 's'} pendente${pendentes === 1 ? '' : 's'}`}
                                                             </span>
-                                                        )}
+                                                            <span className="text-zinc-600">{prog.feitas}/{prog.total}</span>
+                                                        </div>
+                                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all ${pendentes === 0 ? 'bg-emerald-500' : 'bg-[#FABE01]'}`}
+                                                                style={{ width: `${prog.pct}%` }}
+                                                            />
+                                                        </div>
                                                     </div>
+                                                )}
+
+                                                {/* SEM MATERIAL e um bloqueio silencioso: o post
+                                                    nao tem o que aprovar e ninguem descobre ate a
+                                                    vespera. */}
+                                                {!event.midias?.length && !event.previewUrl && !event.coverUrl && !event.url && (
+                                                    <p className="text-[10px] text-zinc-500 flex items-center gap-1 mb-2.5">
+                                                        <ImageOff className="w-3 h-3 shrink-0" /> sem material anexado
+                                                    </p>
+                                                )}
+
+                                                <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-2.5">
+                                                    <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+                                                        {event.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                                    </span>
 
                                                     <div className="flex items-center gap-1.5 shrink-0">
-                                                        <AvatarGroup pessoas={responsaveis} tamanho="xs" limite={3} anelClasse="ring-[#111111]" />
+                                                        <span title={semDono ? 'Ninguém atribuído' : responsaveis.map(r => r.nome || r.email).join(', ')}>
+                                                            <AvatarGroup pessoas={responsaveis} tamanho="xs" limite={3} anelClasse="ring-[#111111]" />
+                                                        </span>
                                                         <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                             {colIndex > 0 && (
                                                                 <button onClick={(e) => moveEvent(event.id, COLUMNS[colIndex - 1].id, e)} className="p-1 text-zinc-400 hover:text-[#FABE01] bg-white/5 hover:bg-white/10 rounded-control transition-colors" title="Mover para esquerda">
@@ -609,6 +653,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                     onClose={() => { setSelectedEvent(null); setModalError(''); }}
                     // O quadro e sobre producao: abre onde o trabalho e dividido.
                     abaInicial="gestao"
+                    perfilHandle={perfilHandle}
                     isSaving={isSaving}
                     errorMessage={modalError}
                     empresaId={empresaId}
