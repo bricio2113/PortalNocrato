@@ -2,7 +2,6 @@ export enum View {
   /** Primeira tela do portal do cliente: o que espera por ele. */
   HOME = 'HOME',
   CALENDAR = 'CALENDAR',
-  UPDATES = 'UPDATES',
   IDEAS = 'IDEAS',
   PROFILE = 'PROFILE',
 }

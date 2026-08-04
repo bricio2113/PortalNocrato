@@ -18,6 +18,8 @@
  *  13. "Tarefas abertas" abre a lista e cada linha leva ao conteudo da tarefa
  *  14. a tela de Tarefas agrupa por conteudo, mostra os dois prazos e filtra
  *  15. a etapa tem PRAZO, editavel na gestao do conteudo
+ *  16. estudo de marca: secao dentro de Arquivos & Materiais, editavel pelos dois
+ *  17. "Foco da Semana" saiu de todos os menus
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -549,6 +551,89 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(await novo.getAttribute('max') !== null,
         '15. limitado pela data de publicação - etapa não vence depois do post');
     checar(erros.length === 0, `15. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 16
+// ESTUDO DE MARCA. Seção dentro de Arquivos & Materiais, com personas, tom e
+// estrategia - e editavel pelo CLIENTE tambem, que e o ponto do recurso.
+{
+    const { page, erros } = await abrir('materiais');
+    // role="tab" tambem aqui (SegmentedTabs) - buscar por 'button' nao acha.
+    const aba = page.getByRole('tab', { name: /Estudo de marca/ });
+    checar(await existe(aba), '16. Arquivos & Materiais tem a aba Estudo de marca');
+    await aba.click();
+    await page.waitForTimeout(900);
+
+    checar(await page.getByText('Personas').first().count() > 0
+        && await page.getByText('Tom da marca').first().count() > 0
+        && await page.getByText('Estratégia de conteúdo').first().count() > 0,
+        '16. com as três seções pedidas');
+    checar(await page.getByLabel('Dores').first().count() > 0
+        && await page.getByLabel('O que procura').first().count() > 0,
+        '16. persona tem dores e o que procura');
+    checar(await page.getByLabel('Arquétipo').count() > 0
+        && await page.getByLabel('Tom de voz').count() > 0
+        && await page.getByLabel(/visualmente/).count() > 0
+        && await page.getByLabel(/textualmente/).count() > 0,
+        '16. tom tem arquétipo, voz e as duas leituras (visual e textual)');
+    checar(await page.getByLabel('Gatilhos').count() > 0
+        && await page.getByLabel('Palavras-chave').count() > 0
+        && await page.getByLabel('Promessas').count() > 0,
+        '16. estratégia tem promessas, gatilhos e palavras-chave');
+
+    // Duas personas no mock: a lista aceita mais de uma, e o botao cria outra.
+    const antesPersonas = await page.getByPlaceholder(/Nome da persona/).count();
+    checar(antesPersonas === 2, `16. lista mais de uma persona (${antesPersonas})`);
+    await page.getByRole('button', { name: /Nova persona/ }).click();
+    await page.waitForTimeout(300);
+    checar(await page.getByPlaceholder(/Nome da persona/).count() === antesPersonas + 1,
+        '16. e dá para adicionar outra');
+
+    // Salvar grava o estudo INTEIRO, com quem alterou.
+    await page.getByLabel('Tom de voz').fill('Direto, sem jargão. Você no singular.');
+    await page.waitForTimeout(200);
+    checar(await page.getByText('Alterações não salvas').count() > 0,
+        '16. avisa que há rascunho não salvo');
+    await page.getByRole('button', { name: /Salvar estudo/ }).click();
+    await page.waitForTimeout(800);
+
+    const w = await writes(page);
+    const gravado = w.find(x => x.op === 'set' && x.path.includes('/marca/estudo'));
+    checar(Boolean(gravado) && gravado.data.tom.tomDeVoz.startsWith('Direto')
+        && Array.isArray(gravado.data.personas) && gravado.data.personas.length === 3,
+        `16. grava em marca/estudo: ${gravado ? `${gravado.data.personas.length} personas, voz "${gravado.data.tom.tomDeVoz.slice(0, 20)}..."` : '(nada)'}`);
+    checar(Boolean(gravado) && Boolean(gravado.data.atualizadoPor),
+        '16. e registra quem alterou - o texto é escrito a quatro mãos');
+    checar(erros.length === 0, `16. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-marca.png', fullPage: false });
+    await page.close();
+}
+
+// O CLIENTE edita o mesmo estudo. Se a tela abrisse em leitura para ele, o recurso
+// nao seria trabalho conjunto - seria formulario da agencia.
+{
+    const { page, erros } = await abrir('marca-cliente');
+    await page.waitForTimeout(900);
+    const voz = page.getByLabel('Tom de voz');
+    checar(await existe(voz) && !(await voz.isDisabled()),
+        '16b. o cliente também edita o estudo');
+    checar(await existe(page.getByRole('button', { name: /Nova persona/ })),
+        '16b. inclusive criando persona');
+    checar(erros.length === 0, `16b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 17
+// FOCO DA SEMANA fora. Removido a pedido: some do menu do cliente e do espaco de
+// trabalho da agencia.
+{
+    const { page } = await abrir('cliente-workspace');
+    await page.waitForTimeout(900);
+    checar(await page.getByText('Foco da Semana').count() === 0,
+        '17. "Foco da Semana" não aparece mais no espaço de trabalho');
+    checar(await page.getByText('Arquivos & Materiais').count() > 0,
+        '17. e o resto do menu continua de pé');
     await page.close();
 }
 

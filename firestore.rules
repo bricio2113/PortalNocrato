@@ -248,6 +248,21 @@ service cloud.firestore {
       match /drive_links/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }
+
+      // ESTUDO DE MARCA - personas, tom e estrategia de conteudo.
+      //
+      // LEITURA E ESCRITA PARA OS DOIS, agencia e cliente, e isso e deliberado: e
+      // a unica coisa do portal construida a quatro maos. O cliente conhece o
+      // publico, a promessa e o que nao pode ser dito; a agencia traduz isso em
+      // conteudo. Um estudo que so a agencia editasse viraria transcricao de
+      // reuniao envelhecendo, e um que so o cliente editasse nao seria mantido.
+      //
+      // Nao ha segredo aqui: e informacao que os dois lados PRECISAM ver para o
+      // trabalho sair certo. Dado sigioso continua em _financeiro/, que segue
+      // restrito a admin.
+      match /marca/{docId} {
+        allow read, write: if isAgency() || belongsTo(empresaId);
+      }
       match /_meta/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }

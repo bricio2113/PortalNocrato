@@ -8,7 +8,6 @@ import { getClientStage, CLIENT_STAGES, stageView, needsClientAction, needsAgenc
 import { summarizeSla, slaAtual, slaClasses } from '../utils/sla';
 import CalendarView from './CalendarView';
 import ClientProductionView from './ClientProductionView';
-import WeeklyUpdatesView from './WeeklyUpdatesView';
 import MateriaisView from './MateriaisView';
 import ClientReportsView from './ClientReportsView';
 import ResolverCapas from './ResolverCapas';
@@ -26,7 +25,7 @@ import {
     ImageOff, ArrowRight, Check, ChevronDown
 } from 'lucide-react';
 
-type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' | 'acessos';
+type Section = 'overview' | 'calendar' | 'production' | 'files' | 'reports' | 'acessos';
 
 interface ClientWorkspaceProps {
     empresaId: string;
@@ -50,7 +49,6 @@ const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
     { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'calendar', label: 'Calendário Editorial', icon: Calendar },
     { id: 'production', label: 'Produção', icon: ClipboardList },
-    { id: 'weekly', label: 'Foco da Semana', icon: Target },
     { id: 'files', label: 'Arquivos & Materiais', icon: DownloadCloud },
     { id: 'reports', label: 'Relatórios', icon: FileBarChart },
     // O acesso de um cliente pertence AO CLIENTE, e por isso vive aqui.
@@ -220,10 +218,8 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                         onEventoAberto={() => setAbrirEventoId(null)}
                     />
                 );
-            case 'weekly':
-                return <WeeklyUpdatesView empresaId={empresaId} />;
             case 'files':
-                return <MateriaisView empresaId={empresaId} userRole="agencia" />;
+                return <MateriaisView empresaId={empresaId} userRole="agencia" autorEmail={userEmail} autorNome={userName} />;
             case 'reports':
                 return <ClientReportsView empresaId={empresaId} userRole="agencia" userName={userName} />;
             case 'acessos':

@@ -105,6 +105,42 @@ const CONFIGURACOES = [{
     atualizadoEm: ts(d(-1)), atualizadoPor: 'pedro.vidal2608@gmail.com'
 }];
 
+// Estudo de marca: PARCIALMENTE preenchido de proposito. Com tudo escrito, o
+// estado "campo em branco" - que e o inicial de todo cliente - nao apareceria; com
+// nada, a tela nunca mostraria texto de verdade nem o percentual avancando.
+const MARCA = [{
+    id: 'estudo',
+    personas: [
+        {
+            id: 'p1', nome: 'Ana, 34, mãe e autônoma',
+            quemE: 'Rotina apertada, resolve tudo pelo celular à noite.',
+            dores: 'Dor lombar depois do dia inteiro sentada. Já tentou pilates e parou.',
+            procura: 'Voltar a dormir sem dor, sem depender de remédio.',
+            objecoes: 'Preço e horário: não consegue sair no meio da tarde.',
+            canais: 'Instagram e indicação de amigas.'
+        },
+        {
+            id: 'p2', nome: 'Roberto, 58, aposentado',
+            quemE: 'Caminha todo dia, tem plano de saúde.',
+            dores: 'Perdeu mobilidade no ombro depois de uma queda.',
+            procura: '', objecoes: '', canais: ''
+        }
+    ],
+    tom: {
+        oQueE: 'Clínica de fisioterapia focada em dor crônica, com atendimento individual.',
+        arquetipo: 'Cuidador',
+        arquetipoPorque: 'A marca acolhe quem já tentou de tudo e desistiu.',
+        tomDeVoz: 'Próximo e direto, sem jargão clínico. "Você" no singular.',
+        personalidade: '', visual: '', textual: ''
+    },
+    estrategia: {
+        comoPostar: '3 posts por semana: 1 educativo, 1 prova, 1 convite.',
+        promessas: 'Avaliação sem compromisso. Nunca prometer cura.',
+        gatilhos: '', palavrasChave: '', evitar: 'Comparação com outras clínicas e antes/depois de corpo.'
+    },
+    atualizadoEm: ts(d(-2)), atualizadoPor: 'usuario.numero1@umdominiobemlongo.com.br'
+}];
+
 // Subtarefas: um conteudo com progresso parcial, um concluido e um sem nenhuma.
 // Sem os tres casos o quadro so exercitava um deles.
 const SUBTAREFAS = [
@@ -122,6 +158,10 @@ const SUBTAREFAS = [
 const pick = (path: string) => {
     if (path.includes('subtarefas')) return SUBTAREFAS;
     if (path.includes('configuracoes')) return CONFIGURACOES;
+    // Antes de 'empresas': o caminho e empresas/{id}/marca/estudo e a regra de
+    // empresas casaria primeiro, devolvendo a lista de clientes como se fosse o
+    // estudo.
+    if (path.includes('/marca')) return MARCA;
     // u1 fica DELIBERADAMENTE sem ficha financeira: e o caso "nada cadastrado",
     // onde a ficha mostra os valores padrao com a etiqueta. Sem um uid sem dados,
     // esse caminho nunca aparecia na auditoria - e ele e a metade que da errado.

@@ -2,11 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import CalendarView from '../components/CalendarView';
 import ClientProductionView from '../components/ClientProductionView';
-import WeeklyUpdatesView from '../components/WeeklyUpdatesView';
 import ClientReportsView from '../components/ClientReportsView';
 import ClientFormModal from '../components/ClientFormModal';
 import ThumbBench from './ThumbBench';
 import MateriaisView from '../components/MateriaisView';
+import BrandStudyView from '../components/BrandStudyView';
 import MediaUpload from '../components/MediaUpload';
 import PostPreview from '../components/PostPreview';
 import ClientHomeView from '../components/ClientHomeView';
@@ -233,13 +233,16 @@ const SCREENS: Record<string, React.ReactNode> = {
             userEmail={profile.email} userName="Pedro Vidal"
         />
     </div>,
-    semana: <div className="p-4 bg-[#111111] min-h-screen"><WeeklyUpdatesView empresaId="agencia-mara" /></div>,
     arquivos: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
     'ficha-cliente': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
     'ficha-cliente-colab': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin={false} autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,
     thumb: <ThumbBench />,
-    materiais: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
-    'materiais-cliente': <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="cliente" /></div>,
+    materiais: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" autorEmail={profile.email} autorNome="Pedro Vidal" /></div>,
+    'materiais-cliente': <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="cliente" autorEmail="cliente@exemplo.com" autorNome="Cliente Exemplo" /></div>,
+    // ESTUDO DE MARCA aberto direto, para medir o formulario longo. O cliente edita
+    // igual a agencia - e a unica tela assim, e as duas precisam ser vistas.
+    'marca': <div className="p-4 bg-[#111111] min-h-screen"><BrandStudyView empresaId="agencia-mara" autorEmail={profile.email} autorNome="Pedro Vidal" /></div>,
+    'marca-cliente': <div className="p-4 bg-[#111111] min-h-screen"><BrandStudyView empresaId="agencia-mara" autorEmail="cliente@exemplo.com" autorNome="Cliente Exemplo" /></div>,
     'home-cliente': <div className="p-4 bg-[#111111] min-h-screen"><ClientHomeView empresaId="agencia-mara" empresaNome="Agencia Mara" userName="Cliente Exemplo" onIrParaCalendario={noop} /></div>,
     // items-start: sem isto a grade esticava os cartoes ate a altura da tela e a
     // captura parecia mostrar cartoes gigantes que o painel real nao tem.

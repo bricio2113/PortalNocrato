@@ -41,7 +41,7 @@ interface UserData {
 // id e nome, e todo contato e contrato vivia fora do sistema.
 type EmpresaData = Empresa;
 
-type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+type ClientSection = 'overview' | 'calendar' | 'production' | 'files' | 'reports';
 
 type Aba = 'overview' | 'calendar' | 'tasks' | 'clients' | 'team' | 'settings';
 

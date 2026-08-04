@@ -8,7 +8,6 @@ import { subscribePendingCounts, PendingCounts, CONTAGEM_VAZIA } from './utils/p
 // Componentes
 import Sidebar from './components/Sidebar';
 import CalendarView from './components/CalendarView';
-import WeeklyUpdatesView from './components/WeeklyUpdatesView';
 import MateriaisView from './components/MateriaisView';
 import Login from './components/Login';
 import Signup from './components/Signup';
@@ -90,8 +89,7 @@ const PortalLayout: React.FC<PortalLayoutProps> = ({
                 />
             );
             case View.CALENDAR: return <CalendarView empresaId={targetEmpresaId} userRole={role} userEmail={userEmail} userName={userName} />;
-            case View.UPDATES: return <WeeklyUpdatesView empresaId={targetEmpresaId} />;
-            case View.IDEAS: return <MateriaisView empresaId={targetEmpresaId} userRole={role} />;
+            case View.IDEAS: return <MateriaisView empresaId={targetEmpresaId} userRole={role} autorEmail={userEmail} autorNome={userName} />;
             case View.PROFILE:
                 return profile
                     ? <ProfileView profile={profile} onSaved={onProfileSaved} />
@@ -163,7 +161,7 @@ const App: React.FC = () => {
         {
             empresaId: string;
             nome: string;
-            section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
+            section?: 'overview' | 'calendar' | 'production' | 'files' | 'reports';
             /** Conteudo a abrir de imediato, quando se chega por uma tarefa. */
             eventId?: string;
         } | null

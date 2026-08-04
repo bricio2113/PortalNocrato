@@ -47,7 +47,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 // precisa estar onde a resposta esta.
                 { id: View.HOME, label: 'Visão Geral', icon: LayoutDashboard, badge: pendingCount },
                 { id: View.CALENDAR, label: 'Calendário Editorial', icon: Calendar },
-                { id: View.UPDATES, label: 'Foco da Semana', icon: Target },
                 { id: View.IDEAS, label: 'Arquivos & Materiais', icon: DownloadCloud }
             ]
         },

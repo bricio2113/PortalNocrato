@@ -4,8 +4,9 @@ import {
     criarTemplate, enviarMaterial, removerArquivo, removerPasta,
     tipoDoArquivo, TEMPLATE_PASTAS, PROFUNDIDADE_MAX
 } from '../utils/pastas';
-import { PageHeader, EmptyState, Card } from './ui';
+import { PageHeader, EmptyState, Card, SegmentedTabs } from './ui';
 import MediaViewer from './MediaViewer';
+import BrandStudyView from './BrandStudyView';
 import { db } from '../utils/firebase';
 import { toSafeHref } from '../utils/url';
 import {
@@ -20,7 +21,20 @@ interface MateriaisViewProps {
     empresaId: string;
     /** Cliente sobe material, mas nao apaga nem cria/exclui pasta. */
     userRole: 'agencia' | 'cliente';
+    /** Quem esta editando - vai para o "alterado por" do estudo de marca. */
+    autorEmail?: string | null;
+    autorNome?: string | null;
 }
+
+/**
+ * As duas metades desta tela.
+ *
+ * ARQUIVO e o material bruto; ESTUDO e a direcao para usar esse material. Ficam
+ * juntos porque a pergunta e a mesma - "o que eu tenho para criar deste cliente?" -
+ * e separar em dois itens de menu faria o estudo virar aquela pagina que ninguem
+ * abre.
+ */
+type Aba = 'pastas' | 'marca';
 
 const formatarBytes = (bytes?: number) =>
     bytes === undefined ? '' :
@@ -42,8 +56,9 @@ const formatarBytes = (bytes?: number) =>
  * remover material que a producao esta usando nao e decisao dele. A regra do
  * Storage diz o mesmo - aqui a interface so nao oferece o botao que ia falhar.
  */
-const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) => {
+const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, autorEmail, autorNome }) => {
     const ehAgencia = userRole === 'agencia';
+    const [aba, setAba] = useState<Aba>('pastas');
 
     /** Onde estamos. Vazio = raiz de materiais. */
     const [caminho, setCaminho] = useState<Caminho>([]);
@@ -186,11 +201,15 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
     return (
         <div>
             <PageHeader
-                title={naRaiz ? 'Arquivos & Materiais' : caminho[caminho.length - 1]}
-                subtitle={naRaiz
-                    ? 'Tudo do cliente em um lugar só, sem sair do portal.'
-                    : `${conteudo.pastas.length} pasta(s) · ${conteudo.arquivos.length} arquivo(s)`}
-                actions={
+                title={aba === 'marca'
+                    ? 'Arquivos & Materiais'
+                    : naRaiz ? 'Arquivos & Materiais' : caminho[caminho.length - 1]}
+                subtitle={aba === 'marca'
+                    ? 'O estudo que direciona a criação deste cliente.'
+                    : naRaiz
+                        ? 'Tudo do cliente em um lugar só, sem sair do portal.'
+                        : `${conteudo.pastas.length} pasta(s) · ${conteudo.arquivos.length} arquivo(s)`}
+                actions={aba === 'marca' ? null : (
                     <>
                         {!naRaiz && (
                             <button
@@ -242,8 +261,26 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                             <Upload className="w-4 h-4" /> Enviar arquivos
                         </button>
                     </>
-                }
+                )}
             />
+
+            {/* ABAS. O estudo de marca e a outra metade desta tela: material bruto de
+                um lado, direcao de uso do outro. */}
+            <div className="mb-5">
+                <SegmentedTabs
+                    value={aba}
+                    onChange={setAba}
+                    options={[
+                        { id: 'pastas', label: 'Pastas e arquivos', icon: Folder },
+                        { id: 'marca', label: 'Estudo de marca', icon: Sparkles }
+                    ]}
+                />
+            </div>
+
+            {aba === 'marca' ? (
+                <BrandStudyView empresaId={empresaId} autorEmail={autorEmail} autorNome={autorNome} />
+            ) : (
+            <>
 
             {/* MIGALHA. Numa arvore, "voltar" nao basta: sem ela, quem esta em
                 Imagens > 2026 > Agosto nao sabe onde esta nem sobe dois niveis de
@@ -525,6 +562,8 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                         })}
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     );
