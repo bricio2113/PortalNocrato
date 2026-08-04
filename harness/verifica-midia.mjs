@@ -9,6 +9,8 @@
  *   6. cliente novo nasce com as pastas padrao - sem elas, "escolha a pasta" no
  *      passo 2 nao teria o que oferecer
  *   7. o telefone do proprio perfil tem onde ser digitado e e gravado
+ *   8. admin consegue TORNAR COLABORADOR uma conta nova - o unico jeito antes era
+ *      editar `role` no console do Firebase
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -197,6 +199,42 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(Boolean(up) && up.data.telefone === '(13) 98888-7777',
         `7. o telefone e gravado no proprio documento: ${up ? JSON.stringify(up.data.telefone) : '(nenhuma escrita)'}`);
     checar(erros.length === 0, `7. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ------------------------------------------------------------------------ 8
+// PROMOVER A COLABORADOR. Conta nasce como cliente sem vinculo (a regra forca),
+// e nao havia tela que mudasse isso: equipe so existia mexendo no console.
+{
+    const { page, erros } = await abrir('painel');
+    page.on('dialog', d => d.accept());
+
+    await page.getByRole('button', { name: /^Equipe/ }).first().click();
+    await page.waitForTimeout(700);
+
+    // u2 e a conta sem empresa do mock: a fila "aguardando vinculo".
+    await page.locator('text=Conta sem cliente').first().click();
+    await page.waitForTimeout(700);
+
+    const promover = page.getByRole('button', { name: /Tornar colaborador da agência/ });
+    checar(await promover.isVisible(), '8. a ficha oferece tornar colaborador da agência');
+    const vincular = page.getByText(/vincule aqui para liberar o portal/);
+    checar(await vincular.isVisible(), '8. e a alternativa de vincular a um cliente segue lá');
+
+    await promover.click();
+    await page.waitForTimeout(800);
+
+    const w = await writes(page);
+    const up = w.filter(x => x.op === 'update' && x.path.startsWith('usuarios/')).pop();
+    checar(Boolean(up) && up.data.role === 'agencia' && up.data.empresaId === null,
+        `8. grava role=agencia e limpa o vínculo: ${up ? JSON.stringify(up.data) : '(nenhuma escrita)'}`);
+
+    // E o caminho de volta, na ficha de quem ja e da equipe.
+    await page.locator('text=/^Colaborador$/').first().click();
+    await page.waitForTimeout(700);
+    checar(await page.getByRole('button', { name: /Tirar da equipe/ }).isVisible(),
+        '8. ficha de quem é da equipe oferece o caminho de volta');
+    checar(erros.length === 0, `8. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.close();
 }
 

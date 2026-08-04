@@ -47,8 +47,15 @@ interface PersonDetailModalProps {
 const inputStyle = "w-full bg-black/40 border border-white/10 rounded-control px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#FABE01] focus:ring-1 focus:ring-[#FABE01] transition-all placeholder:text-zinc-500";
 const labelStyle = "block text-[11px] font-semibold text-zinc-400 mb-1.5";
 
-/** Cartao interno da ficha. Vidro dentro do vidro, um degrau mais escuro. */
-const Bloco: React.FC<{
+/**
+ * Cartao interno da ficha. Vidro dentro do vidro, um degrau mais escuro.
+ *
+ * Exportado porque quem abre a ficha passa secoes proprias em `children` -
+ * vinculo e permissao vivem no painel, que e quem sabe gravar. Sem exportar, cada
+ * chamador redesenhava o cartao a mao e as secoes ficavam com cabecalho diferente
+ * na MESMA ficha.
+ */
+export const Bloco: React.FC<{
     titulo: string;
     icone: React.ElementType;
     acao?: React.ReactNode;
@@ -500,12 +507,17 @@ const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                                                 </p>
                                             </div>
                                         )}
+                                        {/* A frase antiga aqui era "Cliente é sempre
+                                            cliente: o nível não muda por esta tela",
+                                            escrita quando promover ninguem era
+                                            possivel. Passou a contradizer a secao
+                                            Permissão logo abaixo, que faz exatamente
+                                            isso - e frase que a propria tela desmente
+                                            e pior que frase nenhuma. */}
                                         <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
                                             {editandoCargo
                                                 ? 'A lista é mantida em Gestão › Configurações.'
-                                                : ehColaborador
-                                                    ? 'Só administrador altera — a pessoa não muda o próprio cargo.'
-                                                    : 'Cliente é sempre cliente: o nível não muda por esta tela.'}
+                                                : 'Só administrador altera — a pessoa não muda o próprio cargo.'}
                                         </p>
                                     </div>
                                     {empresaNome && (

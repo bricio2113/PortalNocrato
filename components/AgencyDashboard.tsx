@@ -8,7 +8,7 @@ import { isAdmin, permissionLevel, PERMISSION_LABEL } from '../utils/permissions
 import { Empresa } from '../types';
 import { parseEmpresa, statusLabel } from '../utils/empresas';
 import ClientFormModal from './ClientFormModal';
-import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
+import PersonDetailModal, { PersonDetailAcao, Bloco } from './PersonDetailModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import SettingsView from './SettingsView';
 import AgencyOverview from './AgencyOverview';
@@ -302,8 +302,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
     const [isNavOpen, setIsNavOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
-    const [pendingRoleChanges, setPendingRoleChanges] = useState<Record<string, string>>({});
-    const [pendingCargoChanges, setPendingCargoChanges] = useState<Record<string, string>>({});
 
     // FICHA DO CLIENTE. `null` fechado, `'novo'` criando, ou a empresa editada.
     //
@@ -452,18 +450,24 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
     };
 
     const descartarRascunho = (userId: string) => {
-        setPendingRoleChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
         setPendingEmpresaChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
-        setPendingCargoChanges(prev => { const n = { ...prev }; delete n[userId]; return n; });
     };
 
-    // EDICAO DE UM COLABORADOR.
-    //
-    // Toda alteracao acontece dentro da FICHA (PersonDetailModal), nunca no card
-    // da lista: os selects abertos no card nao diziam se o que estava na tela
-    // era o valor gravado ou um rascunho, e cada campo tinha o proprio Salvar.
-    // Aqui o rascunho e sempre explicito e vira uma escrita so.
-    const saveUserEdit = async (userId: string) => {
+    /**
+     * VINCULA a conta a um cliente.
+     *
+     * Toda alteracao acontece dentro da FICHA (PersonDetailModal), nunca no card
+     * da lista: os selects abertos no card nao diziam se o que estava na tela era
+     * o valor gravado ou um rascunho, e cada campo tinha o proprio Salvar.
+     *
+     * Chamava-se `saveUserEdit` e carregava rascunho de role e de cargo tambem.
+     * Os dois eram CODIGO MORTO: nada na interface preenchia
+     * `pendingRoleChanges` nem `pendingCargoChanges` - cargo passou a ser gravado
+     * por `salvarCargoDaFicha` e papel nao tinha tela nenhuma. Um "salva role" que
+     * nunca recebia role dava a impressao, lendo o codigo, de que promover
+     * colaborador estava resolvido.
+     */
+    const salvarVinculo = async (userId: string) => {
         // Guarda de nivel repetida aqui, e nao so no botao: a interface esconde,
         // mas quem chamar pelo console recebe uma recusa legivel em vez do erro
         // cru de permissao do Firestore. A trava de verdade esta nas regras.
@@ -471,19 +475,10 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
             showNotification('Apenas administradores podem fazer isso.');
             return;
         }
-        const novoRole = pendingRoleChanges[userId];
         const novaEmpresa = pendingEmpresaChanges[userId];
-        const novoCargo = pendingCargoChanges[userId];
-        if (novoRole === undefined && novaEmpresa === undefined && novoCargo === undefined) return;
+        if (novaEmpresa === undefined) return;
 
-        // Uma escrita so: gravar em dois update() separados deixaria a conta
-        // num estado meio-salvo se o segundo falhasse.
-        const patch: Record<string, unknown> = {};
-        if (novoRole !== undefined) patch.role = novoRole;
-        if (novaEmpresa !== undefined) patch.empresaId = novaEmpresa;
-        // String vazia grava null: um cargo "" apareceria como etiqueta em
-        // branco no card.
-        if (novoCargo !== undefined) patch.cargo = novoCargo.trim() || null;
+        const patch: Record<string, unknown> = { empresaId: novaEmpresa };
 
         try {
             await db.collection('usuarios').doc(userId).update(patch);
@@ -566,6 +561,52 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
         fetchData();
     };
 
+    /**
+     * PROMOVE a conta a colaborador da agencia, ou tira da equipe.
+     *
+     * ESTE ERA O BURACO DO CADASTRO DE PESSOAS. Conta nasce sempre como
+     * `role: 'cliente'` sem vinculo - a regra de criacao forca isso, de proposito,
+     * para ninguem nascer com acesso a agencia. Mas nao havia NENHUMA tela que
+     * mudasse o papel depois: a unica forma de ter um colaborador era editar o
+     * campo `role` na mao, no console do Firebase. A tela de Equipe ainda dizia "a
+     * equipe aparece aqui depois de criar conta no portal", o que nunca aconteceria.
+     *
+     * O papel e gravado direto, sem rascunho: nao e um campo que se ajusta junto de
+     * outros, e uma decisao de acesso - vira uma escrita com confirmacao explicita.
+     *
+     * `empresaId: null` junto: colaborador trabalha em TODOS os clientes, e um
+     * vinculo esquecido faria a pessoa aparecer como contato daquele cliente ao
+     * mesmo tempo que da equipe. No caminho de volta, o mesmo - a conta volta para
+     * a fila "aguardando vinculo", que e onde uma conta sem cliente pertence.
+     *
+     * NAO mexe em administrador: esse nivel vem da lista de e-mails em
+     * constants.ts / firestore.rules, que nenhum SDK escreve. Ver isAdminEmail().
+     */
+    const handleAlterarPapel = async (pessoa: UserData, paraEquipe: boolean) => {
+        if (!souAdmin) {
+            showNotification('Apenas administradores podem fazer isso.');
+            return;
+        }
+        const nome = getDisplayName(pessoa);
+        const aviso = paraEquipe
+            ? `Tornar ${nome} colaborador da agência?\n\nEle passa a ver e editar o conteúdo de TODOS os clientes.`
+            : `Tirar ${nome} da equipe?\n\nEle perde o acesso a todos os clientes e volta para a fila "aguardando vínculo".`;
+        if (!window.confirm(aviso)) return;
+
+        const patch = { role: paraEquipe ? 'agencia' : 'cliente', empresaId: null };
+        try {
+            await db.collection('usuarios').doc(pessoa.id).update(patch);
+            setUsers(prev => prev.map(u => u.id === pessoa.id ? { ...u, ...patch } as UserData : u));
+            setFichaPessoa(null);
+            showNotification(paraEquipe
+                ? `${nome} agora é colaborador da agência.`
+                : `${nome} saiu da equipe.`);
+        } catch (e) {
+            console.error(e);
+            showNotification('Não foi possível alterar a permissão. Tente novamente.');
+        }
+    };
+
     const handlePasswordReset = async (email: string) => {
         try {
             await auth.sendPasswordResetEmail(email);
@@ -599,9 +640,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
     // Separar por papel elimina a coluna "Vínculo" com "Global" repetido em toda
     // linha de agencia, que era ruido puro.
     const equipe = users.filter(u => u.role === 'agencia');
-    const clientes = users.filter(u => u.role !== 'agencia');
     const equipeFiltrada = filteredUsers.filter(u => u.role === 'agencia');
-    const clientesFiltrados = filteredUsers.filter(u => u.role !== 'agencia');
 
     // Cabecalho por secao. Fica junto porque a saudacao e o subtitulo mudam com
     // a navegacao e antes nao existiam - a tela abria com "Painel
@@ -840,7 +879,8 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                             </span>
                                         </div>
                                         <p className="text-xs text-zinc-500 mb-4">
-                                            Criaram conta mas não pertencem a nenhum cliente. Sem vínculo, entram e veem apenas um aviso.
+                                            Criaram conta e ainda não têm função. Abra a ficha para tornar colaborador da agência
+                                        ou vincular a um cliente — sem isso, entram e veem apenas um aviso.
                                         </p>
 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
@@ -882,7 +922,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                             title={searchTerm ? 'Nenhum resultado' : 'Nenhuma pessoa na equipe'}
                                             description={searchTerm
                                                 ? `Nada corresponde a “${searchTerm}”.`
-                                                : 'A equipe aparece aqui depois de criar conta no portal.'}
+                                                : 'A pessoa cria conta no portal, aparece em “Aguardando vínculo” e você a torna colaboradora pela ficha dela.'}
                                             action={searchTerm ? { label: 'Limpar busca', onClick: () => setSearchTerm('') } : undefined}
                                         />
                                     ) : (
@@ -954,19 +994,50 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                         acoes={acoes}
                         onClose={() => setFichaPessoa(null)}
                     >
+                        {/* O QUE ESTA CONTA E. Duas saidas para a mesma conta sem
+                            vinculo - virar colaborador da agencia ou virar contato
+                            de um cliente -, lado a lado, porque a duvida de quem
+                            abre a ficha e exatamente essa. Antes so a segunda
+                            existia: quem criava conta para trabalhar na agencia
+                            ficava parado na fila para sempre. */}
+                        {souAdmin && !isMe && (
+                            <Bloco titulo="Permissão" icone={Shield}>
+                                <p className="text-xs text-zinc-400 leading-relaxed mb-3">
+                                    {daEquipe
+                                        ? 'Colaborador da agência: vê e edita o conteúdo de todos os clientes.'
+                                        : pessoa.empresaId
+                                            ? 'Contato do cliente: vê apenas o portal do próprio cliente.'
+                                            : 'Conta sem função. Entra no portal e vê apenas um aviso.'}
+                                </p>
+                                <button
+                                    onClick={() => handleAlterarPapel(pessoa, !daEquipe)}
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-control transition-colors ${
+                                        daEquipe
+                                            ? 'text-zinc-300 bg-white/5 hover:bg-white/10'
+                                            : 'bg-[#FABE01] text-black hover:bg-[#FABE01]/90'
+                                    }`}
+                                >
+                                    <UserCog className="w-3.5 h-3.5" />
+                                    {daEquipe ? 'Tirar da equipe' : 'Tornar colaborador da agência'}
+                                </button>
+                                {/* Nivel de admin nao e editavel aqui, e a ficha diz
+                                    por que - senao a ausencia do campo parece falta. */}
+                                <p className="text-[10px] text-zinc-600 mt-2.5 leading-relaxed">
+                                    Administrador não se define por esta tela: vem da lista de e-mails do sistema,
+                                    que nenhum acesso do app consegue escrever.
+                                </p>
+                            </Bloco>
+                        )}
+
                         {/* VINCULO. So aparece para conta sem cliente, que e o
                             unico caso em que ele esta faltando - depois de
                             vinculada, mudar de empresa nao e rotina. */}
                         {!daEquipe && !pessoa.empresaId && (
-                            <section>
-                                <div className="flex items-center gap-2 mb-2.5">
-                                    <Building2 className="w-3.5 h-3.5 text-zinc-600" />
-                                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Vínculo</h3>
-                                </div>
+                            <Bloco titulo="Vínculo com cliente" icone={Building2}>
                                 {souAdmin ? (
-                                    <div className="bg-[#111111] border border-white/5 rounded-control p-3.5">
+                                    <>
                                         <p className="text-xs text-amber-400/90 mb-3 leading-relaxed">
-                                            Esta conta entra no portal e vê apenas um aviso. Vincule a um cliente para liberar o acesso.
+                                            Se esta pessoa é do cliente e não da agência, vincule aqui para liberar o portal dela.
                                         </p>
                                         <div className="flex gap-1.5">
                                             <select
@@ -980,20 +1051,20 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
                                             </select>
                                             {pendingEmpresaChanges[pessoa.id] && (
                                                 <button
-                                                    onClick={async () => { await saveUserEdit(pessoa.id); setFichaPessoa(null); }}
+                                                    onClick={async () => { await salvarVinculo(pessoa.id); setFichaPessoa(null); }}
                                                     className="shrink-0 px-3.5 py-2 text-xs font-semibold bg-[#FABE01] text-black rounded-control"
                                                 >
                                                     Vincular
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
+                                    </>
                                 ) : (
-                                    <p className="text-xs text-zinc-500 px-1 leading-relaxed">
+                                    <p className="text-xs text-zinc-500 leading-relaxed">
                                         Só administradores vinculam contas a um cliente.
                                     </p>
                                 )}
-                            </section>
+                            </Bloco>
                         )}
                     </PersonDetailModal>
                 );
