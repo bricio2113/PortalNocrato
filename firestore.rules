@@ -225,6 +225,20 @@ service cloud.firestore {
         allow write: if isAgency();
       }
 
+      // SUBTAREFAS: as etapas de producao de um conteudo (roteiro, design,
+      // revisao). SO A AGENCIA, nem leitura para o cliente - e a divisao interna
+      // do trabalho, e mostra-la daria ao cliente um painel de cobranca sobre
+      // quem da equipe esta atrasado em que.
+      match /subtarefas/{docId} {
+        allow read, write: if isAgency();
+      }
+
+      // kanban_tasks: MODELO ANTIGO, mantido apenas para limpeza.
+      //
+      // O quadro de producao lia esta colecao como se fosse a verdade, e ela era
+      // um espelho de events/ - dava para criar card aqui sem post na agenda, e
+      // esse card nao movia nada nem tinha conteudo. Hoje o quadro le events/
+      // direto. A regra continua de pe para o app conseguir APAGAR o que sobrou.
       match /kanban_tasks/{docId} {
         allow read, write: if isAgency() || belongsTo(empresaId);
       }

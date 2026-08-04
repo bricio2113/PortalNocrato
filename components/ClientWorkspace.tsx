@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../utils/firebase';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
-import { CalendarEvent, UserProfile } from '../types';
+import { CalendarEvent, UserProfile, Empresa } from '../types';
+import { parseEmpresa, statusLabel } from '../utils/empresas';
 import { getClientStage, CLIENT_STAGES, needsClientAction, needsAgencyAction } from '../utils/eventState';
 import { summarizeSla } from '../utils/sla';
 import CalendarView from './CalendarView';
@@ -10,6 +11,7 @@ import ClientProductionView from './ClientProductionView';
 import WeeklyUpdatesView from './WeeklyUpdatesView';
 import MateriaisView from './MateriaisView';
 import ClientReportsView from './ClientReportsView';
+import ResolverCapas from './ResolverCapas';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import PersonCard, { SELO_ATIVO } from './PersonCard';
 import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
@@ -19,7 +21,8 @@ import { isAdmin } from '../utils/permissions';
 import { PageHeader, StatTile, Card } from './ui';
 import {
     ArrowLeft, LayoutDashboard, Calendar, ClipboardList, Target,
-    DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock, KeyRound, Users
+    DownloadCloud, FileBarChart, Building2, Loader2, AlertTriangle, Clock, CalendarClock, KeyRound, Users,
+    ImageOff, ArrowRight, Check
 } from 'lucide-react';
 
 type Section = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' | 'acessos';
@@ -74,6 +77,23 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const [avisoAcesso, setAvisoAcesso] = useState('');
     /** Contato com a ficha aberta. O card da lista e so a porta de entrada. */
     const [fichaPessoa, setFichaPessoa] = useState<UserProfile | null>(null);
+
+    /**
+     * Ficha do cliente - @, nicho e situacao.
+     *
+     * Uma leitura por abertura. Vale a pena: sem ela a tela abria com o ID do
+     * documento no Firestore como subtitulo, que nao identifica nada para quem
+     * trabalha aqui.
+     */
+    const [ficha, setFicha] = useState<Empresa | null>(null);
+    useEffect(() => {
+        if (!empresaId) return;
+        let vivo = true;
+        db.collection('empresas').doc(empresaId).get()
+            .then(doc => { if (vivo && doc.exists) setFicha(parseEmpresa(doc.id, doc.data() || {})); })
+            .catch(console.error);
+        return () => { vivo = false; };
+    }, [empresaId]);
 
     const carregarAcessos = React.useCallback(async () => {
         setCarregandoAcessos(true);
@@ -153,9 +173,24 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
     const renderSection = () => {
         switch (section) {
             case 'calendar':
-                return <CalendarView empresaId={empresaId} empresaNome={empresaNome} userRole="agencia" userEmail={userEmail} userName={userName} />;
+                return (
+                    <>
+                        {/* Unica coisa que so existia na tela de calendarios da
+                            agencia, que era este mesmo componente com um seletor
+                            de cliente em cima. */}
+                        <ResolverCapas empresaId={empresaId} events={events} />
+                        <CalendarView empresaId={empresaId} empresaNome={empresaNome} userRole="agencia" userEmail={userEmail} userName={userName} />
+                    </>
+                );
             case 'production':
-                return <ClientProductionView empresaId={empresaId} userEmail={userEmail} userName={userName} />;
+                return (
+                    <ClientProductionView
+                        empresaId={empresaId}
+                        userEmail={userEmail}
+                        userName={userName}
+                        onIrParaCalendario={() => setSection('calendar')}
+                    />
+                );
             case 'weekly':
                 return <WeeklyUpdatesView empresaId={empresaId} />;
             case 'files':
@@ -219,134 +254,238 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
         </div>
     );
 
-    const renderOverview = () => (
-        <div className="space-y-8">
-            <PageHeader title={empresaNome} subtitle={`ID: ${empresaId}`} />
+    /**
+     * VISAO GERAL do cliente.
+     *
+     * Era uma grade de oito numeros do mesmo tamanho, quase todos zero, e nada
+     * dizia o que fazer com eles. Numero nao e resposta: "3 aguardando o cliente"
+     * so vira acao quando a tela diz que a bola esta com ele e leva ao lugar de
+     * cobrar. Agora a tela abre com O QUE EXIGE ACAO, em ordem de urgencia e com
+     * um caminho por linha; os totais viram uma faixa discreta embaixo, porque
+     * sao contexto, nao tarefa.
+     *
+     * O ID DA EMPRESA SAIU do subtitulo. Era o id do documento no Firestore -
+     * ninguem na agencia precisa dele, e ocupava a linha onde cabe o que
+     * identifica o cliente de verdade: @ do Instagram, nicho e situacao.
+     */
+    const renderOverview = () => {
+        const pendencias = [
+            {
+                chave: 'atrasoEquipe',
+                n: stats.prazos.atrasadoAgencia,
+                titulo: 'Atrasado com a equipe',
+                detalhe: 'Produção vencida ou ajuste passado de 2 dias úteis.',
+                tom: 'erro' as const,
+                icone: AlertTriangle,
+                acao: 'Ver na produção',
+                ir: () => setSection('production')
+            },
+            {
+                chave: 'ajuste',
+                n: stats.ajustePedido,
+                titulo: 'Ajuste pedido pelo cliente',
+                detalhe: 'Ele decidiu e está esperando a equipe voltar com a correção.',
+                tom: 'atencao' as const,
+                icone: ClipboardList,
+                acao: 'Abrir calendário',
+                ir: () => setSection('calendar')
+            },
+            {
+                chave: 'atrasoCliente',
+                n: stats.prazos.atrasadoCliente,
+                titulo: 'Atrasado com o cliente',
+                detalhe: 'A janela de revisão fechou sem decisão — cabe renegociar ou publicar.',
+                tom: 'atencao' as const,
+                icone: Clock,
+                acao: 'Ver quais',
+                ir: () => setSection('calendar')
+            },
+            {
+                chave: 'semPrazo',
+                n: stats.prazos.semPrazo,
+                titulo: 'Sem prazo de produção',
+                detalhe: 'Nunca aparecem como atrasados — é o ponto cego do quadro.',
+                tom: 'neutro' as const,
+                icone: CalendarClock,
+                acao: 'Definir prazos',
+                ir: () => setSection('production')
+            },
+            {
+                chave: 'semCapa',
+                n: stats.semCapa,
+                titulo: 'Sem capa definida',
+                detalhe: 'A prévia do feed mostra um espaço vazio no lugar da peça.',
+                tom: 'neutro' as const,
+                icone: ImageOff,
+                acao: 'Resolver capas',
+                ir: () => setSection('calendar')
+            }
+        ].filter(p => p.n > 0);
 
-            {isLoading ? (
-                <div className="py-16 flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 text-[#FABE01] animate-spin" />
-                    <p className="text-zinc-500 text-sm">Carregando dados do cliente...</p>
-                </div>
-            ) : (
-                <>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                        <StatTile label="Publicações no mês" value={stats.noMes} icon={Calendar} tone="brand" hint={`${stats.total} no total`} />
-                        <StatTile
-                            label="Ajuste pedido"
-                            value={stats.ajustePedido}
-                            icon={ClipboardList}
-                            tone={stats.ajustePedido > 0 ? 'attention' : 'positive'}
-                            hint={stats.ajustePedido > 0 ? 'O cliente está esperando a equipe' : 'Nada pendente com a equipe'}
-                            onClick={stats.ajustePedido > 0 ? () => setSection('calendar') : undefined}
-                        />
-                        <StatTile
-                            label="Aguardando o cliente"
-                            value={stats.aguardandoCliente}
-                            icon={Target}
-                            hint={stats.aguardandoCliente > 0 ? 'Pronto, esperando aprovação' : 'Sem nada para aprovar'}
-                        />
-                        <StatTile label="Publicados" value={stats.publicados} icon={FileBarChart} tone="positive" />
-                    </div>
+        const TONS = {
+            erro: 'border-red-500/25 bg-red-500/[0.06] text-red-400',
+            atencao: 'border-[#FABE01]/25 bg-[#FABE01]/[0.06] text-[#FABE01]',
+            neutro: 'border-white/10 bg-white/[0.02] text-zinc-300'
+        };
 
-                    {/* PRODUCAO - interno.
-                        Separado do bloco de cima de proposito: os quatro numeros
-                        acima o cliente tambem enxerga no portal dele; estes tres
-                        sao da cozinha e nunca saem daqui. */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3">
-                            <h3 className="text-sm font-semibold text-zinc-300">Produção</h3>
-                            <span className="text-[10px] font-semibold text-zinc-500 bg-white/5 px-2 py-0.5 rounded-full">
-                                interno · o cliente não vê
+        return (
+            <div className="space-y-6">
+                {/* IDENTIDADE do cliente, no lugar do id do documento. */}
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="min-w-0">
+                        <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                            <span className="w-1.5 h-7 rounded-full bg-[#FABE01] shrink-0" />
+                            {empresaNome}
+                        </h1>
+                        <div className="flex items-center gap-2 flex-wrap mt-2 ml-4">
+                            {ficha?.handle && <span className="text-xs text-zinc-500">@{ficha.handle}</span>}
+                            {ficha?.segmento && (
+                                <span className="text-[10px] font-medium text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+                                    {ficha.segmento}
+                                </span>
+                            )}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusLabel(ficha?.status).cor}`}>
+                                {statusLabel(ficha?.status).label}
                             </span>
                         </div>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                            {/* Dois atrasos separados, porque o dono e diferente.
-                                Somar os dois num numero so escondia de quem e a
-                                bola - e era exatamente o erro da versao anterior,
-                                que cobrava da agencia a demora do cliente. */}
-                            <StatTile
-                                label="Atrasado com a equipe"
-                                value={stats.prazos.atrasadoAgencia}
-                                icon={AlertTriangle}
-                                tone={stats.prazos.atrasadoAgencia > 0 ? 'attention' : 'positive'}
-                                hint={stats.prazos.atrasadoAgencia > 0
-                                    ? 'Produção vencida ou ajuste passado de 2 dias úteis'
-                                    : 'Nenhum SLA da equipe estourado'}
-                                onClick={stats.prazos.atrasadoAgencia > 0 ? () => setSection('calendar') : undefined}
-                            />
-                            <StatTile
-                                label="Atrasado com o cliente"
-                                value={stats.prazos.atrasadoCliente}
-                                icon={Clock}
-                                tone={stats.prazos.atrasadoCliente > 0 ? 'attention' : 'positive'}
-                                hint={stats.prazos.atrasadoCliente > 0
-                                    ? 'Janela de revisão fechou sem decisão'
-                                    : 'Cliente em dia com as aprovações'}
-                            />
-                            <StatTile
-                                label="Vencem em até 2 dias"
-                                value={stats.prazos.proximos}
-                                icon={CalendarClock}
-                                hint={stats.prazos.ajustesAbertos > 0 ? `${stats.prazos.ajustesAbertos} ajuste(s) em aberto` : undefined}
-                            />
-                            <StatTile
-                                label="Sem prazo definido"
-                                value={stats.prazos.semPrazo}
-                                icon={CalendarClock}
-                                hint={stats.prazos.semPrazo > 0
-                                    ? 'Nunca aparecem como atrasados — ponto cego'
-                                    : 'Toda produção em aberto tem prazo'}
-                            />
-                        </div>
                     </div>
+                </div>
 
-                    <div className="space-y-4">
-                            {/* Proxima entrega: e a pergunta que a agencia faz ao abrir
-                                o cliente, e antes exigia varrer o calendario. */}
-                            <Card className="p-5">
-                                <p className="text-sm text-zinc-400 font-medium mb-3">Próxima entrega</p>
-                                {stats.proximo ? (
-                                    <button
-                                        onClick={() => setSection('calendar')}
-                                        className="w-full text-left group"
-                                    >
-                                        <p className="text-white font-bold group-hover:text-[#FABE01] transition-colors">
-                                            {stats.proximo.title || '(sem título)'}
+                {isLoading ? (
+                    <div className="py-16 flex flex-col items-center gap-3">
+                        <Loader2 className="w-8 h-8 text-[#FABE01] animate-spin" />
+                        <p className="text-zinc-500 text-sm">Carregando dados do cliente...</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                            {/* PRECISA DE ACAO. Ocupa dois tercos porque e a razao
+                                de alguem abrir esta tela. */}
+                            <section className="lg:col-span-2 bg-[#1A1A1A] border border-white/5 rounded-card overflow-hidden">
+                                <div className="flex items-center gap-2 px-5 py-4 border-b border-white/5">
+                                    <h2 className="text-sm font-bold text-white tracking-tight">Precisa de ação</h2>
+                                    {pendencias.length > 0 && (
+                                        <span className="text-[11px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+                                            {pendencias.length}
+                                        </span>
+                                    )}
+                                    <span className="ml-auto text-[10px] font-semibold text-zinc-500 bg-white/5 px-2 py-0.5 rounded-full">
+                                        interno · o cliente não vê
+                                    </span>
+                                </div>
+
+                                {pendencias.length === 0 ? (
+                                    <div className="px-5 py-10 text-center">
+                                        <span className="w-11 h-11 mx-auto mb-3 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                                            <Check className="w-5 h-5 text-emerald-400" />
+                                        </span>
+                                        <p className="text-white font-semibold text-sm">Nada exigindo ação</p>
+                                        <p className="text-zinc-500 text-xs mt-1 leading-relaxed max-w-sm mx-auto">
+                                            Sem atraso, sem ajuste em aberto e sem prazo vencendo neste cliente.
                                         </p>
-                                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                            <span className="text-sm text-zinc-400">
+                                    </div>
+                                ) : (
+                                    <ul className="divide-y divide-white/5">
+                                        {pendencias.map(p => {
+                                            const Icone = p.icone;
+                                            return (
+                                                <li key={p.chave}>
+                                                    <button
+                                                        onClick={p.ir}
+                                                        className="w-full flex items-center gap-3.5 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors group"
+                                                    >
+                                                        <span className={`w-11 h-11 shrink-0 rounded-control border flex items-center justify-center font-bold ${TONS[p.tom]}`}>
+                                                            {p.n}
+                                                        </span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                                                                <Icone className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                                                {p.titulo}
+                                                            </span>
+                                                            <span className="block text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                                                                {p.detalhe}
+                                                            </span>
+                                                        </span>
+                                                        <span className="shrink-0 hidden sm:flex items-center gap-1 text-[11px] font-semibold text-zinc-500 group-hover:text-[#FABE01] transition-colors">
+                                                            {p.acao} <ArrowRight className="w-3 h-3" />
+                                                        </span>
+                                                    </button>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </section>
+
+                            <div className="space-y-4">
+                                {/* PROXIMA ENTREGA. Pergunta que se faz ao abrir o
+                                    cliente, e antes exigia varrer o calendario. */}
+                                <section className="bg-[#1A1A1A] border border-white/5 rounded-card p-5">
+                                    <p className="text-[11px] text-zinc-500 font-medium mb-2.5">Próxima entrega</p>
+                                    {stats.proximo ? (
+                                        <button onClick={() => setSection('calendar')} className="w-full text-left group">
+                                            <p className="text-white font-bold leading-snug group-hover:text-[#FABE01] transition-colors">
+                                                {stats.proximo.title || '(sem título)'}
+                                            </p>
+                                            <p className="text-xs text-zinc-400 mt-1.5 first-letter:uppercase">
                                                 {stats.proximo.date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-                                            </span>
-                                            <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${
+                                            </p>
+                                            <span className={`inline-block mt-2 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${
                                                 CLIENT_STAGES[getClientStage(stats.proximo)].bg
                                             } ${CLIENT_STAGES[getClientStage(stats.proximo)].text} ${
                                                 CLIENT_STAGES[getClientStage(stats.proximo)].border
                                             }`}>
                                                 {CLIENT_STAGES[getClientStage(stats.proximo)].label}
                                             </span>
-                                        </div>
-                                    </button>
-                                ) : (
-                                    <p className="text-zinc-500 text-sm">Nada agendado para os próximos dias.</p>
-                                )}
-                            </Card>
+                                        </button>
+                                    ) : (
+                                        <p className="text-zinc-500 text-sm">Nada agendado para os próximos dias.</p>
+                                    )}
+                                </section>
 
-                            {stats.semCapa > 0 && (
-                                <div className="border border-[#FABE01]/20 bg-[#FABE01]/5 rounded-card p-5">
-                                    <p className="text-white font-bold text-sm mb-1">
-                                        {stats.semCapa} publicação(ões) sem capa definida
+                                {/* AGUARDANDO O CLIENTE nao e pendencia da equipe -
+                                    e informacao. Por isso sai da lista de acoes e
+                                    fica aqui, sem cor de alarme. */}
+                                <section className="bg-[#1A1A1A] border border-white/5 rounded-card p-5">
+                                    <p className="text-[11px] text-zinc-500 font-medium mb-1">Na mão do cliente</p>
+                                    <p className="text-2xl font-bold text-white leading-none">
+                                        {stats.aguardandoCliente}
+                                        <span className="text-xs font-medium text-zinc-500 ml-1.5">aguardando aprovação</span>
                                     </p>
-                                    <p className="text-zinc-400 text-sm leading-relaxed">
-                                        Sem capa, a prévia do feed mostra um espaço vazio no lugar da peça. Use "Resolver capas" na aba Calendário Editorial do painel.
-                                    </p>
-                                </div>
-                            )}
-                    </div>
-                </>
-            )}
-        </div>
-    );
+                                    {stats.prazos.proximos > 0 && (
+                                        <p className="text-[11px] text-[#FABE01] mt-2.5 leading-relaxed">
+                                            {stats.prazos.proximos} com prazo vencendo em até 2 dias.
+                                        </p>
+                                    )}
+                                </section>
+                            </div>
+                        </div>
+
+                        {/* NUMEROS DO MES: contexto, nao tarefa. Peso leve de
+                            proposito - eles nao competem com a lista de acao. */}
+                        <section>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">
+                                Números
+                            </p>
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-white/5 rounded-card overflow-hidden">
+                                {[
+                                    { r: 'Neste mês', v: stats.noMes },
+                                    { r: 'Publicados', v: stats.publicados },
+                                    { r: 'Total na agenda', v: stats.total },
+                                    { r: 'Ajustes em aberto', v: stats.prazos.ajustesAbertos }
+                                ].map(item => (
+                                    <div key={item.r} className="bg-[#1A1A1A] px-4 py-3.5">
+                                        <p className="text-xl font-bold text-white leading-none">{item.v}</p>
+                                        <p className="text-[11px] text-zinc-500 mt-1">{item.r}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="relative min-h-screen md:flex bg-[#111111] text-zinc-100">

@@ -35,6 +35,9 @@ const EVENTS = Array.from({ length: 14 }, (_, i) => ({
     // (Offline a imagem nao carrega e o onError a esconde; o que se valida
     // aqui e a altura e o espacamento que a faixa ocupa, nao o arquivo.)
     coverUrl: i % 2 === 0 ? `https://exemplo.invalido/capa-${i}.jpg` : undefined,
+    // Parte com responsavel e parte SEM: o quadro precisa mostrar tanto a pilha
+    // de rostos quanto o circulo tracejado de "ninguem atribuido".
+    responsaveis: i % 3 === 0 ? ['u0', 'u3'] : i % 3 === 1 ? ['u0'] : undefined,
     copy: 'Legenda de exemplo '.repeat(8)
 }));
 
@@ -102,7 +105,18 @@ const CONFIGURACOES = [{
     atualizadoEm: ts(d(-1)), atualizadoPor: 'pedro.vidal2608@gmail.com'
 }];
 
+// Subtarefas: um conteudo com progresso parcial, um concluido e um sem nenhuma.
+// Sem os tres casos o quadro so exercitava um deles.
+const SUBTAREFAS = [
+    { id: 's1', eventId: 'ev0', titulo: 'Roteiro do carrossel', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-5)) },
+    { id: 's2', eventId: 'ev0', titulo: 'Design das 5 lâminas', status: 'fazendo', responsavelUid: 'u3', criadoEm: ts(d(-4)) },
+    { id: 's3', eventId: 'ev0', titulo: 'Revisão ortográfica', status: 'aberta', responsavelUid: null, criadoEm: ts(d(-3)) },
+    { id: 's4', eventId: 'ev1', titulo: 'Gravar o reel', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-2)) },
+    { id: 's5', eventId: 'ev1', titulo: 'Editar e legendar', status: 'feita', responsavelUid: 'u0', criadoEm: ts(d(-2)) }
+];
+
 const pick = (path: string) => {
+    if (path.includes('subtarefas')) return SUBTAREFAS;
     if (path.includes('configuracoes')) return CONFIGURACOES;
     // u1 fica DELIBERADAMENTE sem ficha financeira: e o caso "nada cadastrado",
     // onde a ficha mostra os valores padrao com a etiqueta. Sem um uid sem dados,

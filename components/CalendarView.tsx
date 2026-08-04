@@ -351,36 +351,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 // pelo cache local do Firestore. Duplicar aqui podia inserir
                 // dois itens com o mesmo id por um instante.
 
-                // Sincroniza titulo e status com o card do Kanban.
-                //
-                // O vinculo e SEMPRE por eventId. Casar por titulo corromperia
-                // posts homonimos ("Story institucional" etc.), que sao a regra
-                // numa agencia, nao a excecao.
-                const tasksRef = db.collection('empresas').doc(empresaId).collection('kanban_tasks');
-                const tasksSnapshot = await tasksRef.where('eventId', '==', eventData.id).get();
-
-                if (tasksSnapshot.empty) {
-                    // Evento anterior ao Kanban: cria o card que faltava em vez
-                    // de sequestrar o de outro post.
-                    await tasksRef.add({
-                        title: eventData.title || 'Nova Publicação',
-                        status: eventData.status,
-                        createdAt: new Date(),
-                        eventId: eventData.id,
-                        type: eventData.type,
-                        plataforma: eventData.plataforma
-                    });
-                } else {
-                    // type e plataforma tambem viajam para o card: sem eles o
-                    // quadro de producao nao tem como colorir nem filtrar por
-                    // formato, e o card fica dessincronizado se o formato muda.
-                    await Promise.all(tasksSnapshot.docs.map(doc => doc.ref.update({
-                        title: eventData.title || 'Nova Publicação',
-                        status: eventData.status,
-                        type: eventData.type,
-                        plataforma: eventData.plataforma
-                    })));
-                }
+                // NAO EXISTE MAIS espelho em kanban_tasks. O quadro de producao
+                // le events/ direto, entao titulo, status e formato ja chegam
+                // nele por esta mesma escrita. Manter o espelho significava duas
+                // escritas para o mesmo dado - e a segunda podia falhar sozinha,
+                // deixando calendario e quadro discordando do status.
             } catch (e) {
                 console.error(e);
                 setSaveError('Não foi possível salvar as alterações. Confira sua conexão e tente de novo.');
@@ -394,15 +369,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                 registrarMudancas(empresaId, null, { ...eventData, id: docRef.id }, userEmail || '', userName || null, userRole);
                 await espelharPost(docRef.id, eventData.title, eventData.copy || '', eventData.date);
 
-                // Cria o Card no Kanban com o status exato do modal
-                await db.collection('empresas').doc(empresaId).collection('kanban_tasks').add({
-                    title: eventData.title || 'Nova Publicação',
-                    status: eventData.status,
-                    createdAt: new Date(),
-                    eventId: docRef.id,
-                    type: eventData.type,
-                    plataforma: eventData.plataforma
-                });
+                // Sem criar card de quadro: o post JA e o card. Ver a nota no
+                // cabecalho de ClientProductionView.
             } catch (e) {
                 console.error(e);
                 setSaveError('Não foi possível criar o agendamento. Confira sua conexão e tente de novo.');
@@ -425,10 +393,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
             await empresaRef.collection('events').doc(eventId).delete();
             await empresaRef.collection('Agenciaapk').doc(eventId).delete();
 
-            // Sem isto o card continua no quadro apontando para um evento que
-            // nao existe mais, e clicar nele so mostra "evento nao encontrado".
-            const orphanTasks = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
-            await Promise.all(orphanTasks.docs.map(doc => doc.ref.delete()));
+            // Espelho antigo do quadro: apagado junto enquanto existir. Assim o
+            // cliente que ainda tem documentos de kanban_tasks nao acumula lixo
+            // apontando para posts excluidos.
+            const espelhos = await empresaRef.collection('kanban_tasks').where('eventId', '==', eventId).get();
+            await Promise.all(espelhos.docs.map(doc => doc.ref.delete()));
+
+            // As subtarefas do conteudo vao com ele: etapa de producao de um post
+            // que nao existe mais nao tem onde aparecer, e ficaria contando no
+            // progresso de ninguem.
+            const subs = await empresaRef.collection('subtarefas').where('eventId', '==', eventId).get();
+            await Promise.all(subs.docs.map(doc => doc.ref.delete()));
 
             setSelectedEvent(null);
         } catch (e) {

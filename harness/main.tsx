@@ -9,6 +9,7 @@ import ThumbBench from './ThumbBench';
 import MateriaisView from '../components/MateriaisView';
 import ClientHomeView from '../components/ClientHomeView';
 import PostTimeline from '../components/PostTimeline';
+import ContentTaskModal from '../components/ContentTaskModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA, SELO_ATIVO } from '../components/PersonCard';
 import PersonDetailModal from '../components/PersonDetailModal';
 import SettingsView from '../components/SettingsView';
@@ -45,7 +46,24 @@ const SCREENS: Record<string, React.ReactNode> = {
     // ve prazo de producao nem atraso. Sem esta tela, metade do componente
     // nunca era renderizada na auditoria.
     'calendario-cliente': <div className="p-4 bg-[#111111] min-h-screen"><CalendarView empresaId="agencia-mara" empresaNome="Agencia Mara" userRole="cliente" userEmail="cliente@exemplo.com" userName="Cliente Exemplo" /></div>,
-    producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" /></div>,
+    producao: <div className="p-4 bg-[#111111] min-h-screen"><ClientProductionView empresaId="agencia-mara" userEmail={profile.email} userName="Pedro Vidal" onIrParaCalendario={noop} /></div>,
+    // Ficha de producao de um conteudo: subtarefas nos tres status e responsaveis.
+    'tarefa-conteudo': <ContentTaskModal
+        event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'], prazoProducao: new Date(Date.now() - 86400000) } as any}
+        empresaId="agencia-mara"
+        equipe={[
+            { id: 'u0', email: 'pedro.vidal2608@gmail.com', role: 'agencia', empresaId: null, nome: 'Maria', sobrenome: 'Silva', cargo: 'Social Mídia' },
+            { id: 'u3', email: 'briciomarketing@gmail.com', role: 'agencia', empresaId: null, nome: 'Carlos', sobrenome: 'Teixeira', cargo: 'Designer' }
+        ]}
+        subtarefas={[
+            { id: 's1', eventId: 'ev0', titulo: 'Roteiro do carrossel', status: 'feita', responsavelUid: 'u0', criadoEm: new Date() },
+            { id: 's2', eventId: 'ev0', titulo: 'Design das 5 lâminas', status: 'fazendo', responsavelUid: 'u3', criadoEm: new Date() },
+            { id: 's3', eventId: 'ev0', titulo: 'Revisão ortográfica com um título bem longo para testar quebra', status: 'aberta', responsavelUid: null, criadoEm: new Date() }
+        ]}
+        autorEmail={profile.email}
+        onAbrirConteudo={noop}
+        onClose={noop}
+    />,
     semana: <div className="p-4 bg-[#111111] min-h-screen"><WeeklyUpdatesView empresaId="agencia-mara" /></div>,
     arquivos: <div className="p-4 bg-[#111111] min-h-screen"><MateriaisView empresaId="agencia-mara" userRole="agencia" /></div>,
     'ficha-cliente': <div className="bg-[#111111] min-h-screen"><ClientFormModal isAdmin autorEmail={profile.email} onClose={noop} onSaved={noop} /></div>,

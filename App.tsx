@@ -163,6 +163,15 @@ const App: React.FC = () => {
         { empresaId: string; nome: string; section?: 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports' } | null
     >(null);
     const [showProfile, setShowProfile] = useState(false);
+    /**
+     * Aba do painel, guardada AQUI e nao dentro do AgencyDashboard.
+     *
+     * Entrar num cliente desmonta o painel; ao voltar, ele remontava com a aba
+     * padrao e jogava a pessoa na Visao Geral - mesmo tendo saido de Clientes.
+     * Como o estado do painel morre a cada entrada, quem tem que lembrar e quem
+     * sobrevive: este componente.
+     */
+    const [abaPainel, setAbaPainel] = useState('overview');
 
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -320,6 +329,8 @@ const App: React.FC = () => {
 
         return <AgencyDashboard
             handleLogout={handleLogout}
+            abaInicial={abaPainel}
+            onTrocarAba={setAbaPainel}
             onOpenClient={(empresaId, nome, section) => setAgencyWorkspace({ empresaId, nome, section })}
             onOpenProfile={() => setShowProfile(true)}
             profile={profile}

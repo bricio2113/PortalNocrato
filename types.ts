@@ -175,6 +175,18 @@ export interface CalendarEvent {
    */
   prazoProducao?: Date | null;
 
+  /**
+   * Quem da equipe cuida deste conteudo - uids, nao e-mails.
+   *
+   * Uid porque e o que nao muda: e-mail de pessoa muda, e um responsavel gravado
+   * por e-mail viraria um rosto vazio no quadro depois da troca. O nome e a foto
+   * sao resolvidos na leitura contra a lista da equipe.
+   *
+   * INTERNO DA AGENCIA. Ausente = ninguem atribuido, o que e estado legitimo -
+   * conteudo recem-criado nao tem dono ainda.
+   */
+  responsaveis?: string[] | null;
+
   /** Ausente em posts criados antes da aprovacao existir: tratar como 'aguardando'. */
   approval?: ApprovalState;
   /** E-mail de quem aprovou ou pediu ajuste, para o historico. */

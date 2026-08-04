@@ -11,7 +11,6 @@ import ClientFormModal from './ClientFormModal';
 import PersonDetailModal, { PersonDetailAcao } from './PersonDetailModal';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA } from './PersonCard';
 import SettingsView from './SettingsView';
-import AgencyCalendarBoard from './AgencyCalendarBoard';
 import { AppSidebar, MobileTopBar, NavGroup } from './AppSidebar';
 import { PageHeader, StatTile, greeting } from './ui';
 import {
@@ -40,6 +39,8 @@ type EmpresaData = Empresa;
 
 type ClientSection = 'overview' | 'calendar' | 'production' | 'weekly' | 'files' | 'reports';
 
+type Aba = 'overview' | 'clients' | 'team' | 'settings';
+
 interface AgencyDashboardProps {
     handleLogout: () => void;
     /**
@@ -50,6 +51,12 @@ interface AgencyDashboardProps {
      * producao do MESMO cliente.
      */
     onOpenClient: (empresaId: string, nome: string, section?: ClientSection) => void;
+    /**
+     * Aba em que abrir. Vem de fora porque entrar num cliente DESMONTA este
+     * componente: sem isso, voltar caia sempre na Visao Geral.
+     */
+    abaInicial?: string;
+    onTrocarAba?: (aba: string) => void;
     /** Abre a tela de perfil do proprio usuario da agencia. */
     onOpenProfile?: () => void;
     profile?: UserProfile | null;
@@ -91,6 +98,19 @@ const EmptyState: React.FC<{
  * um na aba Clientes -, ambos com os mesmos dois botoes e nenhum dado. O card
  * agora carrega o estado do cliente, e a superficie inteira e clicavel: abrir o
  * cliente e a acao principal, e os atalhos de secao sao secundarios.
+ *
+ * NOVO DESENHO. Os tres numeros ficavam soltos lado a lado e brigavam com o nome
+ * pelo mesmo peso visual; o icone de predio era o mesmo em todo cartao, entao nao
+ * distinguia nada; e as acoes de editar/excluir ficavam sempre acesas ao lado do
+ * status, competindo com ele. Agora:
+ *
+ *   - a MARCA e a inicial do cliente, nao um icone generico repetido;
+ *   - o STATUS e um ponto colorido junto ao nome, nao uma etiqueta que disputa o
+ *     canto com dois botoes;
+ *   - editar e excluir SO APARECEM no hover, porque nao e o que se faz aqui;
+ *   - os numeros viram uma faixa dividida, um degrau abaixo do titulo;
+ *   - o que exige acao ganha uma FAIXA no topo, na cor da urgencia - da para
+ *     varrer nove cartoes e achar o problema sem ler numero nenhum.
  */
 const ClientCard: React.FC<{
     empresa: EmpresaData;
@@ -104,112 +124,150 @@ const ClientCard: React.FC<{
     const aguardando = stats?.aguardandoCliente || 0;
     const atrasados = stats?.atrasados || 0;
 
+    const urgencia = atrasados > 0 ? 'erro' : ajustes > 0 ? 'atencao' : usuarios === 0 ? 'aviso' : null;
+
+    const BORDA = {
+        erro: 'border-red-500/25 hover:border-red-500/50',
+        atencao: 'border-[#FABE01]/25 hover:border-[#FABE01]/50',
+        aviso: 'border-white/5 hover:border-white/15',
+        normal: 'border-white/5 hover:border-[#FABE01]/40'
+    };
+
+    const FAIXA = {
+        erro: 'bg-red-500/[0.08] text-red-400 border-red-500/20',
+        atencao: 'bg-[#FABE01]/[0.08] text-[#FABE01] border-[#FABE01]/20',
+        aviso: 'bg-white/[0.03] text-zinc-400 border-white/10'
+    };
+
+    const aviso = atrasados > 0
+        ? `${atrasados} conteúdo(s) com prazo estourado`
+        : ajustes > 0
+            ? `${ajustes} ajuste(s) esperando a equipe`
+            : usuarios === 0
+                ? 'Ninguém do cliente consegue entrar ainda'
+                : null;
+
+    // Iniciais do cliente. Duas letras de palavras diferentes quando ha ("Dra.
+    // Sylvia" -> DS); uma so quando e nome unico.
+    const iniciais = empresa.nome
+        .split(/\s+/)
+        .filter(p => /[a-zA-ZÀ-ÿ0-9]/.test(p))
+        .slice(0, 2)
+        .map(p => p[0])
+        .join('')
+        .toUpperCase() || '?';
+
+    const status = statusLabel(empresa.status);
+
     return (
         <div
             role="button"
             tabIndex={0}
             onClick={() => onOpen()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
-            className={`group text-left bg-[#1A1A1A] border rounded-card p-5 cursor-pointer transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01] ${
-                atrasados > 0 ? 'border-red-500/30 hover:border-red-500/60'
-                    : ajustes > 0 ? 'border-amber-500/30 hover:border-amber-500/60'
-                    : 'border-white/5 hover:border-[#FABE01]/40'
+            className={`group relative flex flex-col h-full text-left bg-[#1A1A1A] border rounded-card overflow-hidden cursor-pointer transition-colors focus:outline-none focus-visible:border-[#FABE01] ${
+                BORDA[urgencia || 'normal']
             }`}
         >
-            <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 shrink-0 rounded-control bg-[#FABE01]/10 text-[#FABE01] flex items-center justify-center">
-                    <Building2 className="w-5 h-5" />
+            {/* FAIXA DE URGENCIA. Uma linha, no topo, na cor do problema. */}
+            {aviso && urgencia && (
+                <div className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold border-b ${FAIXA[urgencia]}`}>
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{aviso}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                    <h3 className="text-white font-bold leading-tight truncate group-hover:text-[#FABE01] transition-colors">
-                        {empresa.nome}
-                    </h3>
-                    {/* @ e nicho: o card agora identifica o cliente, nao so o
-                        nomeia. Antes a unica linha era a contagem de usuarios. */}
-                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                        {empresa.handle && (
-                            <span className="text-[11px] text-zinc-500 truncate">@{empresa.handle}</span>
+            )}
+
+            <div className="p-5">
+                <div className="flex items-start gap-3">
+                    <span className="w-11 h-11 shrink-0 rounded-control bg-[#FABE01]/10 text-[#FABE01] font-bold text-sm flex items-center justify-center">
+                        {iniciais}
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                            {/* Ponto de status junto ao nome: informa sem ocupar
+                                uma etiqueta inteira. O texto vive no title. */}
+                            <span
+                                title={status.label}
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    empresa.status === 'encerrado' ? 'bg-zinc-600'
+                                        : empresa.status === 'pausado' ? 'bg-amber-400'
+                                        : 'bg-emerald-400'
+                                }`}
+                            />
+                            <h3 className="text-white font-bold leading-tight truncate group-hover:text-[#FABE01] transition-colors">
+                                {empresa.nome}
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {empresa.handle && (
+                                <span className="text-[11px] text-zinc-500 truncate">@{empresa.handle}</span>
+                            )}
+                            {empresa.segmento && (
+                                <span className="text-[10px] font-medium text-zinc-400 bg-white/5 px-1.5 py-0.5 rounded-full truncate max-w-[10rem]">
+                                    {empresa.segmento}
+                                </span>
+                            )}
+                            {(empresa.status === 'pausado' || empresa.status === 'encerrado') && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${status.cor}`}>
+                                    {status.label}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Editar e excluir aparecem no hover. Sempre acesas, nove
+                        cartoes viravam dezoito botoes de manutencao na tela. */}
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        {onEdit && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                                aria-label={`Editar ficha de ${empresa.nome}`}
+                                title="Editar ficha"
+                                className="text-zinc-500 hover:text-white p-1.5 rounded-full hover:bg-white/5 transition-colors"
+                            >
+                                <Pencil className="w-3.5 h-3.5" />
+                            </button>
                         )}
-                        {empresa.segmento && (
-                            <span className="text-[10px] font-medium text-zinc-400 bg-white/5 px-1.5 py-0.5 rounded-full truncate max-w-[10rem]">
-                                {empresa.segmento}
-                            </span>
+                        {onDelete && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                                aria-label={`Excluir ${empresa.nome}`}
+                                className="text-zinc-600 hover:text-red-400 p-1.5 rounded-full hover:bg-red-500/10 transition-colors"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                         )}
                     </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                    <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${statusLabel(empresa.status).cor}`}>
-                        {statusLabel(empresa.status).label}
-                    </span>
-                    {onEdit && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                            aria-label={`Editar ficha de ${empresa.nome}`}
-                            title="Editar ficha"
-                            className="text-zinc-600 hover:text-white p-1.5 rounded-full hover:bg-white/5 transition-colors"
-                        >
-                            <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                    {onDelete && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                            aria-label={`Excluir ${empresa.nome}`}
-                            className="text-zinc-700 hover:text-red-500 p-1.5 rounded-full hover:bg-red-500/5 transition-colors"
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    )}
+
+                {/* NUMEROS em faixa dividida: o fundo claro vazando entre eles
+                    separa sem precisar de tres blocos. */}
+                <div className="grid grid-cols-3 gap-px bg-white/5 rounded-control overflow-hidden mt-4">
+                    {[
+                        { r: 'No mês', v: stats ? stats.noMes : null },
+                        { r: 'Publicados', v: stats ? stats.publicados : null },
+                        { r: 'Na agenda', v: stats ? stats.total : null }
+                    ].map(item => (
+                        <div key={item.r} className="bg-[#111111] px-3 py-2.5">
+                            <p className="text-lg font-bold text-white leading-none">
+                                {item.v === null ? '—' : item.v}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-1">{item.r}</p>
+                        </div>
+                    ))}
                 </div>
+
+                {aguardando > 0 && (
+                    <p className="text-[11px] text-zinc-500 mt-3">
+                        <span className="text-zinc-300 font-semibold">{aguardando}</span> aguardando o cliente aprovar
+                    </p>
+                )}
             </div>
-
-            {/* Numeros do cliente: e o que responde "como esta esse cliente?"
-                sem precisar entrar nele. */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
-                <div>
-                    <p className="text-[11px] text-zinc-500">No mês</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.noMes : '—'}</p>
-                </div>
-                <div>
-                    <p className="text-[11px] text-zinc-500">Publicados</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.publicados : '—'}</p>
-                </div>
-                <div>
-                    <p className="text-[11px] text-zinc-500">Total</p>
-                    <p className="text-xl font-bold text-white">{stats ? stats.total : '—'}</p>
-                </div>
-            </div>
-
-            {usuarios === 0 && (
-                <p className="text-[11px] text-amber-400/90 mb-3 leading-relaxed">
-                    Nenhum usuário vinculado — ninguém do lado do cliente consegue entrar.
-                </p>
-            )}
-
-            {(ajustes > 0 || aguardando > 0 || atrasados > 0) && (
-                <div className="flex flex-wrap gap-1.5 mb-4">
-                    {/* Atraso de producao: interno, e o mais urgente do card. */}
-                    {atrasados > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-500/15 text-red-400 border border-red-500/30 px-2 py-1 rounded-full">
-                            <AlertTriangle className="w-3 h-3" /> {atrasados} atrasado(s)
-                        </span>
-                    )}
-                    {ajustes > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-full">
-                            <MessageSquareWarning className="w-3 h-3" /> {ajustes} ajuste(s)
-                        </span>
-                    )}
-                    {aguardando > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white/5 text-zinc-400 px-2 py-1 rounded-full">
-                            {aguardando} aguardando o cliente
-                        </span>
-                    )}
-                </div>
-            )}
 
             {/* Atalhos de secao: levam direto ao lugar, sem passar pela visao
                 geral do cliente. stopPropagation para nao disparar o card. */}
-            <div className="flex flex-wrap gap-1.5 pt-3 border-t border-white/5">
+            <div className="flex items-center gap-0.5 mt-auto px-3 py-2 border-t border-white/5 bg-white/[0.015]">
                 {([
                     ['calendar', 'Calendário', Calendar],
                     ['production', 'Produção', ClipboardList],
@@ -223,17 +281,23 @@ const ClientCard: React.FC<{
                         <Icon className="w-3 h-3" /> {label}
                     </button>
                 ))}
+                <span className="ml-auto pr-1.5 text-zinc-600 group-hover:text-[#FABE01] transition-colors">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                </span>
             </div>
         </div>
     );
 };
 
-const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenClient, onOpenProfile, profile, userEmail, userName }) => {
+const AgencyDashboard: React.FC<AgencyDashboardProps> = ({
+    handleLogout, onOpenClient, onOpenProfile, profile, userEmail, userName,
+    abaInicial = 'overview', onTrocarAba
+}) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [empresas, setEmpresas] = useState<EmpresaData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [notification, setNotification] = useState('');
-    const [activeTab, setActiveTab] = useState<'overview' | 'editorial' | 'clients' | 'team' | 'settings'>('overview');
+    const [activeTab, setActiveTab] = useState<Aba>(abaInicial as Aba);
     const [isNavOpen, setIsNavOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [pendingEmpresaChanges, setPendingEmpresaChanges] = useState<Record<string, string | null>>({});
@@ -546,10 +610,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             title: greeting(userName),
             subtitle: 'Resumo do que exige atenção hoje em todos os clientes.'
         },
-        editorial: {
-            title: 'Calendário Editorial',
-            subtitle: 'Todas as publicações de todos os clientes em um lugar só.'
-        },
         clients: {
             title: 'Clientes',
             subtitle: 'Clique em um cliente para abrir o espaço de trabalho dele.'
@@ -569,7 +629,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
             title: 'Geral',
             items: [
                 { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-                { id: 'editorial', label: 'Calendário Editorial', icon: Calendar },
+                // NAO existe mais "Calendário Editorial" aqui.
+                //
+                // Aquela tela era o MESMO CalendarView do cliente com um seletor
+                // de cliente em cima - e ainda montava uma segunda previa do feed,
+                // que o proprio CalendarView ja tem dentro. Dois caminhos para a
+                // mesma tela, um deles com o titulo repetido no menu do cliente.
+                // O seletor tambem era redundante: esta aba Clientes JA e o
+                // seletor, e com mais informacao (pendencia, atraso, status).
                 { id: 'clients', label: 'Clientes', icon: Briefcase, badge: totalAjustes, badgeTone: 'amber' }
             ]
         },
@@ -595,7 +662,14 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                 // O termo de busca e compartilhado pelas secoes; sem limpar na
                 // troca, o usuario mudava de secao e via uma lista vazia por
                 // causa de um filtro digitado em outro contexto.
-                onSelect={(id) => { setActiveTab(id as any); setSearchTerm(''); setIsNavOpen(false); }}
+                onSelect={(id) => {
+                    setActiveTab(id as Aba);
+                    // Avisa o App: entrar num cliente desmonta esta tela, e quem
+                    // lembra da aba para o "voltar" e ele.
+                    onTrocarAba?.(id);
+                    setSearchTerm('');
+                    setIsNavOpen(false);
+                }}
                 isOpen={isNavOpen}
                 onClose={() => setIsNavOpen(false)}
                 footer={
@@ -772,12 +846,6 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ handleLogout, onOpenC
                                     </div>
                                 )}
 
-                            </div>
-                        )}
-
-                        {activeTab === 'editorial' && (
-                            <div className="animate-in fade-in">
-                                <AgencyCalendarBoard embedded userEmail={userEmail} userName={userName} />
                             </div>
                         )}
 
