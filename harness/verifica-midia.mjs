@@ -11,6 +11,8 @@
  *   7. o telefone do proprio perfil tem onde ser digitado e e gravado
  *   8. admin consegue TORNAR COLABORADOR uma conta nova - o unico jeito antes era
  *      editar `role` no console do Firebase
+ *   9. peca que falhou na previa nao fica quebrada para sempre
+ *  10. na tela de pastas, imagem e video ABREM em tamanho grande
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -44,6 +46,16 @@ const navegador = await chromium.launch({ executablePath: '/opt/pw-browsers/chro
 const falhas = [];
 const ok = [];
 const checar = (cond, msg) => (cond ? ok : falhas).push(msg);
+
+/**
+ * Existe AGORA, sem esperar.
+ *
+ * `click()` espera 30s por um elemento que nao existe e derruba o script inteiro -
+ * o que esconde as checagens seguintes e, pior, transforma "a interface nao tem
+ * esse botao" em stack trace em vez de linha de falha. Rodar este arquivo contra o
+ * codigo antigo tem que RELATAR o que falta, nao explodir.
+ */
+const existe = async loc => (await loc.count()) > 0 && await loc.first().isVisible();
 
 const abrir = async tela => {
     const page = await navegador.newPage({ viewport: { width: 1280, height: 900 } });
@@ -235,6 +247,105 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(await page.getByRole('button', { name: /Tirar da equipe/ }).isVisible(),
         '8. ficha de quem é da equipe oferece o caminho de volta');
     checar(erros.length === 0, `8. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ------------------------------------------------------------------------ 9
+// PECA 1 DO CARROSSEL PRESA EM "NAO FOI POSSIVEL CARREGAR". A marca de falha era
+// por INDICE e so era limpa quando o post mudava - dentro do mesmo post, nada
+// desfazia. Subir a peca 2 e a 3 nao ressuscitava a 1.
+{
+    const { page, erros } = await abrir('previa-carrossel');
+    const previa = page.locator('.aspect-square').first();
+    const quebrou = page.getByText('Não foi possível carregar esta peça.');
+
+    checar(await previa.locator('img').count() === 1, '9. a peça 1 carrega antes da falha');
+
+    // Falha provocada: e o que o navegador faz quando a URL ainda nao serve.
+    const forcarErro = () => page.evaluate(() => {
+        const img = document.querySelector('.aspect-square img');
+        img?.dispatchEvent(new Event('error'));
+    });
+    await forcarErro();
+    await page.waitForTimeout(300);
+    checar(await quebrou.isVisible(), '9. a falha aparece na peça');
+
+    const botaoTentar = page.getByRole('button', { name: /Tentar de novo/ });
+    const temTentar = await existe(botaoTentar);
+    checar(temTentar, '9. e existe "tentar de novo" - antes só fechando o post');
+    if (temTentar) {
+        await botaoTentar.click();
+        await page.waitForTimeout(400);
+        checar(!(await quebrou.isVisible()) && await previa.locator('img').count() === 1,
+            '9. "tentar de novo" remonta a peça e ela volta');
+    }
+
+    // O CASO DO PRINT: falhou, e depois entram mais pecas no carrossel.
+    await forcarErro();
+    await page.waitForTimeout(300);
+    checar(await quebrou.isVisible(), '9. falha de novo, para testar a chegada da peça seguinte');
+    await page.getByRole('button', { name: 'adicionar peça' }).click();
+    await page.waitForTimeout(500);
+    checar(!(await quebrou.isVisible()) && await previa.locator('img').count() === 1,
+        '9. peça nova no carrossel faz a peça 1 ser tentada outra vez');
+    checar(erros.length === 0, `9. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 10
+// ABRIR A PECA NA TELA DE PASTAS. O card tinha miniatura de 100px e um botao de
+// download: conferir se a foto e a certa exigia baixar o arquivo.
+{
+    const { page, erros } = await abrir('materiais');
+    await page.locator('button:has-text("Imagens")').first().click();
+    await page.waitForTimeout(800);
+
+    // capa-01.jpg e capa-02.jpg estao em Imagens no mock.
+    const cards = page.locator('button[aria-label^="Abrir capa-"]');
+    checar(await cards.count() === 2, `10. a pasta lista os arquivos clicáveis (${await cards.count()})`);
+    await cards.first().click();
+    await page.waitForTimeout(500);
+
+    const viewer = page.getByRole('dialog', { name: /Visualizar capa-01/ });
+    checar(await existe(viewer), '10. clicar no arquivo abre o visualizador');
+    checar(await viewer.locator('img').count() === 1, '10. e a imagem aparece em tamanho grande');
+    checar(await page.getByText('1 de 2').isVisible(), '10. diz em que arquivo você está');
+
+    await page.getByRole('button', { name: 'Próximo arquivo' }).click();
+    await page.waitForTimeout(400);
+    checar(await existe(page.getByRole('dialog', { name: /Visualizar capa-02/ })),
+        '10. a seta avança para o arquivo seguinte, sem sair da pasta');
+
+    // Teclado: conferir material e uma sequencia, e a mao fica na seta.
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForTimeout(300);
+    checar(await existe(page.getByRole('dialog', { name: /Visualizar capa-01/ })), '10. seta do teclado volta');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    checar(!(await existe(page.getByRole('dialog', { name: /Visualizar/ }))), '10. Esc fecha');
+
+    // VIDEO: o que precisa ser verificado e que abre um PLAYER com controles, nao
+    // que o filme roda - nao existe mp4 para servir offline neste ambiente.
+    //
+    // A requisicao do video fica PENDURADA de proposito: solta, ela falha (o host
+    // de exemplo nao existe), o onError marca a peca e o visualizador troca para a
+    // tela de recuperacao - o teste mediria o estado de erro em vez do player. Com
+    // a resposta pendente o elemento fica montado, que e o estado real de quem
+    // abriu um video que ainda esta carregando.
+    await page.route('**exemplo.invalido**', () => { /* sem responder, de proposito */ });
+    await page.locator('nav[aria-label="Caminho"] button:has-text("Materiais")').click();
+    await page.waitForTimeout(700);
+    await page.locator('button:has-text("Vídeos")').first().click();
+    await page.waitForTimeout(800);
+    await page.locator('button[aria-label^="Abrir reel-bruto"]').click();
+    await page.waitForTimeout(600);
+    const player = page.locator('video[controls]');
+    checar(await player.count() === 1, '10. vídeo abre em player com controles');
+    checar(await existe(page.getByRole('dialog', { name: /Visualizar reel-bruto/ })),
+        '10. e o visualizador identifica o arquivo aberto');
+    checar(erros.length === 0, `10. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+
+    await page.screenshot({ path: 'dist-harness/v-viewer.png' });
     await page.close();
 }
 

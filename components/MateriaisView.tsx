@@ -5,6 +5,7 @@ import {
     tipoDoArquivo, TEMPLATE_PASTAS, PROFUNDIDADE_MAX
 } from '../utils/pastas';
 import { PageHeader, EmptyState, Card } from './ui';
+import MediaViewer from './MediaViewer';
 import { db } from '../utils/firebase';
 import { toSafeHref } from '../utils/url';
 import {
@@ -52,6 +53,8 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
     const [erro, setErro] = useState('');
     const [enviando, setEnviando] = useState<{ nome: string; pct: number } | null>(null);
     const [criandoNome, setCriandoNome] = useState<string | null>(null);
+    /** Arquivo aberto em tamanho grande. Indice na lista da pasta atual. */
+    const [visualizando, setVisualizando] = useState<number | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     /**
@@ -94,6 +97,9 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
 
     const navegar = (alvo: Caminho) => {
         setCriandoNome(null);
+        // O visualizador aponta para um INDICE da pasta atual: mantê-lo aberto ao
+        // trocar de pasta mostraria o arquivo errado, ou nenhum.
+        setVisualizando(null);
         setErro('');
         setCaminho(alvo);
     };
@@ -148,6 +154,7 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
         setErro('');
         try {
             await removerArquivo(arquivo.path);
+            setVisualizando(null);
             setConteudo(prev => ({ ...prev, arquivos: prev.arquivos.filter(a => a.path !== arquivo.path) }));
         } catch (e) {
             console.error(e);
@@ -371,11 +378,25 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                                 Arquivos
                             </p>
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                                {conteudo.arquivos.map(arquivo => {
+                                {conteudo.arquivos.map((arquivo, i) => {
                                     const tipo = tipoDoArquivo(arquivo);
                                     return (
-                                        <div key={arquivo.path} className="group bg-[#1A1A1A] border border-white/5 rounded-card overflow-hidden">
-                                            <div className="aspect-square bg-[#111111] relative">
+                                        <div key={arquivo.path} className="group relative bg-[#1A1A1A] border border-white/5 rounded-card overflow-hidden">
+                                            {/* A PECA ABRE NO CLIQUE. Antes a miniatura era
+                                                decoracao: para ver a foto inteira ou assistir
+                                                o video, so baixando. Numa pasta com dez
+                                                pecas, dez downloads para achar uma.
+
+                                                Baixar e excluir ficam FORA deste botao, em
+                                                camada propria sobre o card: <a> e <button>
+                                                dentro de <button> e HTML invalido, e o
+                                                clique de um vira o clique do outro. */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setVisualizando(i)}
+                                                aria-label={`Abrir ${arquivo.nome}`}
+                                                className="w-full aspect-square bg-[#111111] block cursor-zoom-in"
+                                            >
                                                 {tipo === 'imagem' ? (
                                                     <img src={arquivo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
                                                 ) : (
@@ -385,30 +406,40 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                                                             : <FileText className="w-7 h-7 text-zinc-600" />}
                                                     </div>
                                                 )}
-                                                <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                                    <a
-                                                        href={arquivo.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        aria-label={`Abrir ${arquivo.nome}`}
-                                                        className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-white"
+                                            </button>
+
+                                            {/* Video precisa DIZER que toca: miniatura
+                                                parada nao se distingue de imagem. */}
+                                            {tipo === 'video' && (
+                                                <span className="absolute bottom-11 left-1.5 text-[9px] font-semibold text-white bg-black/70 px-1.5 py-0.5 rounded-full pointer-events-none">
+                                                    vídeo
+                                                </span>
+                                            )}
+
+                                            <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                <a
+                                                    href={arquivo.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    aria-label={`Baixar ${arquivo.nome}`}
+                                                    className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-white"
+                                                >
+                                                    <Download className="w-3 h-3" />
+                                                </a>
+                                                {/* O cliente nao apaga: nao remove material que a
+                                                    producao esta usando. A regra do Storage recusa
+                                                    de qualquer forma. */}
+                                                {ehAgencia && (
+                                                    <button
+                                                        onClick={() => handleRemoverArquivo(arquivo)}
+                                                        aria-label={`Remover ${arquivo.nome}`}
+                                                        className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-red-400"
                                                     >
-                                                        <Download className="w-3 h-3" />
-                                                    </a>
-                                                    {/* O cliente nao apaga: nao remove material que a
-                                                        producao esta usando. A regra do Storage recusa
-                                                        de qualquer forma. */}
-                                                    {ehAgencia && (
-                                                        <button
-                                                            onClick={() => handleRemoverArquivo(arquivo)}
-                                                            aria-label={`Remover ${arquivo.nome}`}
-                                                            className="p-1.5 rounded-full bg-black/70 text-zinc-300 hover:text-red-400"
-                                                        >
-                                                            <Trash2 className="w-3 h-3" />
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                )}
                                             </div>
+
                                             <div className="p-2">
                                                 <p className="text-[11px] text-zinc-300 truncate" title={arquivo.nome}>{arquivo.nome}</p>
                                                 <p className="text-[10px] text-zinc-600">{formatarBytes(arquivo.bytes)}</p>
@@ -420,6 +451,17 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole }) =>
                         </section>
                     )}
                 </div>
+            )}
+
+            {/* VISUALIZADOR. Fora da grade de proposito: e camada sobre a tela
+                inteira, e dentro do card herdaria o `overflow-hidden` dele. */}
+            {visualizando !== null && conteudo.arquivos[visualizando] && (
+                <MediaViewer
+                    arquivos={conteudo.arquivos}
+                    indice={visualizando}
+                    onTrocar={setVisualizando}
+                    onFechar={() => setVisualizando(null)}
+                />
             )}
 
             {/* Links antigos so na raiz: eles nao pertencem a pasta nenhuma. */}

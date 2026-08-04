@@ -8,6 +8,7 @@ import ClientFormModal from '../components/ClientFormModal';
 import ThumbBench from './ThumbBench';
 import MateriaisView from '../components/MateriaisView';
 import MediaUpload from '../components/MediaUpload';
+import PostPreview from '../components/PostPreview';
 import ClientHomeView from '../components/ClientHomeView';
 import PostTimeline from '../components/PostTimeline';
 import PersonCard, { SELO_ADMIN, SELO_COLABORADOR, SELO_SEM_EMPRESA, SELO_ATIVO } from '../components/PersonCard';
@@ -70,6 +71,45 @@ const MidiaEPastas: React.FC = () => {
                 />
             </div>
             <MateriaisView empresaId="agencia-mara" userRole="agencia" />
+        </div>
+    );
+};
+
+/**
+ * PECA QUE FALHOU E CARROSSEL QUE CRESCE.
+ *
+ * A previa marcava a peca quebrada e nunca tentava de novo: quem subia tres
+ * arquivos via a peca 1 em "nao foi possivel carregar" para sempre, porque ela e
+ * renderizada no instante seguinte ao upload dela - quando a URL as vezes ainda nao
+ * esta servindo - e nada limpava a marca depois.
+ *
+ * A auditoria nunca pegou isso porque no harness TODAS as imagens falham (o host
+ * de exemplo nao existe), entao o estado "uma falhou e as outras nao" nao existia.
+ * Aqui as pecas sao data URI - carregam offline -, a falha e provocada na mao e o
+ * botao adiciona a peca seguinte.
+ */
+const peca = (n: number) =>
+    `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#333"/><text x="20" y="26" font-size="18" fill="#FABE01" text-anchor="middle">${n}</text></svg>`
+    )}`;
+
+const PreviaCarrossel: React.FC = () => {
+    const [qtd, setQtd] = React.useState(2);
+    const midias = Array.from({ length: qtd }, (_, i) => ({
+        url: peca(i + 1), path: `p${i}`, contentType: 'image/svg+xml', bytes: 100
+    }));
+    return (
+        <div className="p-4 bg-[#111111] min-h-screen max-w-md space-y-3">
+            <PostPreview
+                event={{ ...evento, id: 'ev-previa', midias } as any}
+                handle="drasylviafisio"
+            />
+            <button
+                onClick={() => setQtd(q => q + 1)}
+                className="w-full py-2 text-xs font-semibold bg-white/5 text-zinc-200 rounded-control"
+            >
+                adicionar peça
+            </button>
         </div>
     );
 };
@@ -137,6 +177,7 @@ const SCREENS: Record<string, React.ReactNode> = {
         />
     </div>,
     'midia-e-pastas': <MidiaEPastas />,
+    'previa-carrossel': <PreviaCarrossel />,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}

@@ -4,7 +4,7 @@ import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { isSafeImageSrc } from '../utils/avatar';
 import {
     Heart, MessageCircle, Send, Bookmark, MoreHorizontal, ChevronLeft, ChevronRight,
-    ImageOff, ExternalLink, Play
+    ImageOff, ExternalLink, Play, RotateCcw
 } from 'lucide-react';
 
 interface PostPreviewProps {
@@ -35,7 +35,30 @@ interface Peca {
  */
 const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) => {
     const [indice, setIndice] = useState(0);
-    const [falhou, setFalhou] = useState<Record<number, boolean>>({});
+    /**
+     * Pecas que nao carregaram, POR URL.
+     *
+     * Era por indice, e isso causava a peca 1 de um carrossel ficar em "não foi
+     * possível carregar esta peça" com a mesma imagem aparecendo na grade ao lado:
+     * quem sobe tres arquivos sobe um por vez, e a peca 1 e renderizada no
+     * instante seguinte ao upload dela - momento em que a URL de download as vezes
+     * ainda nao esta servindo. O onError marcava `falhou[0]` e NADA limpava,
+     * porque o unico reset dependia de `event.id` mudar e o post e o mesmo. As
+     * pecas 2 e 3 montavam depois, com a URL ja pronta, e apareciam - o que fazia
+     * parecer problema da primeira imagem.
+     *
+     * Por indice tinha um segundo defeito: remover a peca 1 fazia a 2 herdar a
+     * marca de quebrada, porque ela passava a ocupar o indice 0.
+     */
+    const [falhou, setFalhou] = useState<Record<string, boolean>>({});
+    /**
+     * Contador de tentativa, so para remontar o <img>.
+     *
+     * A `key` do elemento e a URL: pedir de novo a MESMA URL nao refaz a
+     * requisicao, o React reaproveita o no que ja falhou. Com o contador na key, o
+     * "tentar de novo" cria um elemento novo e o navegador busca outra vez.
+     */
+    const [tentativa, setTentativa] = useState(0);
     /** X inicial do toque, para o arrasto lateral do carrossel. */
     const toqueX = useRef<number | null>(null);
 
@@ -60,8 +83,30 @@ const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) 
     // de 8 e depois um de 2 deixaria o indice fora da faixa e a tela vazia.
     useEffect(() => { setIndice(0); setFalhou({}); }, [event.id]);
 
+    // MUDOU A LISTA DE PECAS, TENTA TUDO DE NOVO. Subir a segunda peca e a
+    // evidencia de que o upload esta funcionando; insistir na falha da primeira
+    // depois disso e so teimosia da interface. A dependencia e a lista
+    // SERIALIZADA: o array e recriado a cada render e travaria o efeito em laco.
+    const chavePecas = pecas.map(p => p.src).join('|');
+    useEffect(() => { setFalhou({}); }, [chavePecas]);
+
     const total = pecas.length;
-    const atual = pecas[Math.min(indice, Math.max(total - 1, 0))];
+    // O indice e preso a faixa AQUI, e o resto da tela usa este valor: antes
+    // `atual` usava o indice preso e `falhou[indice]` o indice cru, entao os dois
+    // podiam falar de pecas diferentes depois de remover um arquivo.
+    const indiceAtual = Math.min(indice, Math.max(total - 1, 0));
+    const atual = pecas[indiceAtual];
+    const quebrou = Boolean(atual && falhou[atual.src]);
+
+    const tentarDeNovo = () => {
+        if (!atual) return;
+        setFalhou(f => {
+            const resto = { ...f };
+            delete resto[atual.src];
+            return resto;
+        });
+        setTentativa(t => t + 1);
+    };
 
     // Reel e Story sao verticais no feed; o resto e quadrado. Mostrar um reel em
     // quadrado ensina uma composicao que nao e a real, e o corte aparece so
@@ -109,9 +154,9 @@ const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) 
                     if (delta > 40 && indice > 0) setIndice(i => i - 1);
                 }}
             >
-                {!atual || falhou[indice] ? (
+                {!atual || quebrou ? (
                     <div className="text-center px-6">
-                        {atual?.kind === 'external' && !falhou[indice] ? (
+                        {atual?.kind === 'external' && !quebrou ? (
                             <>
                                 <ExternalLink className="w-7 h-7 text-zinc-700 mx-auto mb-2" />
                                 <p className="text-zinc-400 text-xs mb-2">O material está no {getLinkLabel(atual.src)}.</p>
@@ -132,6 +177,17 @@ const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) 
                                         ? 'Envie a mídia ou cole um link para ver o post montado aqui.'
                                         : 'Não foi possível carregar esta peça.'}
                                 </p>
+                                {/* A falha costuma ser passageira - arquivo recem
+                                    subido, conexao oscilando. Sem este botao a unica
+                                    saida era fechar e reabrir o post. */}
+                                {quebrou && (
+                                    <button
+                                        onClick={tentarDeNovo}
+                                        className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#FABE01] hover:underline"
+                                    >
+                                        <RotateCcw className="w-3 h-3" /> Tentar de novo
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -139,20 +195,20 @@ const PostPreview: React.FC<PostPreviewProps> = ({ event, handle, fotoPerfil }) 
                     // controls: e o unico jeito de conferir um reel antes de
                     // aprovar. Sem autoplay - som surpresa no meio do trabalho.
                     <video
-                        key={atual.src}
+                        key={`${atual.src}#${tentativa}`}
                         src={atual.src}
                         controls
                         playsInline
                         preload="metadata"
-                        onError={() => setFalhou(f => ({ ...f, [indice]: true }))}
+                        onError={() => setFalhou(f => ({ ...f, [atual.src]: true }))}
                         className="w-full h-full object-contain bg-black"
                     />
                 ) : (
                     <img
-                        key={atual.src}
+                        key={`${atual.src}#${tentativa}`}
                         src={atual.src}
-                        alt={`Peça ${indice + 1} de ${event.title}`}
-                        onError={() => setFalhou(f => ({ ...f, [indice]: true }))}
+                        alt={`Peça ${indiceAtual + 1} de ${event.title}`}
+                        onError={() => setFalhou(f => ({ ...f, [atual.src]: true }))}
                         className="w-full h-full object-cover"
                     />
                 )}

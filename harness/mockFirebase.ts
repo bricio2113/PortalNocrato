@@ -236,6 +236,30 @@ const ARVORE_MATERIAIS: NoArvore = {
 const tipoPorNome = (n: string) =>
     n.endsWith('.pdf') ? 'application/pdf' : n.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg';
 
+/**
+ * URL de arquivo de material.
+ *
+ * IMAGEM VIRA DATA URI, com o nome escrito dentro. Antes toda URL apontava para um
+ * host inexistente: as miniaturas falhavam, e o estado "carregou" simplesmente nao
+ * existia no harness - foi por isso que a peca presa em "nao foi possivel carregar"
+ * passou pela auditoria. Com data URI a imagem aparece de verdade, offline, e da
+ * para verificar que o visualizador mostra o arquivo CERTO.
+ *
+ * Video e documento continuam apontando para fora: nao ha como servir um mp4 aqui,
+ * e o que precisa ser verificado neles e o elemento (<video controls>), nao o
+ * quadro.
+ */
+const urlDoArquivo = (nome: string) => {
+    if (tipoPorNome(nome) !== 'image/jpeg') return `https://exemplo.invalido/${encodeURIComponent(nome)}`;
+    const rotulo = nome.replace(/\.[^.]+$/, '').slice(0, 14);
+    return `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">`
+        + `<rect width="240" height="240" fill="#2A2A2A"/>`
+        + `<text x="120" y="128" font-family="sans-serif" font-size="16" fill="#FABE01" text-anchor="middle">${rotulo}</text>`
+        + `</svg>`
+    )}`;
+};
+
 /** Segmentos depois de `materiais/`, ou null se o caminho nao for de materiais. */
 const segmentosDeMateriais = (caminho: string): string[] | null => {
     const marca = '/materiais';
@@ -300,7 +324,7 @@ export const storage: any = {
                 items: nomes.filter(n => no[n] === null).map(nome => ({
                     name: nome,
                     fullPath: `${caminho}/${nome}`,
-                    getDownloadURL: async () => `https://exemplo.invalido/${encodeURIComponent(nome)}`,
+                    getDownloadURL: async () => urlDoArquivo(nome),
                     getMetadata: async () => ({ size: 1024 * 420, contentType: tipoPorNome(nome) }),
                     delete: async () => {
                         registrar('delete-storage', `${caminho}/${nome}`);
