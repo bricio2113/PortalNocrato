@@ -301,16 +301,6 @@ const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({
                 ir: () => setSection('calendar')
             },
             {
-                chave: 'semPrazo',
-                n: stats.prazos.semPrazo,
-                titulo: 'Sem prazo de produção',
-                detalhe: 'Nunca aparecem como atrasados — é o ponto cego do quadro.',
-                tom: 'neutro' as const,
-                icone: CalendarClock,
-                acao: 'Definir prazos',
-                ir: () => setSection('production')
-            },
-            {
                 chave: 'semCapa',
                 n: stats.semCapa,
                 titulo: 'Sem capa definida',

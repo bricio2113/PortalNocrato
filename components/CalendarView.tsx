@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CalendarEvent } from '../types';
+import { CalendarEvent, UserProfile } from '../types';
 import EventDetailModal from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
@@ -14,6 +14,8 @@ import { formatTime } from '../utils/date';
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao } from '../utils/sla';
 import { subscribeThumbs } from '../utils/midia';
 import { registrarMudancas } from '../utils/historico';
+import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { AvatarGroup } from './AvatarBubble';
 import {
     ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, Loader2, FileText,
     Instagram, LayoutList, Grid3x3, AlertTriangle, Play, Images, Paperclip,
@@ -161,6 +163,20 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
     // O cliente nao move publicacao: as regras do Firestore so deixam ele tocar
     // nos campos de aprovacao, entao arrastar produziria erro de permissao.
     const podeEditar = userRole === 'agencia';
+
+    /**
+     * Equipe, so para resolver o rosto dos responsaveis no card.
+     *
+     * Uma leitura, e so para a agencia: as regras nao deixam o cliente ler
+     * usuarios/ da agencia, e a chamada renderia erro de permissao no console
+     * dele sem colocar nada na tela.
+     */
+    const [equipe, setEquipe] = useState<UserProfile[]>([]);
+    useEffect(() => {
+        if (!podeEditar) return;
+        lerEquipeAgencia().then(setEquipe).catch(console.error);
+    }, [podeEditar]);
+    const indiceEquipe = useMemo(() => indexarPorUid(equipe), [equipe]);
 
     // ARRASTAR PARA REAGENDAR.
     //
@@ -686,13 +702,28 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                                     ? <Instagram className="w-3 h-3 shrink-0" />
                                                                                     : <FileText className="w-3 h-3 shrink-0" />}
                                                                                 {event.plataforma || 'Sem plataforma'}
-                                                                                {event.proprietario && (
+                                                                                {/* RESPONSAVEIS: os mesmos da aba Gestão.
+                                                                                    O texto solto `proprietario` so aparece
+                                                                                    quando o post e antigo e ninguem foi
+                                                                                    atribuido - senao a agenda mostraria um
+                                                                                    dono e a gestão, outro. */}
+                                                                                {podeEditar && (event.responsaveis?.length ? (
+                                                                                    <>
+                                                                                        <span className="text-zinc-700">·</span>
+                                                                                        <AvatarGroup
+                                                                                            pessoas={pessoasDeUids(event.responsaveis, indiceEquipe)}
+                                                                                            tamanho="xs"
+                                                                                            limite={2}
+                                                                                            anelClasse="ring-[#1A1A1A]"
+                                                                                        />
+                                                                                    </>
+                                                                                ) : event.proprietario ? (
                                                                                     <>
                                                                                         <span className="text-zinc-700">·</span>
                                                                                         <User className="w-3 h-3 shrink-0" />
                                                                                         <span className="truncate">{event.proprietario}</span>
                                                                                     </>
-                                                                                )}
+                                                                                ) : null)}
                                                                             </p>
                                                                         </div>
                                                                     </div>
@@ -713,7 +744,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         {/* Prazo de producao: interno. */}
                                                                         {podeEditar && (() => {
                                                                             const prazo = slaAtual(event);
-                                                                            return prazo && prazo.tone !== 'tranquilo' && prazo.tone !== 'sem_prazo' ? (
+                                                                            return prazo && prazo.tone !== 'tranquilo' ? (
                                                                                 <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(prazo.tone)}`}>
                                                                                     <Clock className="w-3 h-3" /> {prazo.label}
                                                                                 </span>

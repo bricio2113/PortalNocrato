@@ -7,7 +7,6 @@ import {
     AlertTriangle, Filter, Layers, Clock, ListChecks, Trash2, CalendarPlus
 } from 'lucide-react';
 import EventDetailModal from './EventDetailModal';
-import ContentTaskModal from './ContentTaskModal';
 import { AvatarGroup } from './AvatarBubble';
 import { CalendarEvent, UserProfile, EventStatus } from '../types';
 import { FORMATO_OPTIONS } from '../constants';
@@ -70,9 +69,13 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
     const [orfaos, setOrfaos] = useState<CardOrfao[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    /** Card aberto na ficha de producao (subtarefas, responsaveis). */
-    const [tarefaAberta, setTarefaAberta] = useState<string | null>(null);
-    /** Post aberto no editor de conteudo. */
+    /**
+     * Post aberto, e em qual aba.
+     *
+     * UM modal so. Antes eram dois - a ficha de producao e o editor de conteudo -
+     * e o botao que levava de um ao outro FECHAVA o primeiro, sem volta. Agora o
+     * quadro abre o mesmo modal do calendario, direto na aba de gestao.
+     */
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
     const [isSaving, setIsSaving] = useState(false);
@@ -276,7 +279,6 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
             // gravado la depois de excluido na agenda.
             await db.collection('empresas').doc(empresaId).collection('Agenciaapk').doc(eventId).delete().catch(() => {});
             setSelectedEvent(null);
-            setTarefaAberta(null);
         } catch (error) {
             console.error('Erro ao excluir evento:', error);
             setModalError('Não foi possível excluir. Tente novamente.');
@@ -285,8 +287,6 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
             setIsSaving(false);
         }
     };
-
-    const eventoDaFicha = tarefaAberta ? events.find(e => e.id === tarefaAberta) : null;
 
     if (isLoading) {
         return (
@@ -533,7 +533,7 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, event.id)}
                                                 onDragEnd={handleDragEnd}
-                                                onClick={() => setTarefaAberta(event.id)}
+                                                onClick={() => setSelectedEvent(event)}
                                                 className={`bg-[#111111] border border-white/10 border-l-[3px] ${styles.border} p-3.5 rounded-card hover:border-[#FABE01]/50 transition-colors group cursor-pointer`}
                                             >
                                                 <div className="flex items-start gap-2 mb-2.5">
@@ -601,24 +601,14 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                 </div>
             </div>
 
-            {eventoDaFicha && (
-                <ContentTaskModal
-                    event={eventoDaFicha}
-                    empresaId={empresaId}
-                    equipe={equipe}
-                    subtarefas={subsPorEvento[eventoDaFicha.id] || []}
-                    autorEmail={userEmail || auth.currentUser?.email}
-                    onAbrirConteudo={() => { setSelectedEvent(eventoDaFicha); setTarefaAberta(null); }}
-                    onClose={() => setTarefaAberta(null)}
-                />
-            )}
-
             {selectedEvent && (
                 <EventDetailModal
                     event={selectedEvent}
                     onSave={handleSaveEvent}
                     onDelete={handleDeleteEvent}
                     onClose={() => { setSelectedEvent(null); setModalError(''); }}
+                    // O quadro e sobre producao: abre onde o trabalho e dividido.
+                    abaInicial="gestao"
                     isSaving={isSaving}
                     errorMessage={modalError}
                     empresaId={empresaId}

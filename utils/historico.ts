@@ -72,8 +72,9 @@ export async function registrar(
  * nada a quem le. O cliente quer saber que a DATA mudou, e de quando para
  * quando.
  *
- * `prazoProducao` e registrado tambem, mas o portal do cliente nao mostra esse
- * tipo - ver o filtro em subscribeHistorico.
+ * `prazoProducao` (campo legado) ainda e comparado: documentos antigos o tem, e
+ * apagar o registro apagaria historico ja gravado. O portal do cliente nao mostra
+ * esse tipo - ver o filtro em subscribeHistorico.
  */
 export async function registrarMudancas(
     empresaId: string,

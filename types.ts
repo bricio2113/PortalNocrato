@@ -156,6 +156,15 @@ export interface CalendarEvent {
   type: EventType;
   status: EventStatus;
   plataforma: string;
+  /**
+   * @deprecated LEGADO. Use `responsaveis`.
+   *
+   * Era um campo de texto livre com o nome de quem cuidava do post, digitado no
+   * editor - enquanto a gestao do conteudo tinha a lista de pessoas de verdade.
+   * Dois donos para o mesmo post, em lugares diferentes, sem nada garantindo que
+   * batessem. So aparece na tela, em cinza, quando o post e antigo e nao tem
+   * ninguem atribuido.
+   */
   proprietario?: string | null;
   url?: string;
   finalUrl?: string;
@@ -166,12 +175,13 @@ export interface CalendarEvent {
   midias?: MidiaArquivo[];
 
   /**
-   * Prazo de PRODUCAO - quando a peca precisa estar pronta internamente.
+   * @deprecated LEGADO. O prazo de producao e a DATA DE PUBLICACAO (`date`).
    *
-   * Separado de `date`, que e a data de publicacao acordada com o cliente.
-   * Interno da agencia: ver utils/deadline.ts para o motivo de nao aparecer no
-   * portal do cliente. Ausente = sem prazo definido, o que e um estado
-   * legitimo e nao vira atraso.
+   * Este campo era um segundo prazo, digitado a mao em cada post. Duas datas
+   * para a mesma peca, livres para divergir - e quem esquecia de preencher
+   * ganhava um post que nunca aparecia como atrasado. Nao e mais lido pelo SLA
+   * nem editavel na interface; continua no tipo porque documentos antigos ainda
+   * o tem gravado e o historico deles registra a mudanca.
    */
   prazoProducao?: Date | null;
 

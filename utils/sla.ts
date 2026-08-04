@@ -15,7 +15,8 @@ import { getClientStage, getApproval } from './eventState';
  *                     dias uteis contados da hora do pedido.
  *   3. aprovacao    - material pronto, esperando o cliente. O prazo dele e a
  *                     janela de revisao (ver abaixo), nao um numero solto.
- *   4. producao     - ainda em producao. Vale o prazoProducao do post.
+ *   4. producao     - ainda em producao. Vale a DATA DE PUBLICACAO: se a peca
+ *                     nao esta pronta no dia de publicar, esta atrasada.
  *
  * O ITEM 4 SO CONTA EM PRODUCAO. Antes o atraso continuava correndo enquanto o
  * post estava com o cliente esperando aprovacao - a tela acusava a agencia de
@@ -94,12 +95,16 @@ export function janelaRevisao(
 
 export type SlaTipo = 'producao' | 'ajuste' | 'aprovacao';
 export type SlaDono = 'agencia' | 'cliente';
-export type SlaTone = 'atrasado' | 'hoje' | 'proximo' | 'tranquilo' | 'sem_prazo';
+/**
+ * `sem_prazo` sumiu junto com o campo prazoProducao: TODO post em producao tem
+ * prazo agora, porque o prazo e a data de publicacao e ela e obrigatoria.
+ */
+export type SlaTone = 'atrasado' | 'hoje' | 'proximo' | 'tranquilo';
 
 export interface SlaState {
     tipo: SlaTipo;
     dono: SlaDono;
-    /** Ausente no caso de producao sem prazoProducao preenchido. */
+    /** Sempre presente hoje; o tipo aceita null por compatibilidade. */
     limite: Date | null;
     /** Dias restantes. Negativo = estourado. Zero quando nao ha limite. */
     dias: number;
@@ -112,8 +117,7 @@ const TONE_CLASSES: Record<SlaTone, string> = {
     atrasado: 'bg-red-500/15 text-red-400 border-red-500/30',
     hoje: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
     proximo: 'bg-[#FABE01]/15 text-[#FABE01] border-[#FABE01]/30',
-    tranquilo: 'bg-white/5 text-zinc-400 border-white/10',
-    sem_prazo: 'bg-white/5 text-zinc-500 border-white/10'
+    tranquilo: 'bg-white/5 text-zinc-400 border-white/10'
 };
 
 export const slaClasses = (tone: SlaTone) => TONE_CLASSES[tone];
@@ -147,7 +151,7 @@ export function slaEncerrado(event: Pick<CalendarEvent, 'status' | 'approval'>):
  * O unico prazo que vale agora. `null` quando o post saiu do fluxo.
  */
 export function slaAtual(
-    event: Pick<CalendarEvent, 'status' | 'approval' | 'approvalAt' | 'date' | 'type' | 'prazoProducao'>,
+    event: Pick<CalendarEvent, 'status' | 'approval' | 'approvalAt' | 'date' | 'type'>,
     agora: Date = new Date()
 ): SlaState | null {
     if (slaEncerrado(event)) return null;
@@ -175,16 +179,24 @@ export function slaAtual(
         };
     }
 
-    // 4. EM PRODUCAO.
-    if (!event.prazoProducao) {
-        return {
-            tipo: 'producao', dono: 'agencia', limite: null, dias: 0, estourado: false,
-            label: 'sem prazo', tone: 'sem_prazo'
-        };
-    }
-    const dias = diasEntre(agora, event.prazoProducao);
+    // 4. EM PRODUCAO. O PRAZO E A DATA DE PUBLICACAO.
+    //
+    // Antes existia um campo separado, `prazoProducao`, digitado a mao em cada
+    // post. Duas consequencias ruins: quem esquecia de preencher ganhava um post
+    // que NUNCA aparecia como atrasado - o "ponto cego" que a visao geral tinha
+    // que contar num tile proprio -, e quem preenchia mantinha duas datas para a
+    // mesma peca, livres para divergir. A data combinada com o cliente ja e o
+    // prazo: se o conteudo nao esta pronto no dia de publicar, esta atrasado.
+    const dias = diasEntre(agora, event.date);
     const { label, tone } = descrever(dias);
-    return { tipo: 'producao', dono: 'agencia', limite: event.prazoProducao, dias, estourado: dias < 0, label, tone };
+    return {
+        tipo: 'producao', dono: 'agencia', limite: event.date, dias, estourado: dias < 0,
+        // Atraso de producao ganha frase propria: "3 dias atrasado" nao dizia
+        // atrasado em QUE, e no quadro convivia com o atraso de ajuste e o do
+        // cliente, que sao outra coisa.
+        label: dias < 0 ? `${Math.abs(dias)} ${Math.abs(dias) === 1 ? 'dia' : 'dias'} atrasado para a publicação` : label,
+        tone
+    };
 }
 
 // --- RESUMO PARA O PAINEL -----------------------------------------------
@@ -196,15 +208,13 @@ export interface SlaSummary {
     atrasadoCliente: number;
     /** Vence hoje ou em ate 2 dias, de qualquer dono. */
     proximos: number;
-    /** Em producao sem prazoProducao: nunca aparece como atrasado. Ponto cego. */
-    semPrazo: number;
     /** Ajustes pedidos e ainda em aberto. */
     ajustesAbertos: number;
 }
 
 export function summarizeSla(events: CalendarEvent[], agora: Date = new Date()): SlaSummary {
     const r: SlaSummary = {
-        atrasadoAgencia: 0, atrasadoCliente: 0, proximos: 0, semPrazo: 0, ajustesAbertos: 0
+        atrasadoAgencia: 0, atrasadoCliente: 0, proximos: 0, ajustesAbertos: 0
     };
 
     for (const event of events) {
@@ -212,7 +222,6 @@ export function summarizeSla(events: CalendarEvent[], agora: Date = new Date()):
         if (!sla) continue;
 
         if (sla.tipo === 'ajuste') r.ajustesAbertos++;
-        if (sla.tone === 'sem_prazo') { r.semPrazo++; continue; }
 
         if (sla.estourado) {
             if (sla.dono === 'agencia') r.atrasadoAgencia++;

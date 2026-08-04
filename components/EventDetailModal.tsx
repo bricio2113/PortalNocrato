@@ -10,11 +10,15 @@ import { setApproval, saveMetrics } from '../utils/posts';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
 import PostTimeline from './PostTimeline';
+import ContentManagementPanel from './ContentManagementPanel';
+import { AvatarGroup } from './AvatarBubble';
+import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { UserProfile } from '../types';
 import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
     Youtube, Twitter, Globe, Check, Loader2, AlertTriangle,
-    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock
+    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock, ListChecks, FileText
 } from 'lucide-react';
 
 interface EventDetailModalProps {
@@ -35,7 +39,15 @@ interface EventDetailModalProps {
     userName?: string | null;
     /** Chamado apos o cliente aprovar ou pedir ajuste. */
     onApprovalChange?: (state: ApprovalState) => void;
+    /**
+     * Aba em que abrir. O quadro de producao abre em 'gestao'; o calendario, em
+     * 'conteudo'. Antes eram dois MODAIS diferentes para o mesmo post, e o botao
+     * que levava de um ao outro fechava o primeiro sem volta.
+     */
+    abaInicial?: AbaConteudo;
 }
+
+export type AbaConteudo = 'conteudo' | 'gestao';
 
 const METRIC_FIELDS = [
     { key: 'alcance' as const, label: 'Alcance' },
@@ -59,9 +71,23 @@ const getPlatformIcon = (platform: string) => {
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({
     event, onSave, onDelete, onClose, isSaving = false, errorMessage,
-    empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange
+    empresaId, userEmail, userRole = 'agencia', userName, onApprovalChange,
+    abaInicial = 'conteudo'
 }) => {
     const [editableEvent, setEditableEvent] = useState<CalendarEvent>(event);
+    const [aba, setAba] = useState<AbaConteudo>(abaInicial);
+
+    /**
+     * Equipe da agencia, para mostrar rosto de responsavel nas duas abas.
+     *
+     * Nao carrega para o cliente: as regras nao deixam ele ler usuarios/ da
+     * agencia, e a chamada so renderia erro de permissao no console dele.
+     */
+    const [equipe, setEquipe] = useState<UserProfile[]>([]);
+    useEffect(() => {
+        if (userRole === 'cliente') return;
+        lerEquipeAgencia().then(setEquipe).catch(console.error);
+    }, [userRole]);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showDiscardWarning, setShowDiscardWarning] = useState(false);
     const isCreating = !event.id;
@@ -267,8 +293,55 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <button onClick={requestClose} aria-label="Fechar" className="p-2 text-zinc-500 hover:text-white bg-white/5 rounded-full sm:bg-transparent sm:rounded-control shrink-0"><X className="w-6 h-6" /></button>
                 </div>
 
+                {/* ABAS.
+                    O post tem duas metades - o que ele E (peca, legenda, data,
+                    aprovacao) e como ele SAI (quem faz, em que etapa). Eram dois
+                    modais; agora sao duas abas do mesmo, e alternar nao perde o
+                    que estava aberto. O cliente so ve a primeira: a divisao
+                    interna do trabalho nao e assunto dele. */}
+                {!isClient && (
+                    <div className="shrink-0 flex items-center gap-1 px-4 sm:px-6 border-b border-white/5" role="tablist">
+                        {([
+                            ['conteudo', 'Informação do conteúdo', FileText],
+                            ['gestao', 'Gestão do conteúdo', ListChecks]
+                        ] as const).map(([id, label, Icone]) => {
+                            const ativa = aba === id;
+                            return (
+                                <button
+                                    key={id}
+                                    role="tab"
+                                    aria-selected={ativa}
+                                    onClick={() => setAba(id)}
+                                    className={`flex items-center gap-2 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                                        ativa
+                                            ? 'border-[#FABE01] text-white'
+                                            : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                                    }`}
+                                >
+                                    <Icone className="w-4 h-4" />
+                                    <span className="hidden sm:inline">{label}</span>
+                                    <span className="sm:hidden">{id === 'conteudo' ? 'Conteúdo' : 'Gestão'}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* GESTAO */}
+                {aba === 'gestao' && !isClient && (
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+                        <ContentManagementPanel
+                            empresaId={empresaId || ''}
+                            event={editableEvent}
+                            autorEmail={userEmail}
+                            podeEditar={!isClient}
+                            equipe={equipe}
+                        />
+                    </div>
+                )}
+
                 {/* Body */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar">
+                <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8 custom-scrollbar ${aba === 'gestao' && !isClient ? 'hidden' : ''}`}>
 
                     {/* ESTAGIO + APROVACAO
                         O cliente nao precisa entender os sete status internos da
@@ -428,7 +501,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div>
+                        {/* Data + hora ocupam DUAS colunas: numa so, o campo de
+                            hora (fixo em 7.5rem) comia a largura do de data, que
+                            aparecia cortado mostrando so parte do valor. */}
+                        <div className="sm:col-span-2">
                             <label className={labelStyle}>Publicação</label>
                             {/* Data e hora no mesmo campo `date`. A hora nao virou
                                 coluna propria porque toda ordenacao, filtro de mes
@@ -452,14 +528,23 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     />
                                     <Calendar className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 </div>
-                                <input
-                                    type="time"
-                                    disabled={isClient}
-                                    aria-label="Horário da publicação"
-                                    value={hasTime(editableEvent.date) ? toTimeInputValue(editableEvent.date) : ''}
-                                    onChange={(e) => handleChange('date', withTime(editableEvent.date, e.target.value))}
-                                    className={`${inputStyle} [color-scheme:dark] w-[7.5rem] shrink-0`}
-                                />
+                                {/* A LARGURA FICA NO PAI, nao no input.
+                                    `inputStyle` traz `w-full`, e na folha gerada a
+                                    regra `.w-full` vem DEPOIS de `.w-[7.5rem]` -
+                                    entao ela vencia por ordem de cascata, sem
+                                    importar a ordem das classes aqui. O campo de
+                                    hora esticava para 100% e espremia o de data
+                                    ate 26px, que aparecia cortado na tela. */}
+                                <div className="w-[7.5rem] shrink-0">
+                                    <input
+                                        type="time"
+                                        disabled={isClient}
+                                        aria-label="Horário da publicação"
+                                        value={hasTime(editableEvent.date) ? toTimeInputValue(editableEvent.date) : ''}
+                                        onChange={(e) => handleChange('date', withTime(editableEvent.date, e.target.value))}
+                                        className={`${inputStyle} [color-scheme:dark]`}
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -471,40 +556,28 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             </div>
                         </div>
 
-                        {/* PRAZO DE PRODUCAO - so a agencia ve.
-                            Nao e a data de publicacao: e quando a peca precisa
-                            estar pronta por dentro. Mostrar "atrasado 3 dias" ao
-                            cliente cria um problema que ele nao tem, num post que
-                            ainda vai sair no prazo. Ver utils/deadline.ts. */}
+                        {/* PRAZO. Nao ha campo: o prazo E a data de publicacao
+                            acima. Existia um "Prazo de produção" separado, e ele
+                            criava duas datas para a mesma peca - livres para
+                            divergir - alem de deixar quem esquecesse de preencher
+                            com um post que nunca aparecia como atrasado. O selo
+                            abaixo mostra o SLA QUE VALE AGORA e de quem e a bola. */}
                         {!isClient && (
-                            <div>
-                                <label className={labelStyle}>Prazo de produção</label>
-                                <div className="relative">
-                                    <input
-                                        type="date"
-                                        value={editableEvent.prazoProducao ? toDateInputValue(editableEvent.prazoProducao) : ''}
-                                        onChange={(e) => handleChange('prazoProducao', fromDateInputValue(e.target.value))}
-                                        className={`${inputStyle} [color-scheme:dark]`}
-                                    />
-                                    <Clock className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
-                                </div>
-                                {/* O selo mostra o SLA QUE VALE AGORA e de quem e a
-                                    bola, nao o prazo deste campo. Sem o rotulo do
-                                    tipo, um "3 dias atrasado" que na verdade e do
-                                    cliente aparecia embaixo de "Prazo de producao" e
-                                    culpava a equipe. */}
+                            <div className="col-span-1 sm:col-span-2">
+                                <label className={labelStyle}>Prazo</label>
                                 {(() => {
                                     const sla = slaAtual(editableEvent);
                                     if (!sla) {
                                         return (
-                                            <p className="text-[11px] text-zinc-600 mt-2 leading-snug">
+                                            <p className="text-xs text-zinc-500 leading-snug pt-2">
                                                 Fora do fluxo — sem prazo corrente.
                                             </p>
                                         );
                                     }
                                     return (
-                                        <div className="mt-2 space-y-1">
-                                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${slaClasses(sla.tone)}`}>
+                                        <div className="pt-1.5 space-y-1">
+                                            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-full border ${slaClasses(sla.tone)}`}>
+                                                <Clock className="w-3 h-3" />
                                                 {slaTipoLabel(sla.tipo)} · {sla.label}
                                             </span>
                                             <p className="text-[10px] text-zinc-600 leading-snug">
@@ -534,13 +607,40 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-zinc-500">{getPlatformIcon(editableEvent.plataforma)}</div>
                             </div>
                         </div>
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-4">
-                            <label className={labelStyle}>Responsável</label>
-                            <div className="relative">
-                                <input type="text" disabled={isClient} value={editableEvent.proprietario || ''} onChange={(e) => handleChange('proprietario', e.target.value)} placeholder="Nome" className={inputStyle} />
-                                <User className="absolute right-3 top-3.5 w-4 h-4 text-zinc-500 pointer-events-none" />
+                        {/* RESPONSAVEL - o MESMO da aba Gestão.
+                            Era um campo de texto livre aqui e uma lista de pessoas
+                            lá: dois donos para o mesmo post, escritos em lugares
+                            diferentes, e nada garantia que batessem. Aqui virou
+                            leitura, com o caminho para editar onde se edita. */}
+                        {!isClient && (
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-4">
+                                <label className={labelStyle}>Responsáveis</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setAba('gestao')}
+                                    className="w-full flex items-center gap-3 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 hover:border-white/20 transition-colors text-left"
+                                >
+                                    <AvatarGroup
+                                        pessoas={pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))}
+                                        tamanho="sm"
+                                        anelClasse="ring-[#111111]"
+                                    />
+                                    <span className="text-sm text-zinc-400 flex-1 min-w-0 truncate">
+                                        {pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))
+                                            .map(p => p.nome || p.email).join(', ') || 'Ninguém atribuído'}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-[#FABE01] shrink-0">definir →</span>
+                                </button>
+                                {/* Campo antigo, so leitura, e so quando existe:
+                                    nao apagamos o que ja foi digitado, mas tambem
+                                    nao damos um segundo lugar para digitar dono. */}
+                                {editableEvent.proprietario && (
+                                    <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">
+                                        Cadastro antigo: “{editableEvent.proprietario}”. Refaça a atribuição na aba Gestão.
+                                    </p>
+                                )}
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* LINKS: MATERIAL BRUTO E FINALIZADO */}

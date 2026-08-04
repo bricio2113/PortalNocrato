@@ -24,16 +24,23 @@ const check = (nome: string, real: any, esperado: any) => {
 
 // 1. O BUG QUE A CONVERSA ACHOU: post com o cliente nao acusa a agencia.
 const comCliente = { status: 'Concluído' as const, approval: 'aguardando' as const, approvalAt: null,
-    date: d(20), type: 'Post' as const, prazoProducao: d(1) }; // prazo estourou dia 1
+    date: d(20), type: 'Post' as const };
 const s1 = slaAtual(comCliente, AGORA)!;
 check('post esperando cliente: dono e o CLIENTE, nao a agencia', [s1.tipo, s1.dono], ['aprovacao', 'cliente']);
 
-// 2. Em producao com prazo vencido: agencia, atrasado.
-const s2 = slaAtual({ ...comCliente, status: 'Em andamento' }, AGORA)!;
-check('em producao com prazo vencido: agencia, 4 dias atrasado', [s2.tipo, s2.dono, s2.dias], ['producao', 'agencia', -4]);
+// 2. Em producao: O PRAZO E A DATA DE PUBLICACAO. Publicar era dia 1, hoje e 5.
+const atrasado = { ...comCliente, status: 'Em andamento' as const, date: d(1) };
+const s2 = slaAtual(atrasado, AGORA)!;
+check('em producao passado da data: agencia, 4 dias atrasado', [s2.tipo, s2.dono, s2.dias], ['producao', 'agencia', -4]);
+check('atraso de producao diz atrasado em QUE', s2.label, '4 dias atrasado para a publicação');
+
+// 2b. Em producao com a data no futuro: nao inventa atraso.
+const s2b = slaAtual({ ...comCliente, status: 'Em andamento' as const, date: d(12) }, AGORA)!;
+check('em producao antes da data: nao estourado, limite = data de publicacao',
+    [s2b.estourado, s2b.limite?.getDate()], [false, 12]);
 
 // 3. Ajuste pedido vence o prazo de producao.
-const s3 = slaAtual({ ...comCliente, status: 'Em andamento', approval: 'ajuste_solicitado', approvalAt: d(4) }, AGORA)!;
+const s3 = slaAtual({ ...atrasado, approval: 'ajuste_solicitado' as const, approvalAt: d(4) }, AGORA)!;
 check('ajuste pedido tem precedencia sobre producao', s3.tipo, 'ajuste');
 
 // 4. SLA de ajuste em DIAS UTEIS: pedido na sexta 07/ago vence terca 11/ago.
@@ -54,9 +61,12 @@ check('aprovado nao tem SLA',  slaAtual({ ...comCliente, approval: 'aprovado' },
 check('publicado nao tem SLA', slaAtual({ ...comCliente, status: 'Postado' }, AGORA), null);
 check('cancelado nao tem SLA', slaAtual({ ...comCliente, status: 'Cancelado' }, AGORA), null);
 
-// 8. Producao sem prazo: nao inventa atraso.
-const s8 = slaAtual({ ...comCliente, status: 'Pendente', prazoProducao: null }, AGORA)!;
-check('producao sem prazo: tom sem_prazo e nao estourado', [s8.tone, s8.estourado], ['sem_prazo', false]);
+// 8. NAO EXISTE MAIS "sem prazo": todo post em producao tem data de publicacao,
+// entao todo post em producao tem prazo. O caso que sumiu era o ponto cego -
+// post sem prazoProducao nunca aparecia como atrasado.
+const s8 = slaAtual({ ...comCliente, status: 'Pendente' as const, date: d(3) }, AGORA)!;
+check('producao sempre tem limite: a data de publicacao', s8.limite?.getDate(), 3);
+check('producao vencida e estourada, sem excecao', s8.estourado, true);
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntodos passaram');
 process.exit(falhas ? 1 : 0);

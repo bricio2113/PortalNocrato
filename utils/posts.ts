@@ -150,8 +150,6 @@ export interface PendingCounts {
     atrasados: number;
     /** SLA estourado com a bola no CLIENTE: janela de revisao fechou sem decisao. */
     atrasadosCliente: number;
-    /** Em producao sem prazo definido: nunca aparece como atrasado. Ponto cego. */
-    semPrazo: number;
 }
 
 /**
@@ -176,7 +174,6 @@ export function subscribePendingCounts(
             let semCapa = 0;
             let atrasados = 0;
             let atrasadosCliente = 0;
-            let semPrazo = 0;
 
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
@@ -200,12 +197,10 @@ export function subscribePendingCounts(
                     approval: data.approval,
                     approvalAt: (data.approvalAt as firebase.firestore.Timestamp | undefined)?.toDate() || null,
                     date: date || new Date(),
-                    type: data.type,
-                    prazoProducao: (data.prazoProducao as firebase.firestore.Timestamp | undefined)?.toDate() || null
+                    type: data.type
                 }, agora);
                 if (sla) {
-                    if (sla.tone === 'sem_prazo') semPrazo++;
-                    else if (sla.estourado) {
+                    if (sla.estourado) {
                         if (sla.dono === 'agencia') atrasados++;
                         else atrasadosCliente++;
                     }
@@ -215,7 +210,7 @@ export function subscribePendingCounts(
             onData({
                 aguardandoCliente, aguardandoAgencia,
                 total: snapshot.size, noMes, publicados, semCapa,
-                atrasados, atrasadosCliente, semPrazo
+                atrasados, atrasadosCliente
             });
         },
         error => console.error('Erro ao contar pendências:', error)
