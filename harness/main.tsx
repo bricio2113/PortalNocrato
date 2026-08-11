@@ -185,7 +185,10 @@ const SCREENS: Record<string, React.ReactNode> = {
                     id: ev.id,
                     pastaMidia: ev.pastaMidia || null,
                     midias: (ev.midias || []).length,
-                    thumbBytes: extras?.thumb ? extras.thumb.length : 0
+                    thumbBytes: extras?.thumb ? extras.thumb.length : 0,
+                    // O objeto CRU, para o teste conferir quais campos o Salvar
+                    // carrega - `responsaveis` nao pode estar entre eles.
+                    campos: ev
                 };
             }}
             onDelete={noop} onClose={noop}

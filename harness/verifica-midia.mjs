@@ -20,6 +20,7 @@
  *  15. a etapa tem PRAZO, editavel na gestao do conteudo
  *  16. estudo de marca: secao dentro de Arquivos & Materiais, editavel pelos dois
  *  17. "Foco da Semana" saiu de todos os menus
+ *  18. RESPONSAVEL: marcar o segundo nao apaga o primeiro, e reflete sem "Salvar"
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -539,12 +540,24 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     const { page, erros } = await abrir('modal-gestao');
     const campo = page.getByLabel('Prazo de Design das 5 lâminas');
     checar(await existe(campo), '15. cada etapa tem campo de prazo na gestão do conteúdo');
-    await campo.fill('2026-08-10');
+
+    // A data nova e DERIVADA da que esta no campo, um dia antes.
+    //
+    // Antes eu escrevia '2026-08-10' fixo. As datas do mock sao relativas a HOJE, e
+    // no dia em que hoje-1 caiu justamente em 10/08 o campo ja continha esse valor:
+    // `fill` com o mesmo texto nao dispara mudanca, nenhuma escrita acontecia e o
+    // teste acusava o codigo. Teste que depende do calendario acusa inocente.
+    const atual = await campo.first().inputValue();
+    const base = atual ? new Date(`${atual}T12:00:00`) : new Date();
+    base.setDate(base.getDate() - 1);
+    const nova = base.toISOString().slice(0, 10);
+
+    await campo.fill(nova);
     await page.waitForTimeout(600);
     const w = await writes(page);
     const up = w.find(x => x.op === 'update' && x.path.includes('/subtarefas/'));
-    checar(Boolean(up) && typeof up.data.prazo === 'string' && up.data.prazo.startsWith('2026-08-10'),
-        `15. e gravar o prazo escreve na subtarefa: ${up ? JSON.stringify(up.data) : '(nada)'}`);
+    checar(Boolean(up) && typeof up.data.prazo === 'string' && up.data.prazo.startsWith(nova),
+        `15. e gravar o prazo escreve na subtarefa (${nova}): ${up ? JSON.stringify(up.data) : '(nada)'}`);
 
     const novo = page.getByLabel('Prazo da nova subtarefa');
     checar(await existe(novo), '15. a etapa nova também já nasce com prazo');
@@ -634,6 +647,74 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
         '17. "Foco da Semana" não aparece mais no espaço de trabalho');
     checar(await page.getByText('Arquivos & Materiais').count() > 0,
         '17. e o resto do menu continua de pé');
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 18
+// O DEFEITO QUE O TIME ACHOU. A lista base vinha do rascunho do modal, que a
+// escrita nunca atualizava: a etiqueta nao acendia (parecia que nada era
+// selecionavel) e o segundo clique gravava `[] + [b]`, apagando o primeiro.
+{
+    const { page, erros } = await abrir('modal-gestao');
+    await page.waitForTimeout(900);
+
+    await page.getByRole('button', { name: 'Definir', exact: true }).click();
+    await page.waitForTimeout(400);
+
+    // ev0 no mock ja vem com u0 e u3; usar um post SEM responsavel isola o caso.
+    const chips = page.locator('button[aria-pressed]');
+    const total = await chips.count();
+    checar(total >= 2, `18. a lista de pessoas aparece (${total})`);
+
+    // Desmarca tudo o que veio marcado, para comecar do zero.
+    for (let i = 0; i < total; i++) {
+        const c = chips.nth(i);
+        if (await c.getAttribute('aria-pressed') === 'true') {
+            await c.click();
+            await page.waitForTimeout(250);
+        }
+    }
+    const marcadosZero = await page.locator('button[aria-pressed="true"]').count();
+    checar(marcadosZero === 0, `18. começa sem ninguém marcado (${marcadosZero})`);
+
+    // PRIMEIRO clique: a etiqueta tem que ACENDER sem passar por "Salvar".
+    await chips.nth(0).click();
+    await page.waitForTimeout(400);
+    checar(await chips.nth(0).getAttribute('aria-pressed') === 'true',
+        '18. o primeiro acende no clique, sem salvar');
+
+    // SEGUNDO clique em OUTRA pessoa: o primeiro tem que continuar marcado.
+    await chips.nth(1).click();
+    await page.waitForTimeout(400);
+    const doisMarcados = await page.locator('button[aria-pressed="true"]').count();
+    checar(doisMarcados === 2,
+        `18. marcar o segundo NÃO apaga o primeiro (${doisMarcados} marcados)`);
+
+    // E a escrita tem que refletir os dois, nao so o ultimo.
+    const w = await writes(page);
+    const ultima = w.filter(x => x.op === 'update' && Array.isArray(x.data?.responsaveis)).pop();
+    checar(Boolean(ultima) && ultima.data.responsaveis.length === 2,
+        `18. a gravação leva os dois uids: ${ultima ? JSON.stringify(ultima.data.responsaveis) : '(nada)'}`);
+
+    // E o "Salvar" do modal NAO pode reescrever este campo por cima.
+    await page.getByRole('tab', { name: /Informação/ }).click();
+    await page.waitForTimeout(400);
+    const salvo = await page.evaluate(() => globalThis.__save || null);
+    checar(salvo === null, '18. (controle) nada salvo ainda');
+    await page.close();
+}
+
+// A prova de que o "Salvar" nao carrega mais `responsaveis`: o que o modal entrega
+// nao tem o campo, entao gravar o texto do post nunca pode desfazer atribuicao.
+{
+    const { page, erros } = await abrir('modal-novo');
+    await page.waitForTimeout(600);
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
+    await page.waitForTimeout(300);
+    const salvo = await page.evaluate(() => globalThis.__save || null);
+    checar(Boolean(salvo) && !('responsaveis' in (salvo.campos || {})),
+        '18b. o payload do Salvar não inclui responsaveis');
+    checar(erros.length === 0, `18b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.close();
 }
 

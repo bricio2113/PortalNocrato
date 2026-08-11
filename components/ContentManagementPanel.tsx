@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../utils/firebase';
 import { CalendarEvent, UserProfile } from '../types';
 import {
     Subtarefa, SubtarefaStatus, SUBTAREFA_STATUS, subtarefaStatusInfo,
@@ -7,6 +6,7 @@ import {
     situacaoPrazo, TONS_PRAZO
 } from '../utils/subtarefas';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
+import { subscribeResponsaveis, salvarResponsaveis } from '../utils/posts';
 import { slaAtual, slaClasses, slaTipoLabel } from '../utils/sla';
 import { getDisplayName } from '../utils/avatar';
 import { toDateInputValue, fromDateInputValue } from '../utils/date';
@@ -59,6 +59,20 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
     const [novoPrazo, setNovoPrazo] = useState('');
     const [erro, setErro] = useState('');
     const [abrindoPessoas, setAbrindoPessoas] = useState(false);
+    /**
+     * Responsaveis COMO ESTAO GRAVADOS, nao como estao no rascunho do modal.
+     *
+     * Aqui morava o defeito: a lista base vinha de `event.responsaveis`, que e o
+     * rascunho do modal e NAO era atualizado pela escrita. O primeiro clique
+     * gravava `[a]` e o rascunho continuava vazio; o segundo clique calculava
+     * `[] + [b]` e gravava `[b]`, apagando o primeiro. E como o rascunho nunca
+     * mudava, a etiqueta tambem nunca acendia - dava a impressao de que nada era
+     * selecionavel.
+     *
+     * Comeca com o que veio do pai para nao piscar vazio, e a assinatura corrige em
+     * seguida.
+     */
+    const [responsaveisUids, setResponsaveisUids] = useState<string[]>(event.responsaveis || []);
 
     // Post ainda nao criado nao tem id, logo nao tem onde pendurar subtarefa.
     const existe = Boolean(event.id);
@@ -77,8 +91,16 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
         lerEquipeAgencia().then(setEquipeLocal).catch(console.error);
     }, [equipeDoPai]);
 
+    // Sem botao de salvar no meio: quem esta com o mesmo post aberto ve a
+    // atribuicao mudar, e o proprio clique reflete pelo cache local do SDK.
+    useEffect(() => {
+        if (!empresaId || !existe) return;
+        return subscribeResponsaveis(empresaId, event.id, setResponsaveisUids);
+    }, [empresaId, event.id, existe]);
+
     const indice = useMemo(() => indexarPorUid(equipe), [equipe]);
-    const responsaveis = pessoasDeUids(event.responsaveis, indice);
+    // Pessoas resolvidas a partir da lista AO VIVO, nao do rascunho.
+    const responsaveis = pessoasDeUids(responsaveisUids, indice);
     const prog = progresso(subtarefas);
     const sla = slaAtual(event);
 
@@ -152,16 +174,18 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
     };
 
     const alternarResponsavel = async (uid: string) => {
-        const atuais = event.responsaveis || [];
-        const novos = atuais.includes(uid) ? atuais.filter(u => u !== uid) : [...atuais, uid];
+        // Base e a lista GRAVADA, nunca o rascunho - ver o comentario de
+        // `responsaveis`. Com a base errada, marcar o segundo apagava o primeiro.
+        const novos = responsaveisUids.includes(uid)
+            ? responsaveisUids.filter(u => u !== uid)
+            : [...responsaveisUids, uid];
         setErro('');
         try {
             // Grava no proprio evento: responsavel e propriedade do CONTEUDO. E o
             // MESMO campo que a aba de informação mostra - antes havia um campo
             // de texto livre "Responsável" ali e uma lista de pessoas aqui, dois
             // donos diferentes para o mesmo post.
-            await db.collection('empresas').doc(empresaId).collection('events').doc(event.id)
-                .update({ responsaveis: novos });
+            await salvarResponsaveis(empresaId, event.id, novos);
         } catch (e) {
             console.error(e);
             setErro('Não foi possível salvar os responsáveis.');
@@ -233,7 +257,7 @@ const ContentManagementPanel: React.FC<ContentManagementPanelProps> = ({
                             <p className="text-xs text-zinc-500">Ninguém na equipe da agência ainda.</p>
                         )}
                         {equipe.map(pessoa => {
-                            const marcado = (event.responsaveis || []).includes(pessoa.id);
+                            const marcado = responsaveisUids.includes(pessoa.id);
                             return (
                                 <button
                                     type="button"

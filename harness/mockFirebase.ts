@@ -214,6 +214,38 @@ const registrar = (op: string, path: string, data?: any) => {
     w.push({ op, path, data: data ? JSON.parse(JSON.stringify(data, (_k, v) => v instanceof Date ? v.toISOString() : v)) : undefined });
 };
 
+/**
+ * Escritas feitas na sessao, por caminho de documento.
+ *
+ * O mock nao tinha memoria: `update` registrava a chamada e a leitura seguinte
+ * devolvia o dado original. Isso bastava para provar "gravou no caminho certo" e era
+ * incapaz de provar QUALQUER comportamento ao vivo - a interface que reage a
+ * propria escrita parecia funcionar tanto certa quanto errada. Com o sobreposto e
+ * os ouvintes abaixo, o clique que grava e o listener que recebe passam a ser
+ * verificaveis.
+ */
+const sobreposto = new Map<string, any>();
+const ouvintesDoc = new Map<string, Set<(dados: any) => void>>();
+
+const baseDoDoc = (path: string) => {
+    const id = path.split('/').pop();
+    return pick(path).find((r: any) => r.id === id);
+};
+
+const dadosDoDoc = (path: string) => {
+    const base = baseDoDoc(path);
+    const extra = sobreposto.get(path);
+    if (!base && !extra) return undefined;
+    return { ...(base || {}), ...(extra || {}) };
+};
+
+const notificar = (path: string) => {
+    const dados = dadosDoDoc(path);
+    ouvintesDoc.get(path)?.forEach(cb =>
+        cb({ exists: dados !== undefined, id: path.split('/').pop(), data: () => dados || {} })
+    );
+};
+
 const makeDoc = (path: string): any => ({
     collection: (name: string) => makeCollection(`${path}/${name}`),
     // `exists` respondia true para QUALQUER caminho, inclusive documento que nao
@@ -221,18 +253,32 @@ const makeDoc = (path: string): any => ({
     // ficha de cliente novo batia em "ja existe" e nunca chegava a gravar, e a
     // auditoria via o formulario funcionando. Agora confere o id de verdade.
     get: async () => {
-        const id = path.split('/').pop();
-        const achado = pick(path).find((r: any) => r.id === id);
-        return { exists: Boolean(achado), id, data: () => achado || pick(path)[0] || {} };
+        const dados = dadosDoDoc(path);
+        return {
+            exists: dados !== undefined,
+            id: path.split('/').pop(),
+            data: () => dados || pick(path)[0] || {}
+        };
     },
     onSnapshot: (cb: any, _err?: any) => {
-        const id = path.split('/').pop();
-        const achado = pick(path).find((r: any) => r.id === id);
-        setTimeout(() => cb({ exists: Boolean(achado), id, data: () => achado || {} }), 0);
-        return () => {};
+        if (!ouvintesDoc.has(path)) ouvintesDoc.set(path, new Set());
+        ouvintesDoc.get(path)!.add(cb);
+        const dados = dadosDoDoc(path);
+        setTimeout(() => cb({ exists: dados !== undefined, id: path.split('/').pop(), data: () => dados || {} }), 0);
+        return () => { ouvintesDoc.get(path)?.delete(cb); };
     },
-    set: async (data: any) => registrar('set', path, data),
-    update: async (data: any) => registrar('update', path, data),
+    // Guarda e NOTIFICA, como o SDK de verdade faz pelo cache local antes de a
+    // escrita chegar ao servidor.
+    set: async (data: any) => {
+        registrar('set', path, data);
+        sobreposto.set(path, { ...(sobreposto.get(path) || {}), ...data });
+        notificar(path);
+    },
+    update: async (data: any) => {
+        registrar('update', path, data);
+        sobreposto.set(path, { ...(sobreposto.get(path) || {}), ...data });
+        notificar(path);
+    },
     delete: async () => registrar('delete', path)
 });
 
