@@ -21,6 +21,7 @@
  *  16. estudo de marca: secao dentro de Arquivos & Materiais, editavel pelos dois
  *  17. "Foco da Semana" saiu de todos os menus
  *  18. RESPONSAVEL: marcar o segundo nao apaga o primeiro, e reflete sem "Salvar"
+ *  19. carrossel REORDENAVEL, e o template de pastas e de ENTREGA
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -78,7 +79,9 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
 // ---------------------------------------------------------------- 1 e 2 e 3
 {
     const { page, erros } = await abrir('modal-novo');
-    checar(await page.getByText('Mídia da publicação').isVisible(),
+    // `exact`: o texto novo do campo de link cita "Mídia da publicação", e sem isso
+    // o localizador casa dois elementos e o modo estrito derruba o script.
+    checar(await page.getByText('Mídia da publicação', { exact: true }).isVisible(),
         '1. campo "Mídia da publicação" aparece em publicação NOVA');
 
     await page.getByRole('button', { name: /Escolher a pasta e enviar/ }).click();
@@ -715,6 +718,69 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(Boolean(salvo) && !('responsaveis' in (salvo.campos || {})),
         '18b. o payload do Salvar não inclui responsaveis');
     checar(erros.length === 0, `18b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 19
+// REORDENAR O CARROSSEL. A ordem era a de upload, sem volta: refazer a lamina 2
+// mandava a peca corrigida para o fim e obrigava a subir as seis de novo.
+{
+    const { page, erros } = await abrir('modal-midia');
+    await page.waitForTimeout(900);
+
+    const posicoes = page.locator('select[aria-label^="Posição da peça"]');
+    checar(await posicoes.count() === 3, `19. cada peça tem seletor de posição (${await posicoes.count()})`);
+    checar(await page.getByText('capa', { exact: true }).count() === 1,
+        '19. e a primeira peça é marcada como capa');
+
+    /**
+     * Ordem REAL das pecas na grade, pelo src.
+     *
+     * Le a grade que contem os seletores - nao qualquer `.grid` do modal - e usa o
+     * src, que identifica o arquivo mesmo com a imagem sem carregar (o host de
+     * exemplo nao existe). Antes eu tentava pelo `alt` da previa, que nessa tela
+     * nem chega a ser renderizado.
+     */
+    const ordem = () => page.evaluate(() => {
+        const sel = document.querySelector('select[aria-label^="Posição da peça"]');
+        const grade = sel && sel.closest('.grid');
+        return [...(grade ? grade.querySelectorAll('img') : [])]
+            .map(i => (i.getAttribute('src') || '').split('/').pop());
+    });
+
+    const antes = await ordem();
+    checar(antes.join(',') === 'peca-1.jpg,peca-2.jpg',
+        `19. ordem inicial é a do upload: ${antes.join(', ')}`);
+
+    // O caso do designer: a peca refeita esta atras e precisa ir para a frente.
+    await posicoes.nth(1).selectOption('0');
+    await page.waitForTimeout(700);
+    const depois = await ordem();
+    checar(depois.join(',') === 'peca-2.jpg,peca-1.jpg',
+        `19. escolher a posição move a peça: ${depois.join(', ')}`);
+
+    // Setas fazem o mesmo, um passo por vez.
+    await page.getByRole('button', { name: /Mover peça 1 para frente/ }).click();
+    await page.waitForTimeout(700);
+    const comSeta = await ordem();
+    checar(comSeta.join(',') === 'peca-1.jpg,peca-2.jpg',
+        `19. e a seta devolve um passo: ${comSeta.join(', ')}`);
+
+    checar(erros.length === 0, `19. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-reordenar.png' });
+    await page.close();
+}
+
+// O TEMPLATE agora e de ENTREGA, por tipo de peca - e nao de acervo.
+{
+    const { page } = await abrir('ficha-cliente');
+    await page.waitForTimeout(600);
+    const texto = await page.locator('body').innerText();
+    const esperados = ['Carrossel', 'Estático', 'Reels', 'Criativo', 'Contratos e Documentos'];
+    checar(esperados.every(t => texto.includes(t)),
+        `19b. o cadastro anuncia as pastas de entrega: ${esperados.filter(t => texto.includes(t)).join(', ')}`);
+    checar(!texto.includes('Identidade Visual') && !texto.includes('Referências'),
+        '19b. e não anuncia mais as de acervo (bruto foi para o Drive)');
     await page.close();
 }
 

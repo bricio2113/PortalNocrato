@@ -712,14 +712,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         {/* Link Material Bruto */}
                         <div>
                             <label className={labelStyle}>Link do Material (Bruto)</label>
-                            {/* O DRIVE E A ALTERNATIVA, e a tela diz isso. O campo
-                                continua aqui - material que ja mora no Drive, ou
-                                arquivo grande demais para o bucket, precisa de um
-                                lugar -, mas quem esta cadastrando hoje tem que saber
-                                que a peca sobe acima e nao depende deste link. */}
+                            {/* O DRIVE E O PAR, NAO A ALTERNATIVA.
+                                Este texto dizia "alternativa: use quando o material
+                                ficar no Drive em vez de subir acima" - certo quando o
+                                portal queria substituir o Drive, errado agora que a
+                                divisao e deliberada. O bruto mora no Drive e a peca
+                                pronta sobe acima; os dois campos convivem no mesmo
+                                post, cada um com o seu papel. */}
                             {!isClient && (
                                 <p className="text-[10px] text-zinc-600 -mt-1 mb-1.5 leading-relaxed">
-                                    Alternativa: use quando o material ficar no Drive em vez de subir acima.
+                                    O bruto deste conteúdo: captação, arquivo aberto, o que ainda vai ser
+                                    editado. A peça pronta sobe em “Mídia da publicação”, acima.
                                 </p>
                             )}
                             <div className="flex gap-2">

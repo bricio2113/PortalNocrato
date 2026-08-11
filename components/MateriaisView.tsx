@@ -73,12 +73,14 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
     const inputRef = useRef<HTMLInputElement>(null);
 
     /**
-     * Links do Drive salvos antes das pastas existirem.
+     * Atalhos para o material bruto no Drive.
      *
-     * Esta secao existe porque trocar a tela de links pelas pastas fez o material
-     * ja cadastrado DESAPARECER da interface - o dado continuava em drive_links,
-     * mas sem nenhum leitor. Isso e perda de acesso, nao migracao. Os links
-     * continuam aqui, marcados como antigos, ate a equipe subir os arquivos.
+     * A colecao nasceu como legado - links salvos antes das pastas existirem, que
+     * ficariam sem leitor nenhum se a tela de links simplesmente sumisse. Hoje ela e
+     * PARTE DO FLUXO: bruto, captacao e ensaio vivem no Drive (sync de desktop,
+     * tamanho, edicao no lugar) e as pastas acima guardam a entrega pronta. O que
+     * mudou nao foi o dado, foi o significado - e por isso o rotulo "cadastro
+     * antigo" saiu.
      */
     const [legados, setLegados] = useState<LinkLegado[]>([]);
     useEffect(() => {
@@ -207,7 +209,7 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                 subtitle={aba === 'marca'
                     ? 'O estudo que direciona a criação deste cliente.'
                     : naRaiz
-                        ? 'Tudo do cliente em um lugar só, sem sair do portal.'
+                        ? 'As entregas prontas do cliente. O bruto fica no Drive.'
                         : `${conteudo.pastas.length} pasta(s) · ${conteudo.arquivos.length} arquivo(s)`}
                 actions={aba === 'marca' ? null : (
                     <>
@@ -367,7 +369,7 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                     title={naRaiz ? 'Nenhuma pasta ainda' : 'Pasta vazia'}
                     description={naRaiz
                         ? (ehAgencia
-                            ? `Crie a estrutura padrão (${TEMPLATE_PASTAS.join(', ')}) ou monte as suas.`
+                            ? `Aqui ficam as ENTREGAS prontas, por tipo de peça (${TEMPLATE_PASTAS.join(', ')}). O material bruto fica no Drive.`
                             : 'A agência ainda não organizou as pastas deste cliente.')
                         : 'Envie arquivos ou crie uma subpasta. Imagem até 15 MB, vídeo até 300 MB, documento até 25 MB.'}
                 />
@@ -504,15 +506,21 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
             {/* Links antigos so na raiz: eles nao pertencem a pasta nenhuma. */}
             {naRaiz && legados.length > 0 && (
                 <div className="mt-8">
+                    {/* NAO E MAIS "cadastro antigo".
+                        A divisao passou a ser deliberada: bruto no Drive, entrega
+                        aqui. O link deixou de ser resto de migracao e virou a outra
+                        metade do fluxo - dizer "antigo" mandava a equipe remover
+                        justamente o que ela deve manter. */}
                     <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-white">Links do Drive</h3>
+                        <h3 className="text-sm font-semibold text-white">Bruto no Drive</h3>
                         <span className="text-[10px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
-                            {legados.length} · cadastro antigo
+                            {legados.length} {legados.length === 1 ? 'atalho' : 'atalhos'}
                         </span>
                     </div>
                     <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
-                        Salvos antes das pastas existirem. Continuam funcionando; conforme os
-                        arquivos subirem para as pastas acima, dá para removê-los.
+                        Captação, ensaios, arquivos abertos e o que ainda vai ser editado ficam no Drive —
+                        lá tem sync no desktop e não tem limite de tamanho. As pastas acima guardam a
+                        <strong className="text-zinc-300"> entrega pronta</strong>.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {legados.map(link => {
