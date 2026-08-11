@@ -227,6 +227,28 @@ const SCREENS: Record<string, React.ReactNode> = {
             userName="Pedro Vidal"
         />
     </div>,
+    // TESTE A/B: post com duas versoes secundarias, uma delas com metrica melhor que
+    // a principal - o caso em que a tela precisa dizer qual funcionou.
+    'modal-ab': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{
+                ...evento, id: 'ev0',
+                metrics: { alcance: 12000, interacoes: 300 },
+                variantes: [
+                    {
+                        id: 'vb', rotulo: 'B', copy: 'Legenda da versão B, mais direta.',
+                        midias: [{ url: 'https://exemplo.invalido/b1.jpg', path: 'pb1', contentType: 'image/jpeg', bytes: 1000 }],
+                        pastaMidia: ['Imagens'], metrics: { alcance: 9000, interacoes: 780 }
+                    },
+                    { id: 'vc', rotulo: 'C', copy: '', midias: [], pastaMidia: null }
+                ]
+            } as any}
+            onSave={(ev) => { (globalThis as any).__save = { campos: ev }; }}
+            onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
+            userEmail={profile.email} userName="Pedro Vidal"
+        />
+    </div>,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
         <EventDetailModal
             event={{ ...evento, id: 'ev0', responsaveis: ['u0', 'u3'] } as any}

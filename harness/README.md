@@ -60,6 +60,17 @@ Existe porque o campo de mídia sumiu da publicação nova sem nada acusar: ele
 estava atrás de `!isCreating` e nenhuma tela do harness renderizava um post sem
 id. As telas `modal-novo` e `midia-e-pastas` fecham esse buraco.
 
+No teste A/B (tela `modal-ab`) o risco não é a interface faltar, é ela editar a
+**versão errada**: com duas legendas na mesma tela, trocar de aba e continuar
+digitando grava o texto da B em cima do post que vai publicado. Por isso cada
+checagem compara o que está no campo com a versão que a aba diz estar aberta. A
+lógica pura por trás disso — qual rótulo entra, o que troca de lugar ao promover,
+qual metade é do rascunho e qual é do gravado — tem teste próprio:
+
+```bash
+npx tsx utils/variantes.test.mts
+```
+
 ## Limite
 
 O mock não valida regras do Firestore, permissão nem escrita — só layout e

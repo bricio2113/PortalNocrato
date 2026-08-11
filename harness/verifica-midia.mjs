@@ -24,6 +24,8 @@
  *  19. carrossel REORDENAVEL, e o template de pastas e de ENTREGA
  *  20. midia e ordem gravam NA HORA em post existente, e nao no "Salvar"
  *  21. atalho do Drive vive DENTRO da pasta
+ *  22. TESTE A/B: as abas trocam o conteudo editado, "tornar principal" troca de
+ *      lugar e "desligar" avisa antes de apagar
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -77,6 +79,20 @@ const abrir = async tela => {
     return { page, erros };
 };
 const writes = page => page.evaluate(() => globalThis.__writes || []);
+const corpo = page => page.locator('body').innerText();
+
+/**
+ * As abas de VERSAO do teste A/B.
+ *
+ * Escopadas no tablist delas de proposito: o modal tem outras abas (Conteúdo,
+ * Gestão, Conversa) e um `getByRole('tab')` solto conta as duas coisas juntas -
+ * "3 versões" passava com 5 elementos na tela.
+ */
+const versoes = page => page.getByRole('tablist', { name: 'Versões do conteúdo' }).getByRole('tab');
+// Pelo INICIO do nome: `hasText: 'C'` casa com "A · principal" (busca por trecho,
+// sem diferenciar maiuscula) e a escolha da aba vira sorteio.
+const versao = (page, rotulo) => page.getByRole('tablist', { name: 'Versões do conteúdo' })
+    .getByRole('tab', { name: rotulo === 'principal' ? /principal/ : new RegExp(`^${rotulo}\\b`) });
 
 // ---------------------------------------------------------------- 1 e 2 e 3
 {
@@ -884,6 +900,229 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
         '21. e a tela diz por quê');
     checar(erros.length === 0, `21. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
     await page.screenshot({ path: 'dist-harness/v-atalhos.png' });
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 22
+// TESTE A/B. O risco aqui nao e a tela nao aparecer: e ela aparecer e editar a
+// versao ERRADA. Com duas legendas na mesma tela, trocar de aba e continuar
+// digitando na principal grava o texto da B em cima do post que vai publicado -
+// e ninguem percebe ate o post sair. Por isso cada checagem abaixo compara o que
+// esta NO CAMPO com a versao que a aba diz estar aberta.
+{
+    const { page, erros } = await abrir('modal-ab');
+    await page.waitForTimeout(900);
+
+    // O modal tem OUTRAS abas (Conteúdo / Gestão / Conversa): sem escopar no
+    // tablist das versões, `getByRole('tab')` conta as duas coisas juntas.
+    const legenda = page.getByLabel('Legenda / Copy');
+    const abas = versoes(page);
+    checar(await abas.count() === 3,
+        `22. o post A/B mostra uma aba por versão (${await abas.count()}: A, B, C)`);
+    checar(await existe(abas.filter({ hasText: 'principal' })),
+        '22. a principal é uma delas, marcada como principal');
+    checar(await existe(page.getByRole('button', { name: 'Adicionar versão' })),
+        '22. e há como acrescentar outra versão');
+
+    // A VENCEDORA. 780 interacoes na B contra 300 na principal - e a principal tem
+    // alcance maior, que nao pode decidir (alcance se compra com verba).
+    checar(await existe(abas.filter({ hasText: '★' })),
+        '22. a versão com mais interação é marcada na aba');
+    checar((await corpo(page)).includes('Mais interação até agora: versão B'),
+        '22. e a tela diz qual é, por extenso');
+
+    // Aba A: legenda e midia DO POST.
+    const naA = await legenda.inputValue();
+    checar(naA.startsWith('Legenda de exemplo'),
+        `22. na principal, a legenda é a do post: "${naA.slice(0, 30)}"`);
+    checar((await corpo(page)).includes('3 arquivo(s)'),
+        '22. e as peças são as três do post');
+
+    // Aba B: o campo tem que TROCAR de conteudo - legenda e arquivo.
+    await versao(page, 'B').click();
+    await page.waitForTimeout(500);
+    checar(await legenda.inputValue() === 'Legenda da versão B, mais direta.',
+        `22. abrir a B troca a legenda editada: "${(await legenda.inputValue()).slice(0, 30)}"`);
+    checar((await corpo(page)).includes('1 arquivo(s)'),
+        '22. e troca também a peça (a B tem a sua)');
+    checar((await corpo(page)).includes('Editando a versão B'),
+        '22. a tela avisa qual versão está aberta');
+
+    // Aba C, criada vazia: se a legenda da B vazasse para ca, apareceria aqui.
+    await versao(page, 'C').click();
+    await page.waitForTimeout(400);
+    checar(await legenda.inputValue() === '',
+        `22. a C está vazia, sem herdar da B: "${await legenda.inputValue()}"`);
+
+    // E voltar para a principal devolve o texto dela, intacto.
+    await versao(page, 'principal').click();
+    await page.waitForTimeout(400);
+    checar(await legenda.inputValue() === naA,
+        '22. voltar para a principal devolve a legenda dela sem alteração');
+    checar(erros.length === 0, `22. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-ab.png' });
+    await page.close();
+}
+
+// A legenda da variante e TEXTO DIGITADO: espera o "Salvar", como a do post. O que
+// nao pode e o Salvar levar a legenda nova e devolver a MIDIA velha - a variante
+// vive dentro de um array, e gravar o array inteiro e a unica forma.
+{
+    const { page, erros } = await abrir('modal-ab');
+    await page.waitForTimeout(900);
+    const legenda = page.getByLabel('Legenda / Copy');
+    const daPrincipal = await legenda.inputValue();
+
+    await versao(page, 'B').click();
+    await page.waitForTimeout(400);
+    await legenda.fill('Legenda reescrita da B');
+    await page.getByRole('button', { name: 'Salvar', exact: true }).click();
+    await page.waitForTimeout(400);
+
+    const salvo = await page.evaluate(() => globalThis.__save?.campos || null);
+    const vb = (salvo?.variantes || []).find(v => v.id === 'vb');
+    checar(Boolean(vb) && vb.copy === 'Legenda reescrita da B',
+        `22b. o Salvar leva a legenda digitada na variante: "${vb ? vb.copy : '(nada)'}"`);
+    checar(Boolean(vb) && vb.midias?.[0]?.path === 'pb1',
+        `22b. e devolve a peça da variante junto, do que está gravado: ${vb ? JSON.stringify(vb.midias?.map(m => m.path)) : '-'}`);
+    checar(salvo?.copy === daPrincipal,
+        '22b. editar a B não encosta na legenda da principal');
+    checar((salvo?.variantes || []).length === 2,
+        `22b. e nenhuma versão se perde no caminho (${(salvo?.variantes || []).length})`);
+    checar(erros.length === 0, `22b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// CRIAR versao e ESTRUTURA, nao texto: grava na hora. Se esperasse o "Salvar", duas
+// pessoas com o modal aberto criariam a "B" cada uma e a segunda apagaria a primeira.
+{
+    const { page, erros } = await abrir('modal-ab');
+    await page.waitForTimeout(900);
+    await page.getByRole('button', { name: 'Adicionar versão' }).click();
+    await page.waitForTimeout(700);
+
+    const gravou = (await writes(page))
+        .filter(x => x.op === 'update' && Array.isArray(x.data?.variantes)).pop();
+    checar(Boolean(gravou) && gravou.path.includes('/events/ev0'),
+        `22c. criar versão grava no evento na hora: ${gravou ? gravou.path : '(nada)'}`);
+    checar(Boolean(gravou) && gravou.data.variantes.length === 3
+        && gravou.data.variantes[2].rotulo === 'D',
+        `22c. e a nova entra como D: ${gravou ? gravou.data.variantes.map(v => v.rotulo).join(',') : '-'}`);
+    checar(await versoes(page).count() === 4,
+        `22c. a aba nova aparece sem recarregar (${await versoes(page).count()})`);
+    checar(await page.getByLabel('Legenda / Copy').inputValue() === '',
+        '22c. e já abre nela, vazia, para escrever');
+    checar(erros.length === 0, `22c. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// TORNAR PRINCIPAL. A principal e o que o cliente ve, o que a grade mostra e o que
+// vai publicado - por isso promover TROCA o conteudo de lugar em vez de mudar um
+// ponteiro: nenhuma dessas telas precisa saber que variante existe.
+{
+    const { page, erros } = await abrir('modal-ab');
+    await page.waitForTimeout(900);
+    const legenda = page.getByLabel('Legenda / Copy');
+    const daPrincipal = await legenda.inputValue();
+
+    await versao(page, 'B').click();
+    await page.waitForTimeout(400);
+    await page.getByRole('button', { name: 'tornar principal' }).click();
+    await page.waitForTimeout(800);
+
+    const gravou = (await writes(page))
+        .filter(x => x.op === 'update' && Array.isArray(x.data?.variantes)).pop();
+    checar(Boolean(gravou) && gravou.data.copy === 'Legenda da versão B, mais direta.',
+        `22d. a legenda da B sobe para o post, gravada na hora: "${gravou ? String(gravou.data.copy).slice(0, 30) : '(nada)'}"`);
+    checar(Boolean(gravou) && gravou.data.variantes.find(v => v.id === 'vb')?.copy === daPrincipal,
+        '22d. e a antiga principal desce para a versão B');
+    checar(Boolean(gravou) && gravou.data.midias?.[0]?.path === 'pb1',
+        `22d. a peça troca junto com a legenda: ${gravou ? JSON.stringify(gravou.data.midias?.map(m => m.path)) : '-'}`);
+
+    // A tela volta para a principal - agora com o conteudo da B dentro dela.
+    checar(await versao(page, 'principal').getAttribute('aria-selected') === 'true',
+        '22d. depois de promover, a tela mostra a principal');
+    checar(await legenda.inputValue() === 'Legenda da versão B, mais direta.',
+        '22d. com o conteúdo que acabou de subir');
+    checar(erros.length === 0, `22d. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// DESLIGAR apaga legenda e escolha de pecas das secundarias. Confirmacao nao e
+// enfeite: um clique errado aqui joga fora o trabalho de outra pessoa.
+{
+    const { page, erros } = await abrir('modal-ab');
+    await page.waitForTimeout(900);
+
+    let perguntou = '';
+    let responder = false;
+    page.on('dialog', async d => { perguntou = d.message(); responder ? await d.accept() : await d.dismiss(); });
+
+    await page.getByRole('button', { name: 'desligar', exact: true }).click();
+    await page.waitForTimeout(600);
+    checar(/vers(ã|a)o/i.test(perguntou) && /2/.test(perguntou),
+        `22e. desligar pergunta antes, dizendo quantas versões saem: "${perguntou.slice(0, 60)}"`);
+    checar(await versoes(page).count() === 3,
+        `22e. recusar mantém as versões (${await versoes(page).count()})`);
+    checar((await writes(page)).filter(x => Array.isArray(x.data?.variantes)).length === 0,
+        '22e. e não grava nada');
+
+    responder = true;
+    await page.getByRole('button', { name: 'desligar', exact: true }).click();
+    await page.waitForTimeout(800);
+    const gravou = (await writes(page))
+        .filter(x => x.op === 'update' && Array.isArray(x.data?.variantes)).pop();
+    checar(Boolean(gravou) && gravou.data.variantes.length === 0,
+        `22e. confirmar remove as secundárias: ${gravou ? gravou.data.variantes.length + ' restante(s)' : '(não gravou)'}`);
+    checar(await versoes(page).count() === 0
+        && await existe(page.getByRole('button', { name: /Criar versão B/ })),
+        '22e. e a tela volta a oferecer o teste A/B em vez das abas');
+
+    // O post continua inteiro: desligar tira as VERSOES, nao o conteudo.
+    checar((await page.getByLabel('Legenda / Copy').inputValue()).startsWith('Legenda de exemplo'),
+        '22e. a legenda da principal fica');
+    checar(erros.length === 0, `22e. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// MARCAR O A/B JA NA CRIACAO. Em post novo nao ha documento para gravar na hora,
+// entao as versoes viajam no rascunho ate o "Agendar" - se ficassem fora dele, a
+// pessoa escreveria a versao B na criacao e ela nasceria sem nada.
+{
+    const { page, erros } = await abrir('modal-novo');
+    await page.waitForTimeout(600);
+
+    checar(await existe(page.getByRole('button', { name: /Criar versão B/ })),
+        '22g. na criação já dá para marcar o conteúdo como A/B');
+    await page.getByRole('button', { name: /Criar versão B/ }).click();
+    await page.waitForTimeout(500);
+    checar(await versoes(page).count() === 2,
+        `22g. e as abas aparecem antes de o post existir (${await versoes(page).count()})`);
+
+    await page.getByLabel('Legenda / Copy').fill('Legenda da B escrita na criação');
+    await versao(page, 'principal').click();
+    await page.waitForTimeout(300);
+    await page.getByLabel('Legenda / Copy').fill('Legenda da principal');
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
+    await page.waitForTimeout(400);
+
+    const salvo = await page.evaluate(() => globalThis.__save?.campos || null);
+    checar(salvo?.copy === 'Legenda da principal',
+        `22g. o Agendar leva a legenda da principal: "${salvo ? salvo.copy : '(nada)'}"`);
+    checar((salvo?.variantes || []).length === 1
+        && salvo.variantes[0].copy === 'Legenda da B escrita na criação',
+        `22g. e a versão B nasce junto, com o texto dela: "${salvo?.variantes?.[0]?.copy || '(nada)'}"`);
+    checar(erros.length === 0, `22g. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// O CLIENTE nao ve versao nenhuma: ele aprova o post, e o post e a principal. Uma
+// aba "B" na tela dele transformaria uma decisao interna em pergunta ao cliente.
+{
+    const { page } = await abrir('modal-cliente');
+    await page.waitForTimeout(700);
+    checar(await versoes(page).count() === 0 && !(await corpo(page)).includes('Teste A/B'),
+        '22f. o cliente não vê o bloco de versões');
     await page.close();
 }
 

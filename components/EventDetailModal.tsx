@@ -6,7 +6,14 @@ import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTi
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES, stageView } from '../utils/eventState';
-import { setApproval, saveMetrics, subscribeResponsaveis, subscribeMidiaDoPost, salvarMidiaDoPost } from '../utils/posts';
+import {
+    setApproval, saveMetrics, subscribeResponsaveis, subscribeMidiaDoPost,
+    salvarMidiaDoPost, salvarConteudoDoPost
+} from '../utils/posts';
+import {
+    novaVariante, promoverVariante, mesclarVariantes, ehTesteAB, versaoComMaisInteracao
+} from '../utils/variantes';
+import { VarianteConteudo } from '../types';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
 import PostTimeline from './PostTimeline';
@@ -19,7 +26,8 @@ import {
     X, Trash2, Calendar, User, Link as LinkIcon,
     Save, ExternalLink, Instagram, Linkedin, Facebook,
     Youtube, Twitter, Globe, Check, Loader2, AlertTriangle,
-    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock, ListChecks, FileText
+    ThumbsUp, MessageSquareWarning, ImageOff, BarChart3, FileVideo, Clock, ListChecks, FileText,
+    FlaskConical, Plus
 } from 'lucide-react';
 
 /**
@@ -151,13 +159,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
      * Publicacao NOVA nao entra aqui: sem id nao ha documento para atualizar, e a
      * lista viaja no rascunho ate a criacao (ver `paraSalvar`).
      */
-    const [midiaAoVivo, setMidiaAoVivo] = useState<{ midias: typeof event.midias; pastaMidia: string[] | null }>({
+    const [midiaAoVivo, setMidiaAoVivo] = useState<{
+        midias: typeof event.midias;
+        pastaMidia: string[] | null;
+        variantes: VarianteConteudo[];
+    }>({
         midias: event.midias || [],
-        pastaMidia: event.pastaMidia || null
+        pastaMidia: event.pastaMidia || null,
+        variantes: event.variantes || []
     });
     const [midiaErro, setMidiaErro] = useState('');
     useEffect(() => {
-        setMidiaAoVivo({ midias: event.midias || [], pastaMidia: event.pastaMidia || null });
+        setMidiaAoVivo({
+            midias: event.midias || [],
+            pastaMidia: event.pastaMidia || null,
+            variantes: event.variantes || []
+        });
         if (!empresaId || !event.id) return;
         return subscribeMidiaDoPost(empresaId, event.id, setMidiaAoVivo);
     }, [empresaId, event.id]);
@@ -174,7 +191,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             setEditableEvent(prev => ({ ...prev, midias, pastaMidia }));
             return;
         }
-        setMidiaAoVivo({ midias, pastaMidia });
+        setMidiaAoVivo(prev => ({ ...prev, midias, pastaMidia }));
         setMidiaErro('');
         try {
             await salvarMidiaDoPost(empresaId, event.id, midias || [], pastaMidia);
@@ -182,6 +199,131 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             console.error(e);
             setMidiaErro('Não foi possível salvar a mídia. Confira sua conexão — a ordem não foi gravada.');
         }
+    };
+
+    // ---- TESTE A/B --------------------------------------------------------
+    //
+    // A variante ATIVA e so estado de tela: null = principal (o proprio evento).
+    // Trocar de aba nao muda dado nenhum - so muda qual conteudo o formulario edita.
+    const [varianteAtiva, setVarianteAtiva] = useState<string | null>(null);
+    const [abErro, setAbErro] = useState('');
+
+    /**
+     * Variantes que a tela usa: ESTRUTURA do gravado, TEXTO do rascunho.
+     *
+     * A midia e a existencia de cada variante sao gravadas na hora; a legenda e
+     * digitada e espera o "Salvar". Sem juntar as duas metades, a tela mostraria a
+     * legenda velha depois de um upload, ou perderia o upload ao salvar a legenda.
+     */
+    const variantesVivas = event.id
+        ? mesclarVariantes(midiaAoVivo.variantes, editableEvent.variantes || [])
+        : (editableEvent.variantes || []);
+    const atual = variantesVivas.find(v => v.id === varianteAtiva) || null;
+    const testeAB = ehTesteAB({ variantes: variantesVivas });
+    const disputa = versaoComMaisInteracao({ ...editableEvent, variantes: variantesVivas });
+
+    // A variante escolhida pode ter sido removida por outra pessoa; sem isto o
+    // formulario ficaria editando o vazio.
+    useEffect(() => {
+        if (varianteAtiva && !variantesVivas.some(v => v.id === varianteAtiva)) setVarianteAtiva(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [variantesVivas.map(v => v.id).join(','), varianteAtiva]);
+
+    /**
+     * Grava a lista de variantes.
+     *
+     * Estrutura (criar, remover, promover) e acao atomica: nao existe meia-promocao
+     * esperando um botao. Post ainda sem id fica no rascunho e vai junto na criacao.
+     */
+    const aplicarVariantes = async (lista: VarianteConteudo[], extra?: Partial<CalendarEvent>) => {
+        setAbErro('');
+        if (!empresaId || !event.id) {
+            setEditableEvent(prev => ({ ...prev, ...extra, variantes: lista }));
+            return;
+        }
+        setMidiaAoVivo(prev => ({ ...prev, variantes: lista }));
+        if (extra) setEditableEvent(prev => ({ ...prev, ...extra }));
+        try {
+            await salvarConteudoDoPost(empresaId, event.id, { ...extra, variantes: lista });
+        } catch (e) {
+            console.error(e);
+            setAbErro('Não foi possível salvar as versões. Confira sua conexão.');
+        }
+    };
+
+    const criarVariante = () => {
+        const nova = novaVariante(variantesVivas);
+        void aplicarVariantes([...variantesVivas, nova]);
+        setVarianteAtiva(nova.id);
+    };
+
+    const removerVariante = (v: VarianteConteudo) => {
+        // Aviso com o que se perde: a variante carrega legenda e peca propria, e o
+        // arquivo continua na pasta do cliente - o que sai e a versao, nao o material.
+        if (!window.confirm(
+            `Remover a versão ${v.rotulo}? A legenda e a escolha de peças dela são perdidas ` +
+            `(os arquivos continuam em Arquivos & Materiais).`
+        )) return;
+        if (varianteAtiva === v.id) setVarianteAtiva(null);
+        void aplicarVariantes(variantesVivas.filter(x => x.id !== v.id));
+    };
+
+    /**
+     * Promove a variante ativa a principal.
+     *
+     * TROCA o conteudo dos dois lados (ver utils/variantes.ts): o que o cliente ve, o
+     * que a grade mostra e o que vai publicado e sempre a principal. Sem a troca,
+     * "escolher a versão B" precisaria que todas essas telas soubessem de variante.
+     */
+    const promover = (v: VarianteConteudo) => {
+        const patch = promoverVariante({ ...editableEvent, variantes: variantesVivas }, v.id);
+        if (!patch) return;
+        const { variantes, ...camposDoEvento } = patch;
+        setEditableEvent(prev => ({ ...prev, ...camposDoEvento }));
+        setVarianteAtiva(null);
+        void aplicarVariantes(variantes || [], camposDoEvento);
+    };
+
+    /** Liga/desliga o teste A/B. Ligar cria a versão B; desligar apaga as secundárias. */
+    const alternarAB = () => {
+        if (!testeAB) { criarVariante(); return; }
+        if (!window.confirm(
+            `Desligar o teste A/B remove ${variantesVivas.length} versão(ões) secundária(s), ` +
+            `com a legenda e as peças escolhidas nelas. A versão principal fica.`
+        )) return;
+        setVarianteAtiva(null);
+        void aplicarVariantes([]);
+    };
+
+    /** Edita um campo de conteudo - da principal ou da variante ativa. */
+    const editarConteudo = (campo: 'copy' | 'previewUrl', valor: string) => {
+        if (!atual) { handleChange(campo, valor); return; }
+        setEditableEvent(prev => ({
+            ...prev,
+            variantes: (prev.variantes && prev.variantes.length ? prev.variantes : variantesVivas)
+                .map(v => v.id === atual.id ? { ...v, [campo]: valor } : v)
+        }));
+    };
+
+    /**
+     * O conteudo da versao ATIVA, num lugar so.
+     *
+     * Sem isto, cada campo do formulario repetiria o ternario "e variante ou e a
+     * principal?" - e bastaria esquecer um para o formulario editar a legenda da B e
+     * a midia da A ao mesmo tempo.
+     */
+    const conteudoAtivo = {
+        copy: atual ? (atual.copy || '') : (editableEvent.copy || ''),
+        previewUrl: atual ? (atual.previewUrl || '') : (editableEvent.previewUrl || ''),
+        midias: atual ? (atual.midias || []) : ((event.id ? midiaAoVivo.midias : editableEvent.midias) || []),
+        pastaMidia: atual ? (atual.pastaMidia || null) : (event.id ? midiaAoVivo.pastaMidia : (editableEvent.pastaMidia || null)),
+        metrics: atual ? (atual.metrics || {}) : (editableEvent.metrics || {})
+    };
+
+    const aplicarMidiaDaVersao = (midias: typeof event.midias, pasta: string[] | null) => {
+        if (!atual) { void aplicarMidia(midias, pasta); return; }
+        void aplicarVariantes(variantesVivas.map(v =>
+            v.id === atual.id ? { ...v, midias: midias || [], pastaMidia: pasta } : v));
     };
 
     const isClient = userRole === 'cliente';
@@ -214,7 +356,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         editableEvent.previewUrl || editableEvent.coverUrl || editableEvent.finalUrl || editableEvent.url
     );
     const hasMetrics = METRIC_FIELDS.some(({ key }) => {
-        const v = editableEvent.metrics?.[key];
+        const v = conteudoAtivo.metrics?.[key as keyof EventMetrics];
         return v !== null && v !== undefined;
     });
     const stage = getClientStage({ status: editableEvent.status, approval: localApproval });
@@ -241,7 +383,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         // informacoes diferentes para o cliente.
         const parsed = raw.trim() === '' ? null : Number(raw);
         const value = parsed === null || Number.isNaN(parsed) ? null : Math.max(0, Math.round(parsed));
-        setEditableEvent(prev => ({ ...prev, metrics: { ...prev.metrics, [field]: value } }));
+        // METRICA POR VERSAO: e o que responde "qual funcionou". Numero so no post nao
+        // distingue as versoes, e um A/B que nao se mede e trabalho dobrado.
+        if (varianteAtiva) {
+            setEditableEvent(prev => ({
+                ...prev,
+                variantes: (prev.variantes && prev.variantes.length ? prev.variantes : variantesVivas)
+                    .map(v => v.id === varianteAtiva ? { ...v, metrics: { ...v.metrics, [field]: value } } : v)
+            }));
+        } else {
+            setEditableEvent(prev => ({ ...prev, metrics: { ...prev.metrics, [field]: value } }));
+        }
         setMetricsSaved(false);
     };
 
@@ -249,7 +401,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         if (!empresaId || !event.id || metricsBusy) return;
         setMetricsBusy(true);
         try {
-            await saveMetrics(empresaId, event.id, editableEvent.metrics || {});
+            if (varianteAtiva) {
+                // A metrica da variante vive dentro do array: escrever o array inteiro
+                // e o unico jeito, o Firestore nao atualiza item por indice.
+                const lista = (editableEvent.variantes && editableEvent.variantes.length
+                    ? editableEvent.variantes : variantesVivas)
+                    .map(v => v.id === varianteAtiva
+                        ? { ...v, metrics: { ...v.metrics, atualizadoEm: new Date() } }
+                        : v);
+                await salvarConteudoDoPost(empresaId, event.id, { variantes: lista });
+                setMidiaAoVivo(prev => ({ ...prev, variantes: lista }));
+            } else {
+                await saveMetrics(empresaId, event.id, editableEvent.metrics || {});
+            }
             setMetricsSaved(true);
         } catch (err) {
             console.error(err);
@@ -274,11 +438,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
      * removeria, mas depender disso deixaria a garantia num lugar que nao e este.
      */
     const paraSalvar = (): CalendarEvent => {
-        const { responsaveis, midias, pastaMidia, ...resto } = editableEvent;
-        // Em post NOVO a midia ainda vive no rascunho - sem id nao havia onde
-        // gravar -, entao ela PRECISA viajar na criacao. Tirar sempre faria a
+        const { responsaveis, midias, pastaMidia, variantes, ...resto } = editableEvent;
+        // Em post NOVO a midia e as variantes ainda vivem no rascunho - sem id nao
+        // havia onde gravar -, entao PRECISAM viajar na criacao. Tirar sempre faria a
         // publicacao nascer sem as pecas que a pessoa acabou de subir.
-        return (event.id ? resto : { ...resto, midias, pastaMidia }) as CalendarEvent;
+        if (!event.id) return { ...resto, midias, pastaMidia, variantes } as CalendarEvent;
+
+        // Post existente: midia e estrutura ja estao gravadas. As variantes vao
+        // MESCLADAS - a legenda que foi digitada aqui, a midia e a metrica do que
+        // esta gravado. Mandar o array do rascunho levaria embora o upload que
+        // alguem fez numa variante com este modal aberto.
+        return (variantes && variantes.length
+            ? { ...resto, variantes: mesclarVariantes(midiaAoVivo.variantes, variantes) }
+            : resto) as CalendarEvent;
     };
 
     // Ha edicao pendente? Comparar o objeto serializado cobre todos os campos
@@ -520,7 +692,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         aqui na hora, senao a simulacao do feed mostra uma ordem que
                         o post nao tem mais. */}
                     <PostPreview
-                        event={event.id ? { ...editableEvent, midias: midiaAoVivo.midias } : editableEvent}
+                        event={{ ...editableEvent, copy: conteudoAtivo.copy, midias: conteudoAtivo.midias, previewUrl: conteudoAtivo.previewUrl || undefined }}
                         handle={perfilHandle}
                     />
 
@@ -729,6 +901,118 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         )}
                     </div>
 
+                    {/* TESTE A/B - as versoes deste conteudo.
+                        Fica ENTRE o que e do post (data, status, responsaveis) e o que
+                        varia (peca, legenda, previa, resultado): a barra e a linha
+                        divisoria, e o que esta abaixo dela pertence a versao aberta.
+
+                        O cliente nao ve nada disso: ele recebe a versao principal e
+                        aprova o post, nao escolhe entre versoes internas. */}
+                    {!isClient && (
+                        <div className="border border-white/10 rounded-card overflow-hidden">
+                            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 bg-white/[0.03]">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400">
+                                    <FlaskConical className="w-3.5 h-3.5 text-[#FABE01]" /> Teste A/B
+                                </span>
+
+                                {testeAB ? (
+                                    <>
+                                        <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Versões do conteúdo">
+                                            <button
+                                                role="tab"
+                                                aria-selected={!varianteAtiva}
+                                                onClick={() => setVarianteAtiva(null)}
+                                                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                                                    !varianteAtiva ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                                                }`}
+                                            >
+                                                A · principal
+                                            </button>
+                                            {variantesVivas.map(v => (
+                                                <button
+                                                    key={v.id}
+                                                    role="tab"
+                                                    aria-selected={varianteAtiva === v.id}
+                                                    onClick={() => setVarianteAtiva(v.id)}
+                                                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                                                        varianteAtiva === v.id ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                                                    }`}
+                                                >
+                                                    {v.rotulo}
+                                                    {disputa?.rotulo === v.rotulo && ' ★'}
+                                                </button>
+                                            ))}
+                                            {variantesVivas.length < 5 && (
+                                                <button
+                                                    onClick={criarVariante}
+                                                    aria-label="Adicionar versão"
+                                                    className="px-2 py-1 rounded-full text-[11px] font-semibold text-zinc-400 hover:text-white border border-dashed border-white/15 hover:border-white/30 transition-colors"
+                                                >
+                                                    + versão
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="ml-auto flex items-center gap-1.5">
+                                            {atual && (
+                                                <>
+                                                    <button
+                                                        onClick={() => promover(atual)}
+                                                        className="text-[11px] font-semibold text-[#FABE01] hover:bg-[#FABE01]/10 px-2 py-1 rounded-full transition-colors"
+                                                    >
+                                                        tornar principal
+                                                    </button>
+                                                    <button
+                                                        onClick={() => removerVariante(atual)}
+                                                        aria-label={`Remover versão ${atual.rotulo}`}
+                                                        className="p-1.5 rounded-full text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </>
+                                            )}
+                                            <button
+                                                onClick={alternarAB}
+                                                className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded-full transition-colors"
+                                            >
+                                                desligar
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-[11px] text-zinc-500 leading-relaxed flex-1 min-w-[12rem]">
+                                            Mesma entrega, versões diferentes de legenda e peça — para medir qual funciona.
+                                        </p>
+                                        <button
+                                            onClick={alternarAB}
+                                            className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-zinc-200 px-3 py-1.5 rounded-full transition-colors"
+                                        >
+                                            <Plus className="w-3 h-3" /> Criar versão B
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            {testeAB && (
+                                <div className="px-3 py-2 border-t border-white/5 bg-black/20">
+                                    <p className="text-[10px] text-zinc-500 leading-relaxed">
+                                        {atual
+                                            ? `Editando a versão ${atual.rotulo}: peça, legenda, prévia e resultado abaixo são dela. Data, status, prazo e responsáveis são do post e valem para todas.`
+                                            : 'Editando a principal — é a versão que o cliente vê, que aparece na grade e que vai publicada.'}
+                                        {disputa && ` · Mais interação até agora: versão ${disputa.rotulo}.`}
+                                    </p>
+                                </div>
+                            )}
+
+                            {abErro && (
+                                <p className="text-red-400 text-xs px-3 py-2 flex items-start gap-1.5 border-t border-white/5">
+                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {abErro}
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {/* LINKS: MATERIAL BRUTO E FINALIZADO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         {/* UPLOAD DIRETO.
@@ -751,12 +1035,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 <MediaUpload
                                     empresaId={empresaId}
                                     eventId={event.id}
-                                    midias={(event.id ? midiaAoVivo.midias : editableEvent.midias) || []}
-                                    onChange={midias => aplicarMidia(midias, event.id ? midiaAoVivo.pastaMidia : (editableEvent.pastaMidia || null))}
-                                    titulo={editableEvent.title}
-                                    pastaMidia={event.id ? midiaAoVivo.pastaMidia : editableEvent.pastaMidia}
-                                    onPastaMidia={caminho => aplicarMidia((event.id ? midiaAoVivo.midias : editableEvent.midias) || [], caminho)}
-                                    onThumb={thumb => { thumbPendente.current = thumb; }}
+                                    midias={conteudoAtivo.midias}
+                                    onChange={midias => aplicarMidiaDaVersao(midias, conteudoAtivo.pastaMidia)}
+                                    // Titulo da PASTA: numa variante o nome ganha o
+                                    // rotulo, senao B cairia na mesma pasta de A e as
+                                    // duas versoes se misturariam no material.
+                                    titulo={atual ? `${editableEvent.title} - ${atual.rotulo}` : editableEvent.title}
+                                    pastaMidia={conteudoAtivo.pastaMidia}
+                                    onPastaMidia={caminho => aplicarMidiaDaVersao(conteudoAtivo.midias, caminho)}
+                                    onThumb={thumb => { if (!atual) thumbPendente.current = thumb; }}
                                     disabled={isClient}
                                 />
                                 {midiaErro && (
@@ -824,8 +1111,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             <div className="relative">
                                 <input
                                     type="text"
-                                    value={editableEvent.previewUrl || ''}
-                                    onChange={(e) => handleChange('previewUrl', e.target.value)}
+                                    value={conteudoAtivo.previewUrl}
+                                    onChange={(e) => editarConteudo('previewUrl', e.target.value)}
                                     placeholder="Link direto de imagem (.jpg, .png)..."
                                     className={inputStyle}
                                 />
@@ -840,10 +1127,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <div className="flex flex-col flex-1 min-h-[150px]">
                         <label className={labelStyle}>Legenda / Copy</label>
                         <textarea
-                            value={editableEvent.copy || ''}
+                            value={conteudoAtivo.copy}
+                            // O <label> acima nao esta associado ao campo (nao ha
+                            // htmlFor/id), entao sem isto o leitor de tela anuncia
+                            // "campo de texto" sem dizer qual - e com o teste A/B
+                            // ha dois textareas longos na mesma tela.
+                            aria-label="Legenda / Copy"
                             readOnly={isClient}
-                            onChange={(e) => handleChange('copy', e.target.value)}
-                            placeholder="Escreva a legenda do post aqui..."
+                            onChange={(e) => editarConteudo('copy', e.target.value)}
+                            placeholder={atual
+                                ? `Legenda da versão ${atual.rotulo}...`
+                                : 'Escreva a legenda do post aqui...'}
                             className={`${inputStyle} flex-1 resize-none min-h-[160px] leading-relaxed text-base`}
                         />
                     </div>
@@ -865,7 +1159,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                             <div key={key} className="bg-[#111111] border border-white/10 rounded-card p-4">
                                                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{label}</p>
                                                 <p className="text-xl font-bold text-white">
-                                                    {formatMetric(editableEvent.metrics?.[key])}
+                                                    {formatMetric(conteudoAtivo.metrics?.[key])}
                                                 </p>
                                             </div>
                                         ))}
@@ -881,7 +1175,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                                     type="number"
                                                     min={0}
                                                     inputMode="numeric"
-                                                    value={editableEvent.metrics?.[key] ?? ''}
+                                                    value={conteudoAtivo.metrics?.[key] ?? ''}
                                                     onChange={(e) => handleMetricsChange(key, e.target.value)}
                                                     placeholder="—"
                                                     className={inputStyle}
@@ -905,9 +1199,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                                     <Check className="w-3.5 h-3.5" /> Salvo
                                                 </span>
                                             )}
-                                            {editableEvent.metrics?.atualizadoEm && (
+                                            {conteudoAtivo.metrics?.atualizadoEm && (
                                                 <span className="text-zinc-600 text-xs">
-                                                    Atualizado em {editableEvent.metrics.atualizadoEm.toLocaleDateString('pt-BR')}
+                                                    Atualizado em {conteudoAtivo.metrics.atualizadoEm.toLocaleDateString('pt-BR')}
                                                 </span>
                                             )}
                                         </div>
