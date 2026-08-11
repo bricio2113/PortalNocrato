@@ -22,6 +22,8 @@
  *  17. "Foco da Semana" saiu de todos os menus
  *  18. RESPONSAVEL: marcar o segundo nao apaga o primeiro, e reflete sem "Salvar"
  *  19. carrossel REORDENAVEL, e o template de pastas e de ENTREGA
+ *  20. midia e ordem gravam NA HORA em post existente, e nao no "Salvar"
+ *  21. atalho do Drive vive DENTRO da pasta
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -781,6 +783,107 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
         `19b. o cadastro anuncia as pastas de entrega: ${esperados.filter(t => texto.includes(t)).join(', ')}`);
     checar(!texto.includes('Identidade Visual') && !texto.includes('Referências'),
         '19b. e não anuncia mais as de acervo (bruto foi para o Drive)');
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 20
+// MIDIA SEM DEPENDER DO "SALVAR". A ordem do carrossel ficava no rascunho: reordenar
+// e fechar sem salvar perdia o trabalho.
+{
+    const { page, erros } = await abrir('modal-midia');
+    await page.waitForTimeout(900);
+
+    const posicoes = page.locator('select[aria-label^="Posição da peça"]');
+    await posicoes.nth(1).selectOption('0');
+    await page.waitForTimeout(800);
+
+    const w = await writes(page);
+    const gravou = w.filter(x => x.op === 'update' && Array.isArray(x.data?.midias)).pop();
+    checar(Boolean(gravou) && gravou.path.includes('/events/ev0'),
+        `20. reordenar grava no evento na hora: ${gravou ? gravou.path : '(nada)'}`);
+    checar(Boolean(gravou) && gravou.data.midias.length === 3
+        && gravou.data.midias[0].path === 'p2',
+        `20. e a lista gravada está na ordem nova: ${gravou ? gravou.data.midias.map(m => m.path).join(',') : '-'}`);
+
+    // A previa le a MESMA lista ao vivo: o contador do carrossel prova que as tres
+    // pecas chegaram nela, e nao so na grade de upload.
+    checar(await page.getByText('1/3').count() === 1,
+        '20. a prévia do feed usa a lista ao vivo');
+    checar(erros.length === 0, `20. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// Em post NOVO a midia continua no rascunho - sem id nao ha o que atualizar - e
+// PRECISA viajar na criacao, senao a publicacao nasce sem as pecas.
+{
+    const { page } = await abrir('modal-novo');
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: /Escolher a pasta e enviar/ }).click();
+    await page.waitForTimeout(500);
+    const picker = page.getByRole('dialog', { name: 'Escolher pasta' });
+    await picker.getByRole('button', { name: /^Imagens/ }).click();
+    await page.waitForTimeout(400);
+    await picker.getByRole('button', { name: /Usar “Imagens”/ }).click();
+    await page.waitForTimeout(400);
+    await page.locator('input[type=file]').first()
+        .setInputFiles({ name: 'nova.png', mimeType: 'image/png', buffer: PNG });
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
+    await page.waitForTimeout(400);
+    const salvo = await page.evaluate(() => globalThis.__save || null);
+    checar(Boolean(salvo) && salvo.midias === 1 && Array.isArray(salvo.campos?.midias),
+        `20b. post novo leva a mídia na criação: ${salvo ? salvo.midias : '-'} arquivo(s)`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 21
+// ATALHO DO DRIVE DENTRO DA PASTA. Antes era uma lista separada na raiz - segunda
+// navegacao na mesma tela, sem relacao com a arvore.
+{
+    const { page, erros } = await abrir('materiais');
+    await page.waitForTimeout(900);
+
+    // Na raiz aparecem os dois do cadastro ANTIGO (sem `caminho`).
+    checar(await page.getByText('Atalhos · bruto no Drive').count() === 1,
+        '21. a raiz mostra a seção de atalhos');
+    checar(await page.getByText('Material antigo sem pasta').count() === 1,
+        '21. atalho do cadastro antigo continua aparecendo (sem caminho = raiz)');
+
+    // E DENTRO de Imagens aparece o atalho daquela pasta, nao o da raiz.
+    await page.locator('button:has-text("Imagens")').first().click();
+    await page.waitForTimeout(900);
+    checar(await page.getByText('Captação Agosto (bruto)').count() === 1,
+        '21. dentro da pasta aparece o atalho daquela pasta');
+    checar(await page.getByText('Material antigo sem pasta').count() === 0,
+        '21. e não os das outras pastas');
+
+    // Criar um atalho aqui grava com o caminho da pasta aberta.
+    await page.getByRole('button', { name: /Atalho do Drive/ }).click();
+    await page.waitForTimeout(400);
+    await page.getByLabel('Nome do atalho').fill('Ensaio outubro');
+    await page.getByLabel('Link do Drive').fill('https://drive.google.com/drive/folders/xyz');
+    await page.getByRole('button', { name: 'Criar', exact: true }).click();
+    await page.waitForTimeout(700);
+
+    const w = await writes(page);
+    const criado = w.find(x => x.op === 'add' && x.path.includes('drive_links'));
+    checar(Boolean(criado) && JSON.stringify(criado.data.caminho) === JSON.stringify(['Imagens']),
+        `21. o atalho nasce com o caminho da pasta: ${criado ? JSON.stringify(criado.data.caminho) : '(nada)'}`);
+
+    // Link perigoso e RECUSADO na entrada.
+    await page.getByRole('button', { name: /Atalho do Drive/ }).click();
+    await page.waitForTimeout(300);
+    await page.getByLabel('Nome do atalho').fill('Malicioso');
+    await page.getByLabel('Link do Drive').fill('javascript:alert(1)');
+    await page.getByRole('button', { name: 'Criar', exact: true }).click();
+    await page.waitForTimeout(500);
+    const depois = await writes(page);
+    checar(depois.filter(x => x.op === 'add' && x.path.includes('drive_links')).length === 1,
+        '21. link javascript: é recusado antes de gravar');
+    checar(await page.getByText(/link http ou https válido/).count() > 0,
+        '21. e a tela diz por quê');
+    checar(erros.length === 0, `21. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-atalhos.png' });
     await page.close();
 }
 

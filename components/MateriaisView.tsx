@@ -7,15 +7,15 @@ import {
 import { PageHeader, EmptyState, Card, SegmentedTabs } from './ui';
 import MediaViewer from './MediaViewer';
 import BrandStudyView from './BrandStudyView';
-import { db } from '../utils/firebase';
+import {
+    Atalho, subscribeAtalhos, criarAtalho, removerAtalho, atalhosDaPasta, UrlInvalidaError
+} from '../utils/atalhos';
 import { toSafeHref } from '../utils/url';
 import {
     Folder, FolderPlus, Upload, ArrowLeft, Trash2, Loader2, AlertTriangle,
     FileText, Play, Download, Sparkles, ExternalLink, Link as LinkIcon,
     ChevronRight, HardDrive, RefreshCw
 } from 'lucide-react';
-
-interface LinkLegado { id: string; title: string; url: string; category?: string }
 
 interface MateriaisViewProps {
     empresaId: string;
@@ -78,19 +78,45 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
      * A colecao nasceu como legado - links salvos antes das pastas existirem, que
      * ficariam sem leitor nenhum se a tela de links simplesmente sumisse. Hoje ela e
      * PARTE DO FLUXO: bruto, captacao e ensaio vivem no Drive (sync de desktop,
-     * tamanho, edicao no lugar) e as pastas acima guardam a entrega pronta. O que
-     * mudou nao foi o dado, foi o significado - e por isso o rotulo "cadastro
-     * antigo" saiu.
+     * tamanho, edicao no lugar) e as pastas guardam a entrega pronta.
+     *
+     * E agora eles moram DENTRO DAS PASTAS, nao numa lista separada na raiz. Antes
+     * eram duas navegacoes na mesma tela: a arvore em cima e uma caixinha de links
+     * embaixo, sem relacao entre as duas. Como atalho, "Carrossel / Agosto" pode ter
+     * as pecas prontas e, ao lado, o caminho para a captacao no Drive.
      */
-    const [legados, setLegados] = useState<LinkLegado[]>([]);
+    const [atalhos, setAtalhos] = useState<Atalho[]>([]);
     useEffect(() => {
         if (!empresaId) return;
-        return db.collection('empresas').doc(empresaId).collection('drive_links')
-            .onSnapshot(
-                snap => setLegados(snap.docs.map(d => ({ id: d.id, ...d.data() } as LinkLegado))),
-                erro => console.error('Falha ao ler links antigos:', erro)
-            );
+        return subscribeAtalhos(empresaId, setAtalhos);
     }, [empresaId]);
+
+    /** Formulario de atalho aberto: { title, url }. */
+    const [novoAtalho, setNovoAtalho] = useState<{ title: string; url: string } | null>(null);
+
+    const handleCriarAtalho = async () => {
+        if (!novoAtalho) return;
+        setOcupado('Criando atalho...');
+        setErro('');
+        try {
+            await criarAtalho(empresaId, caminho, novoAtalho.title, novoAtalho.url, autorEmail);
+            setNovoAtalho(null);
+        } catch (e) {
+            console.error(e);
+            setErro(e instanceof UrlInvalidaError ? e.message : 'Não foi possível criar o atalho.');
+        } finally { setOcupado(''); }
+    };
+
+    const handleRemoverAtalho = async (atalho: Atalho) => {
+        if (!window.confirm(`Remover o atalho "${atalho.title}"? O material no Drive não é afetado.`)) return;
+        setErro('');
+        try {
+            await removerAtalho(empresaId, atalho.id);
+        } catch (e) {
+            console.error(e);
+            setErro('Não foi possível remover o atalho.');
+        }
+    };
 
     const carregar = useCallback(async (alvo: Caminho) => {
         setCarregando(true);
@@ -196,7 +222,10 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
         } finally { setOcupado(''); }
     };
 
-    const vazio = conteudo.pastas.length === 0 && conteudo.arquivos.length === 0;
+    const daPasta = atalhosDaPasta(atalhos, caminho);
+    // Pasta com SO um atalho nao esta vazia: dizer "pasta vazia" com um atalho na
+    // tela seria a interface negando o que ela mesma mostra.
+    const vazio = conteudo.pastas.length === 0 && conteudo.arquivos.length === 0 && daPasta.length === 0;
     const naRaiz = caminho.length === 0;
     const podeAninhar = caminho.length < PROFUNDIDADE_MAX;
 
@@ -252,6 +281,17 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                                 <FolderPlus className="w-4 h-4" /> Nova pasta
                             </button>
                         )}
+                        {/* ATALHO PARA O DRIVE, na pasta em que se esta. O bruto vive
+                            la; sem um caminho daqui para la, sao duas navegacoes sem
+                            relacao. O cliente tambem pode criar: e comum ele mandar
+                            "subi as fotos nesta pasta". */}
+                        <button
+                            onClick={() => setNovoAtalho({ title: '', url: '' })}
+                            disabled={Boolean(ocupado)}
+                            className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-300 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-full transition-colors disabled:opacity-40"
+                        >
+                            <LinkIcon className="w-4 h-4" /> Atalho do Drive
+                        </button>
                         {/* Enviar em QUALQUER nivel, inclusive na raiz - no Drive
                             tambem da, e obrigar a entrar numa pasta para subir um
                             arquivo solto e uma trava sem motivo. */}
@@ -337,6 +377,38 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                 </Card>
             )}
 
+            {novoAtalho && (
+                <Card className="p-4 mb-4">
+                    <label className="block text-[11px] font-semibold text-zinc-500 mb-1.5">
+                        Atalho para o Drive {naRaiz ? 'na raiz' : `dentro de “${caminho[caminho.length - 1]}”`}
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                            autoFocus
+                            value={novoAtalho.title}
+                            onChange={e => setNovoAtalho({ ...novoAtalho, title: e.target.value })}
+                            placeholder="Nome. Ex: Captação Agosto (bruto)"
+                            aria-label="Nome do atalho"
+                            className="sm:w-64 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] outline-none"
+                        />
+                        <input
+                            value={novoAtalho.url}
+                            onChange={e => setNovoAtalho({ ...novoAtalho, url: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') handleCriarAtalho(); if (e.key === 'Escape') setNovoAtalho(null); }}
+                            placeholder="https://drive.google.com/drive/folders/..."
+                            aria-label="Link do Drive"
+                            className="flex-1 min-w-0 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-[#FABE01] outline-none"
+                        />
+                        <button onClick={handleCriarAtalho} className="shrink-0 px-4 py-2.5 text-sm font-semibold bg-[#FABE01] text-black rounded-control">Criar</button>
+                        <button onClick={() => setNovoAtalho(null)} className="shrink-0 px-4 py-2.5 text-sm font-semibold bg-white/5 text-zinc-300 rounded-control">Cancelar</button>
+                    </div>
+                    <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">
+                        O atalho aponta para o Drive — não copia nada para cá. Bruto, captação e arquivo
+                        aberto ficam lá; aqui ficam as entregas.
+                    </p>
+                </Card>
+            )}
+
             {enviando && (
                 <Card className="p-4 mb-4">
                     <div className="flex items-center gap-2 mb-2">
@@ -375,6 +447,55 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                 />
             ) : (
                 <div className="space-y-6">
+                    {/* ATALHOS primeiro: material bruto e onde o trabalho comeca, e
+                        quem entra na pasta procurando "de onde veio isso" olha aqui. */}
+                    {daPasta.length > 0 && (
+                        <section>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">
+                                Atalhos · bruto no Drive
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {daPasta.map(atalho => {
+                                    // Revalida na LEITURA: link do cadastro antigo pode
+                                    // ter entrado antes da validacao existir.
+                                    const href = toSafeHref(atalho.url);
+                                    return (
+                                        <div key={atalho.id} className="group relative bg-[#1A1A1A] border border-white/5 rounded-card p-4 flex items-center gap-3">
+                                            <span className="w-10 h-10 shrink-0 rounded-chip bg-white/5 text-zinc-300 flex items-center justify-center">
+                                                <ExternalLink className="w-4 h-4" />
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-sm font-semibold text-white truncate">{atalho.title}</span>
+                                                <span className="block text-[11px] text-zinc-600 truncate">
+                                                    {href ? 'abrir no Drive' : 'link inválido'}
+                                                    {atalho.category ? ` · ${atalho.category}` : ''}
+                                                </span>
+                                            </span>
+                                            {href && (
+                                                <a
+                                                    href={href}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    aria-label={`Abrir ${atalho.title}`}
+                                                    className="absolute inset-0 rounded-card focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FABE01]"
+                                                />
+                                            )}
+                                            {ehAgencia && (
+                                                <button
+                                                    onClick={() => handleRemoverAtalho(atalho)}
+                                                    aria-label={`Remover atalho ${atalho.title}`}
+                                                    className="relative p-1.5 rounded-full text-zinc-700 hover:text-red-400 hover:bg-red-400/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
+
                     {conteudo.pastas.length > 0 && (
                         <section>
                             <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">
@@ -503,74 +624,18 @@ const MateriaisView: React.FC<MateriaisViewProps> = ({ empresaId, userRole, auto
                 />
             )}
 
-            {/* Links antigos so na raiz: eles nao pertencem a pasta nenhuma. */}
-            {naRaiz && legados.length > 0 && (
-                <div className="mt-8">
-                    {/* NAO E MAIS "cadastro antigo".
-                        A divisao passou a ser deliberada: bruto no Drive, entrega
-                        aqui. O link deixou de ser resto de migracao e virou a outra
-                        metade do fluxo - dizer "antigo" mandava a equipe remover
-                        justamente o que ela deve manter. */}
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-white">Bruto no Drive</h3>
-                        <span className="text-[10px] font-semibold text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
-                            {legados.length} {legados.length === 1 ? 'atalho' : 'atalhos'}
-                        </span>
-                    </div>
-                    <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
-                        Captação, ensaios, arquivos abertos e o que ainda vai ser editado ficam no Drive —
-                        lá tem sync no desktop e não tem limite de tamanho. As pastas acima guardam a
-                        <strong className="text-zinc-300"> entrega pronta</strong>.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {legados.map(link => {
-                            // Revalida o esquema na leitura: link gravado antes da
-                            // validacao existir pode conter javascript: ou data:.
-                            const href = toSafeHref(link.url);
-                            return (
-                                <div key={link.id} className="bg-[#1A1A1A] border border-white/5 rounded-control p-3 flex items-center gap-2.5">
-                                    <LinkIcon className="w-4 h-4 text-zinc-600 shrink-0" />
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block text-sm text-zinc-200 truncate">{link.title}</span>
-                                        {link.category && <span className="block text-[10px] text-zinc-600">{link.category}</span>}
-                                    </span>
-                                    {href ? (
-                                        <a
-                                            href={href}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            aria-label={`Abrir ${link.title}`}
-                                            className="shrink-0 p-1.5 rounded-full text-zinc-500 hover:text-[#FABE01] hover:bg-[#FABE01]/10 transition-colors"
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                        </a>
-                                    ) : (
-                                        <span className="shrink-0 text-[10px] text-red-400">inválido</span>
-                                    )}
-                                    {ehAgencia && (
-                                        <button
-                                            onClick={async () => {
-                                                if (!window.confirm(`Remover o link "${link.title}"?`)) return;
-                                                try {
-                                                    await db.collection('empresas').doc(empresaId)
-                                                        .collection('drive_links').doc(link.id).delete();
-                                                } catch (e) {
-                                                    console.error(e);
-                                                    setErro('Não foi possível remover o link.');
-                                                }
-                                            }}
-                                            aria-label={`Remover link ${link.title}`}
-                                            className="shrink-0 p-1.5 rounded-full text-zinc-700 hover:text-red-400 transition-colors"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
+            {/* A LISTA SEPARADA DE LINKS NA RAIZ SAIU.
+                Ela era a segunda navegacao desta tela: a arvore em cima, uma caixinha
+                de links embaixo, sem relacao entre as duas. Os mesmos documentos
+                aparecem agora como ATALHO dentro da pasta - e os do cadastro antigo,
+                que nao tem `caminho`, caem na raiz, exatamente onde apareciam. */}
+            {naRaiz && daPasta.length === 0 && ehAgencia && (
+                <p className="text-[10px] text-zinc-600 mt-8 leading-relaxed max-w-xl">
+                    Bruto, captação e arquivo aberto ficam no Drive — use “Atalho do Drive” para deixar o
+                    caminho aqui, na pasta onde ele faz sentido.
+                </p>
             )}
+
             </>
             )}
         </div>
