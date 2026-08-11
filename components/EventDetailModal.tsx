@@ -6,7 +6,7 @@ import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTi
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES, stageView } from '../utils/eventState';
-import { setApproval, saveMetrics } from '../utils/posts';
+import { setApproval, saveMetrics, subscribeResponsaveis } from '../utils/posts';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
 import PostTimeline from './PostTimeline';
@@ -120,6 +120,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
      */
     const thumbPendente = useRef<string | null>(null);
 
+    /**
+     * Responsaveis AO VIVO, fora do rascunho.
+     *
+     * Este campo deixou de pertencer ao ciclo do "Salvar": a aba Gestão grava a
+     * atribuicao no clique, e esta aba precisa mostrar o mesmo valor. Enquanto ele
+     * vivia no rascunho, a etiqueta aqui mostrava o estado de quando o modal abriu -
+     * e o "Salvar" reescrevia a lista antiga por cima da atribuicao recem-feita,
+     * apagando trabalho de outra pessoa sem avisar.
+     */
+    const [responsaveisAoVivo, setResponsaveisAoVivo] = useState<string[]>(event.responsaveis || []);
+    useEffect(() => {
+        setResponsaveisAoVivo(event.responsaveis || []);
+        if (!empresaId || !event.id) return;
+        return subscribeResponsaveis(empresaId, event.id, setResponsaveisAoVivo);
+        // Dependencia SERIALIZADA: `event.responsaveis` e um array recriado a cada
+        // render do pai, e como dependencia crua faria assinar e cancelar sem
+        // parar.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [empresaId, event.id, (event.responsaveis || []).join(',')]);
+
     const isClient = userRole === 'cliente';
     // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
     // gravado: um campo teria que ser recalculado a cada mudanca de data ou de
@@ -196,6 +216,23 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     };
 
     useEffect(() => { setEditableEvent(event); setShowDiscardWarning(false); }, [event]);
+
+    /**
+     * O que o "Salvar" grava - SEM `responsaveis`.
+     *
+     * A atribuicao e gravada na hora, pela aba Gestão. Se ela viesse tambem no
+     * rascunho, salvar o texto do post depois de alguem trocar o responsavel
+     * reescreveria a lista antiga por cima - e foi isso que apagou atribuicao no
+     * teste do time. Campo que tem dono ao vivo nao pode ter uma segunda copia no
+     * rascunho.
+     *
+     * Chave OMITIDA, nao `undefined`: o `stripUndefined` do calendario tambem
+     * removeria, mas depender disso deixaria a garantia num lugar que nao e este.
+     */
+    const paraSalvar = (): CalendarEvent => {
+        const { responsaveis, ...resto } = editableEvent;
+        return resto as CalendarEvent;
+    };
 
     // Ha edicao pendente? Comparar o objeto serializado cobre todos os campos
     // sem precisar manter uma lista manual que envelhece a cada campo novo.
@@ -617,12 +654,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     className="w-full flex items-center gap-3 bg-[#111111] border border-zinc-700 rounded-control px-3 py-2.5 hover:border-white/20 transition-colors text-left"
                                 >
                                     <AvatarGroup
-                                        pessoas={pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))}
+                                        pessoas={pessoasDeUids(responsaveisAoVivo, indexarPorUid(equipe))}
                                         tamanho="sm"
                                         anelClasse="ring-[#111111]"
                                     />
                                     <span className="text-sm text-zinc-400 flex-1 min-w-0 truncate">
-                                        {pessoasDeUids(editableEvent.responsaveis, indexarPorUid(equipe))
+                                        {pessoasDeUids(responsaveisAoVivo, indexarPorUid(equipe))
                                             .map(p => p.nome || p.email).join(', ') || 'Ninguém atribuído'}
                                     </span>
                                     <span className="text-[11px] font-semibold text-[#FABE01] shrink-0">definir →</span>
@@ -886,14 +923,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 Firestore recusam a escrita do cliente aqui, entao
                                 exibir o botao so produziria erro de permissao. */}
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
+                                <button onClick={() => onSave(paraSalvar(), { thumb: thumbPendente.current })} disabled={isSaving} className="hidden sm:flex px-6 py-2 bg-[#FABE01] text-black font-bold text-sm rounded-control shadow-[0_0_15px_rgba(250,190,1,0.2)] items-center gap-2 hover:bg-[#FABE01]/90 disabled:opacity-60 disabled:cursor-not-allowed">
                                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                     {isSaving ? 'Salvando...' : (isCreating ? 'Agendar' : 'Salvar')}
                                 </button>
                             )}
                             <button onClick={requestClose} disabled={isSaving} aria-label="Fechar" className="flex sm:hidden w-12 h-12 bg-zinc-800 text-zinc-400 rounded-full items-center justify-center border border-zinc-700 active:scale-95 transition-transform disabled:opacity-50"><X className="w-6 h-6" /></button>
                             {!isClient && (
-                                <button onClick={() => onSave(editableEvent, { thumb: thumbPendente.current })} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
+                                <button onClick={() => onSave(paraSalvar(), { thumb: thumbPendente.current })} disabled={isSaving} aria-label={isCreating ? 'Agendar' : 'Salvar'} className="flex sm:hidden w-12 h-12 bg-[#FABE01] text-black rounded-full items-center justify-center shadow-[0_0_15px_rgba(250,190,1,0.3)] active:scale-95 transition-transform disabled:opacity-60">
                                     {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (isCreating ? <Check className="w-6 h-6" /> : <Save className="w-6 h-6" />)}
                                 </button>
                             )}

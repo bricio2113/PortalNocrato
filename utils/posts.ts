@@ -131,6 +131,50 @@ export function subscribeComments(
 
 // --- CONTADORES DE PENDENCIA (notificacao in-app) ---
 
+/**
+ * RESPONSAVEIS de um conteudo, ao vivo.
+ *
+ * Assina o documento do evento so para este campo. Existe porque atribuir
+ * responsavel deixou de depender do botao "Salvar": a etiqueta tem que acender no
+ * clique, e a pessoa do lado - que talvez esteja com o mesmo post aberto - tem que
+ * ver a mudanca sem recarregar.
+ *
+ * O SDK notifica o listener a partir do cache local ANTES de a escrita chegar ao
+ * servidor (latency compensation), entao o clique reflete na hora sem estado
+ * otimista duplicando a verdade em dois lugares.
+ */
+export function subscribeResponsaveis(
+    empresaId: string,
+    eventId: string,
+    onData: (uids: string[]) => void
+): () => void {
+    return db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+        .onSnapshot(
+            doc => {
+                const lista = doc.exists ? (doc.data()?.responsaveis as string[] | undefined) : undefined;
+                onData(Array.isArray(lista) ? lista : []);
+            },
+            erro => console.error('Erro ao acompanhar os responsáveis:', erro)
+        );
+}
+
+/**
+ * Grava a lista de responsaveis. Escrita de UM campo, imediata.
+ *
+ * Nao passa pelo rascunho do modal de proposito: o rascunho e do texto do post
+ * (titulo, legenda, links), e misturar os dois foi a causa do defeito em que
+ * escolher o segundo responsavel apagava o primeiro - a lista base vinha do
+ * rascunho, que nunca era atualizado pela escrita.
+ */
+export async function salvarResponsaveis(
+    empresaId: string,
+    eventId: string,
+    uids: string[]
+): Promise<void> {
+    await db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+        .update({ responsaveis: uids });
+}
+
 export interface PendingCounts {
     /** Posts esperando decisao do cliente. */
     aguardandoCliente: number;
