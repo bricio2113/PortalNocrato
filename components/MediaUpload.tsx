@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { MidiaArquivo } from '../types';
-import { enviarMidiaDoPost, salvarThumb, removerMidia, MidiaInvalidaError } from '../utils/midia';
+import { enviarMidiaDoPost, salvarThumb, removerMidia, thumbDeUrl, MidiaInvalidaError } from '../utils/midia';
 import { ehVideo } from '../utils/thumbnail';
 import { Caminho, criarPasta, nomePastaSeguro } from '../utils/pastas';
 import PastaPicker from './PastaPicker';
 import {
-    Upload, Loader2, AlertTriangle, Play, Trash2, FolderOpen, Folder, ChevronRight
+    Upload, Loader2, AlertTriangle, Play, Trash2, FolderOpen, Folder, ChevronRight,
+    ChevronLeft, Star
 } from 'lucide-react';
 
 interface MediaUploadProps {
@@ -63,6 +64,8 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
     const [erro, setErro] = useState('');
     const [escolhendo, setEscolhendo] = useState(false);
     const [preparando, setPreparando] = useState(false);
+    /** Regerando a capa depois de trocar quem e a primeira peca. */
+    const [capaOcupada, setCapaOcupada] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const nomeDaPasta = nomePastaSeguro(titulo || '');
@@ -187,6 +190,39 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
         if (inputRef.current) inputRef.current.value = '';
     };
 
+    /**
+     * REORDENA o carrossel.
+     *
+     * A ordem do array e a ordem das laminas, e ate agora ela era a ordem de upload,
+     * sem volta. O caso real: o designer precisa refazer a lamina 2, apaga, edita e
+     * sobe de novo - e a peca corrigida entra no FIM. Sem reordenar, a saida era
+     * apagar tudo e subir as seis na sequencia certa.
+     *
+     * A CAPA ACOMPANHA A PRIMEIRA PECA. A miniatura do calendario foi gerada da
+     * primeira peca no upload; se a reordenacao troca quem esta na frente, a grade
+     * passaria a mostrar a peca errada. Regerar so acontece quando a posicao 1 muda
+     * de verdade, e so para imagem (ver thumbDeUrl).
+     */
+    const mover = async (de: number, para: number) => {
+        if (disabled || de === para || para < 0 || para >= midias.length) return;
+        const lista = [...midias];
+        const [peca] = lista.splice(de, 1);
+        lista.splice(para, 0, peca);
+        onChange(lista);
+
+        const primeiraMudou = midias[0]?.path !== lista[0]?.path;
+        if (!primeiraMudou || !lista[0]) return;
+        setCapaOcupada(true);
+        try {
+            const thumb = await thumbDeUrl(lista[0].url, lista[0].contentType);
+            if (!thumb) return;
+            if (eventId) await salvarThumb(empresaId, eventId, thumb);
+            onThumb(thumb);
+        } finally {
+            setCapaOcupada(false);
+        }
+    };
+
     const handleRemover = async (midia: MidiaArquivo) => {
         if (!window.confirm(`Remover este arquivo da publicação?`)) return;
         setErro('');
@@ -308,37 +344,96 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
             )}
 
             {midias.length > 0 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {midias.map((midia, i) => (
-                        <div key={midia.path} className="relative group aspect-square rounded-chip overflow-hidden bg-[#111111] border border-white/5">
-                            {ehVideo({ type: midia.contentType } as File) ? (
-                                <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-                                    <Play className="w-5 h-5 text-zinc-500 fill-current" />
-                                    <span className="text-[9px] text-zinc-600">{formatarBytes(midia.bytes)}</span>
-                                </div>
-                            ) : (
-                                <img src={midia.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                            )}
+                <>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {midias.map((midia, i) => (
+                            <div key={midia.path} className="relative group aspect-square rounded-chip overflow-hidden bg-[#111111] border border-white/5">
+                                {ehVideo({ type: midia.contentType } as File) ? (
+                                    <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                                        <Play className="w-5 h-5 text-zinc-500 fill-current" />
+                                        <span className="text-[9px] text-zinc-600">{formatarBytes(midia.bytes)}</span>
+                                    </div>
+                                ) : (
+                                    <img src={midia.url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                )}
 
-                            {/* Numero da posicao: no carrossel a ordem importa e
-                                nao da para inferir olhando a grade. */}
-                            <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-black/70 text-white text-[9px] font-bold flex items-center justify-center">
-                                {i + 1}
-                            </span>
+                                {/* POSICAO, e ela e EDITAVEL.
+                                    O numero era so um rotulo. Como select, mandar a
+                                    peca 6 para a posicao 2 e um gesto - com setas
+                                    seriam quatro cliques, e com dez laminas, oito. */}
+                                {disabled || midias.length < 2 ? (
+                                    <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-black/70 text-white text-[9px] font-bold flex items-center justify-center">
+                                        {i + 1}
+                                    </span>
+                                ) : (
+                                    <select
+                                        value={i}
+                                        onChange={e => mover(i, Number(e.target.value))}
+                                        aria-label={`Posição da peça ${i + 1}`}
+                                        title="Mudar a posição no carrossel"
+                                        className="absolute top-1 left-1 h-4 w-8 rounded-full bg-black/70 text-white text-[9px] font-bold text-center outline-none cursor-pointer appearance-none hover:bg-black/90 focus:ring-1 focus:ring-[#FABE01]"
+                                    >
+                                        {midias.map((_, pos) => (
+                                            <option key={pos} value={pos}>{pos + 1}</option>
+                                        ))}
+                                    </select>
+                                )}
 
-                            {!disabled && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleRemover(midia)}
-                                    aria-label="Remover arquivo"
-                                    className="absolute top-1 right-1 p-1 rounded-full bg-black/70 text-zinc-300 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                                >
-                                    <Trash2 className="w-3 h-3" />
-                                </button>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                                {/* CAPA: a primeira peca e o que aparece na grade do
+                                    calendario. Sem dizer isso, reordenar parece nao
+                                    ter consequencia nenhuma fora daqui. */}
+                                {i === 0 && (
+                                    <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 px-1.5 h-4 rounded-full bg-[#FABE01] text-black text-[9px] font-bold">
+                                        {capaOcupada ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Star className="w-2.5 h-2.5 fill-current" />}
+                                        capa
+                                    </span>
+                                )}
+
+                                {!disabled && (
+                                    <div className="absolute top-1 right-1 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                        {midias.length > 1 && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => mover(i, i - 1)}
+                                                    disabled={i === 0}
+                                                    aria-label={`Mover peça ${i + 1} para trás`}
+                                                    className="p-1 rounded-full bg-black/70 text-zinc-300 hover:text-white disabled:opacity-30"
+                                                >
+                                                    <ChevronLeft className="w-3 h-3" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => mover(i, i + 1)}
+                                                    disabled={i === midias.length - 1}
+                                                    aria-label={`Mover peça ${i + 1} para frente`}
+                                                    className="p-1 rounded-full bg-black/70 text-zinc-300 hover:text-white disabled:opacity-30"
+                                                >
+                                                    <ChevronRight className="w-3 h-3" />
+                                                </button>
+                                            </>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemover(midia)}
+                                            aria-label="Remover arquivo"
+                                            className="p-1 rounded-full bg-black/70 text-zinc-300 hover:text-red-400"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {!disabled && midias.length > 1 && (
+                        <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed">
+                            A ordem é a do carrossel. Trocou a lâmina? Suba a nova e mande para a posição
+                            pelo número — a capa acompanha a primeira peça.
+                        </p>
+                    )}
+                </>
             )}
 
             {enviando && (

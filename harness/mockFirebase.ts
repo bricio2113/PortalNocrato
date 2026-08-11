@@ -38,11 +38,31 @@ const EVENTS = Array.from({ length: 14 }, (_, i) => ({
     // Parte com responsavel e parte SEM: o quadro precisa mostrar tanto a pilha
     // de rostos quanto o circulo tracejado de "ninguem atribuido".
     responsaveis: i % 3 === 0 ? ['u0', 'u3'] : i % 3 === 1 ? ['u0'] : undefined,
+    // MIDIA NO DOCUMENTO, nao so na prop da tela.
+    //
+    // O documento do evento e onde a lista mora - e desde que a ordem do carrossel
+    // passou a ser gravada na hora, e dele que a tela le. Enquanto o mock nao tinha
+    // o campo, a tela de teste passava as pecas por prop e o documento dizia "sem
+    // midia": incoerencia que so apareceu quando a leitura mudou de lugar.
+    midias: i === 0 ? [
+        { url: 'https://exemplo.invalido/peca-1.jpg', path: 'p1', contentType: 'image/jpeg', bytes: 1000 },
+        { url: 'https://exemplo.invalido/peca-2.jpg', path: 'p2', contentType: 'image/jpeg', bytes: 1000 },
+        { url: 'https://exemplo.invalido/peca-3.mp4', path: 'p3', contentType: 'video/mp4', bytes: 5000 }
+    ] : undefined,
+    pastaMidia: i === 0 ? ['Imagens', '2026', 'Estatico Captacao'] : undefined,
     copy: 'Legenda de exemplo '.repeat(8)
 }));
 
 const TASKS = EVENTS.map((e, i) => ({ id: `t${i}`, title: e.title, status: e.status, createdAt: ts(d(-i)), eventId: e.id, type: e.type, plataforma: 'Instagram' }));
-const LINKS = Array.from({ length: 5 }, (_, i) => ({ id: `l${i}`, title: `Material ${i + 1} com nome longo`, url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrS/view', category: ['Mídia', 'Contratos', 'Relatórios', 'Outros'][i % 4], createdAt: ts(d(-i)) }));
+// Atalhos do Drive. Dois SEM `caminho` - o cadastro antigo, que tem que continuar
+// aparecendo na raiz - e dois DENTRO de pastas, que e o formato novo. Sem os dois
+// casos, a compatibilidade com o dado velho nao seria exercitada.
+const LINKS = [
+    { id: 'l0', title: 'Material antigo sem pasta', url: 'https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrS', category: 'Mídia', createdAt: ts(d(-9)) },
+    { id: 'l1', title: 'Contrato assinado (link)', url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrS/view', category: 'Contratos', createdAt: ts(d(-8)) },
+    { id: 'l2', title: 'Captação Agosto (bruto)', url: 'https://drive.google.com/drive/folders/2BcDeFgHiJkLmNoPqRsT', caminho: ['Imagens'], createdAt: ts(d(-3)) },
+    { id: 'l3', title: 'Ensaio na clínica (bruto)', url: 'https://drive.google.com/drive/folders/3CdEfGhIjKlMnOpQrStU', caminho: ['Imagens', '2026'], createdAt: ts(d(-2)) }
+];
 const WEEKLY = Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, text: `Tarefa da semana ${i + 1} com texto razoavelmente longo`, completed: i % 3 === 0 }));
 // u0 e o proprio admin logado e u3 e o outro admin: os dois precisam aparecer
 // com selo "Admin" enquanto o resto da equipe aparece como "Colaborador".

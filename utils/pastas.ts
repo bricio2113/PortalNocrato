@@ -23,12 +23,32 @@ import { ehImagem, ehVideo } from './thumbnail';
  * isso tambem que apagar pasta e RECURSIVO na mao - nao ha "delete prefix".
  */
 
+/**
+ * Estrutura padrao de um cliente novo.
+ *
+ * ESTAS PASTAS SAO DE ENTREGA, nao de material bruto - e por isso a lista mudou.
+ * Antes era `Imagens / Vídeos / Identidade Visual / Contratos e Documentos /
+ * Referências`, vocabulario de acervo: e o que se guarda ANTES de produzir. Só que
+ * o bruto (captacao, ensaio, arquivo aberto, o que o cliente manda para editar)
+ * vive no Drive, onde ha sync de desktop, tamanho e edicao no lugar - o portal
+ * guarda o que ficou PRONTO, que e o que o cliente ve, aprova e recebe.
+ *
+ * Dai a organizacao por TIPO DE PECA. "Carrossel" e "Reels" descrevem entrega;
+ * "Imagens" descrevia arquivo.
+ *
+ * `Contratos e Documentos` fica, e e a excecao proposital: contrato nao e peca, mas
+ * tambem nao e bruto - e documento que o cliente precisa achar sem depender de
+ * ninguem, e o lugar dele e o portal.
+ *
+ * O resto e por conta de cada cliente: a estrutura padrao existe para o cliente
+ * novo nao nascer vazio, nao para prever como cada conta trabalha.
+ */
 export const TEMPLATE_PASTAS = [
-    'Imagens',
-    'Vídeos',
-    'Identidade Visual',
-    'Contratos e Documentos',
-    'Referências'
+    'Carrossel',
+    'Estático',
+    'Reels',
+    'Criativo',
+    'Contratos e Documentos'
 ];
 
 /** Marcador que faz a pasta existir para o listAll. */

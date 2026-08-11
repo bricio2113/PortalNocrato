@@ -6,7 +6,7 @@ import { toDateInputValue, fromDateInputValue, toTimeInputValue, withTime, hasTi
 import { slaAtual, slaClasses, slaTipoLabel, janelaRevisao, ehVideo } from '../utils/sla';
 import { getMediaPreview, getLinkLabel } from '../utils/media';
 import { getClientStage, getApproval, CLIENT_STAGES, stageView } from '../utils/eventState';
-import { setApproval, saveMetrics, subscribeResponsaveis } from '../utils/posts';
+import { setApproval, saveMetrics, subscribeResponsaveis, subscribeMidiaDoPost, salvarMidiaDoPost } from '../utils/posts';
 import PostComments from './PostComments';
 import MediaUpload from './MediaUpload';
 import PostTimeline from './PostTimeline';
@@ -140,6 +140,50 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [empresaId, event.id, (event.responsaveis || []).join(',')]);
 
+    /**
+     * MIDIA AO VIVO, para post ja gravado.
+     *
+     * A ordem do carrossel e a pasta de destino sairam do ciclo do "Salvar" pelo
+     * mesmo motivo dos responsaveis: o arquivo ja vai para o bucket no upload, mas a
+     * LISTA ficava no rascunho - reordenar e fechar sem salvar perdia a ordem, e o
+     * "Salvar" de outra aba podia reescrever por cima.
+     *
+     * Publicacao NOVA nao entra aqui: sem id nao ha documento para atualizar, e a
+     * lista viaja no rascunho ate a criacao (ver `paraSalvar`).
+     */
+    const [midiaAoVivo, setMidiaAoVivo] = useState<{ midias: typeof event.midias; pastaMidia: string[] | null }>({
+        midias: event.midias || [],
+        pastaMidia: event.pastaMidia || null
+    });
+    const [midiaErro, setMidiaErro] = useState('');
+    useEffect(() => {
+        setMidiaAoVivo({ midias: event.midias || [], pastaMidia: event.pastaMidia || null });
+        if (!empresaId || !event.id) return;
+        return subscribeMidiaDoPost(empresaId, event.id, setMidiaAoVivo);
+    }, [empresaId, event.id]);
+
+    /**
+     * Grava midia e pasta na hora quando o post existe; no rascunho quando e novo.
+     *
+     * A escrita e otimista na tela porque a assinatura devolve o valor do cache
+     * local em seguida - e se a gravacao falhar, a mensagem aparece e a assinatura
+     * traz de volta o que esta gravado, sem deixar a tela mentindo.
+     */
+    const aplicarMidia = async (midias: typeof event.midias, pastaMidia: string[] | null) => {
+        if (!empresaId || !event.id) {
+            setEditableEvent(prev => ({ ...prev, midias, pastaMidia }));
+            return;
+        }
+        setMidiaAoVivo({ midias, pastaMidia });
+        setMidiaErro('');
+        try {
+            await salvarMidiaDoPost(empresaId, event.id, midias || [], pastaMidia);
+        } catch (e) {
+            console.error(e);
+            setMidiaErro('Não foi possível salvar a mídia. Confira sua conexão — a ordem não foi gravada.');
+        }
+    };
+
     const isClient = userRole === 'cliente';
     // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
     // gravado: um campo teria que ser recalculado a cada mudanca de data ou de
@@ -230,8 +274,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
      * removeria, mas depender disso deixaria a garantia num lugar que nao e este.
      */
     const paraSalvar = (): CalendarEvent => {
-        const { responsaveis, ...resto } = editableEvent;
-        return resto as CalendarEvent;
+        const { responsaveis, midias, pastaMidia, ...resto } = editableEvent;
+        // Em post NOVO a midia ainda vive no rascunho - sem id nao havia onde
+        // gravar -, entao ela PRECISA viajar na criacao. Tirar sempre faria a
+        // publicacao nascer sem as pecas que a pessoa acabou de subir.
+        return (event.id ? resto : { ...resto, midias, pastaMidia }) as CalendarEvent;
     };
 
     // Ha edicao pendente? Comparar o objeto serializado cobre todos os campos
@@ -469,7 +516,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
 
                 <aside className="lg:w-[360px] xl:w-[400px] shrink-0 lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/5 p-4 sm:p-5 bg-[#151515]">
-                    <PostPreview event={editableEvent} handle={perfilHandle} />
+                    {/* A previa le a lista AO VIVO: reordenar tem que aparecer
+                        aqui na hora, senao a simulacao do feed mostra uma ordem que
+                        o post nao tem mais. */}
+                    <PostPreview
+                        event={event.id ? { ...editableEvent, midias: midiaAoVivo.midias } : editableEvent}
+                        handle={perfilHandle}
+                    />
 
                     {/* APROVACAO fica junto da peca: decidir sobre o post e olhar
                         para ele sao a mesma acao. No formulario, do outro lado da
@@ -698,28 +751,36 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 <MediaUpload
                                     empresaId={empresaId}
                                     eventId={event.id}
-                                    midias={editableEvent.midias || []}
-                                    onChange={(midias) => handleChange('midias', midias)}
+                                    midias={(event.id ? midiaAoVivo.midias : editableEvent.midias) || []}
+                                    onChange={midias => aplicarMidia(midias, event.id ? midiaAoVivo.pastaMidia : (editableEvent.pastaMidia || null))}
                                     titulo={editableEvent.title}
-                                    pastaMidia={editableEvent.pastaMidia}
-                                    onPastaMidia={caminho => handleChange('pastaMidia', caminho)}
+                                    pastaMidia={event.id ? midiaAoVivo.pastaMidia : editableEvent.pastaMidia}
+                                    onPastaMidia={caminho => aplicarMidia((event.id ? midiaAoVivo.midias : editableEvent.midias) || [], caminho)}
                                     onThumb={thumb => { thumbPendente.current = thumb; }}
                                     disabled={isClient}
                                 />
+                                {midiaErro && (
+                                    <p className="text-red-400 text-xs mt-2 flex items-start gap-1.5">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {midiaErro}
+                                    </p>
+                                )}
                             </div>
                         )}
 
                         {/* Link Material Bruto */}
                         <div>
                             <label className={labelStyle}>Link do Material (Bruto)</label>
-                            {/* O DRIVE E A ALTERNATIVA, e a tela diz isso. O campo
-                                continua aqui - material que ja mora no Drive, ou
-                                arquivo grande demais para o bucket, precisa de um
-                                lugar -, mas quem esta cadastrando hoje tem que saber
-                                que a peca sobe acima e nao depende deste link. */}
+                            {/* O DRIVE E O PAR, NAO A ALTERNATIVA.
+                                Este texto dizia "alternativa: use quando o material
+                                ficar no Drive em vez de subir acima" - certo quando o
+                                portal queria substituir o Drive, errado agora que a
+                                divisao e deliberada. O bruto mora no Drive e a peca
+                                pronta sobe acima; os dois campos convivem no mesmo
+                                post, cada um com o seu papel. */}
                             {!isClient && (
                                 <p className="text-[10px] text-zinc-600 -mt-1 mb-1.5 leading-relaxed">
-                                    Alternativa: use quando o material ficar no Drive em vez de subir acima.
+                                    O bruto deste conteúdo: captação, arquivo aberto, o que ainda vai ser
+                                    editado. A peça pronta sobe em “Mídia da publicação”, acima.
                                 </p>
                             )}
                             <div className="flex gap-2">

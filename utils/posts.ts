@@ -10,7 +10,7 @@
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { db } from './firebase';
-import { ApprovalState, EventMetrics, PostComment } from '../types';
+import { ApprovalState, EventMetrics, PostComment, MidiaArquivo } from '../types';
 import { needsClientAction, needsAgencyAction, getClientStage, ClientStage } from './eventState';
 import { registrar } from './historico';
 import { slaAtual } from './sla';
@@ -173,6 +173,47 @@ export async function salvarResponsaveis(
 ): Promise<void> {
     await db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
         .update({ responsaveis: uids });
+}
+
+/**
+ * MIDIA do post, ao vivo - arquivos e pasta de destino.
+ *
+ * Mesmo motivo dos responsaveis: o upload grava o arquivo no bucket na hora, mas a
+ * LISTA (a ordem do carrossel, a pasta escolhida) ficava presa no rascunho do modal
+ * e so persistia no "Salvar". Consequencias: reordenar e fechar sem salvar perdia a
+ * ordem; e dois campos vivendo no rascunho podiam ser reescritos por cima do que
+ * outra pessoa acabou de mexer.
+ *
+ * SO PARA POST JA GRAVADO. Publicacao nova nao tem id - nao ha documento para
+ * atualizar -, e nesse caso a lista continua no rascunho e vai junto na criacao.
+ */
+export function subscribeMidiaDoPost(
+    empresaId: string,
+    eventId: string,
+    onData: (dados: { midias: MidiaArquivo[]; pastaMidia: string[] | null }) => void
+): () => void {
+    return db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+        .onSnapshot(
+            doc => {
+                const data = doc.exists ? (doc.data() || {}) : {};
+                onData({
+                    midias: Array.isArray(data.midias) ? data.midias as MidiaArquivo[] : [],
+                    pastaMidia: Array.isArray(data.pastaMidia) ? data.pastaMidia as string[] : null
+                });
+            },
+            erro => console.error('Erro ao acompanhar a mídia do post:', erro)
+        );
+}
+
+/** Grava a lista de midias e a pasta. Escrita imediata, sem passar pelo "Salvar". */
+export async function salvarMidiaDoPost(
+    empresaId: string,
+    eventId: string,
+    midias: MidiaArquivo[],
+    pastaMidia: string[] | null
+): Promise<void> {
+    await db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+        .update({ midias, pastaMidia: pastaMidia || null });
 }
 
 export interface PendingCounts {

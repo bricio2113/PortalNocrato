@@ -21,6 +21,9 @@
  *  16. estudo de marca: secao dentro de Arquivos & Materiais, editavel pelos dois
  *  17. "Foco da Semana" saiu de todos os menus
  *  18. RESPONSAVEL: marcar o segundo nao apaga o primeiro, e reflete sem "Salvar"
+ *  19. carrossel REORDENAVEL, e o template de pastas e de ENTREGA
+ *  20. midia e ordem gravam NA HORA em post existente, e nao no "Salvar"
+ *  21. atalho do Drive vive DENTRO da pasta
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -78,7 +81,9 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
 // ---------------------------------------------------------------- 1 e 2 e 3
 {
     const { page, erros } = await abrir('modal-novo');
-    checar(await page.getByText('Mídia da publicação').isVisible(),
+    // `exact`: o texto novo do campo de link cita "Mídia da publicação", e sem isso
+    // o localizador casa dois elementos e o modo estrito derruba o script.
+    checar(await page.getByText('Mídia da publicação', { exact: true }).isVisible(),
         '1. campo "Mídia da publicação" aparece em publicação NOVA');
 
     await page.getByRole('button', { name: /Escolher a pasta e enviar/ }).click();
@@ -715,6 +720,170 @@ const writes = page => page.evaluate(() => globalThis.__writes || []);
     checar(Boolean(salvo) && !('responsaveis' in (salvo.campos || {})),
         '18b. o payload do Salvar não inclui responsaveis');
     checar(erros.length === 0, `18b. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 19
+// REORDENAR O CARROSSEL. A ordem era a de upload, sem volta: refazer a lamina 2
+// mandava a peca corrigida para o fim e obrigava a subir as seis de novo.
+{
+    const { page, erros } = await abrir('modal-midia');
+    await page.waitForTimeout(900);
+
+    const posicoes = page.locator('select[aria-label^="Posição da peça"]');
+    checar(await posicoes.count() === 3, `19. cada peça tem seletor de posição (${await posicoes.count()})`);
+    checar(await page.getByText('capa', { exact: true }).count() === 1,
+        '19. e a primeira peça é marcada como capa');
+
+    /**
+     * Ordem REAL das pecas na grade, pelo src.
+     *
+     * Le a grade que contem os seletores - nao qualquer `.grid` do modal - e usa o
+     * src, que identifica o arquivo mesmo com a imagem sem carregar (o host de
+     * exemplo nao existe). Antes eu tentava pelo `alt` da previa, que nessa tela
+     * nem chega a ser renderizado.
+     */
+    const ordem = () => page.evaluate(() => {
+        const sel = document.querySelector('select[aria-label^="Posição da peça"]');
+        const grade = sel && sel.closest('.grid');
+        return [...(grade ? grade.querySelectorAll('img') : [])]
+            .map(i => (i.getAttribute('src') || '').split('/').pop());
+    });
+
+    const antes = await ordem();
+    checar(antes.join(',') === 'peca-1.jpg,peca-2.jpg',
+        `19. ordem inicial é a do upload: ${antes.join(', ')}`);
+
+    // O caso do designer: a peca refeita esta atras e precisa ir para a frente.
+    await posicoes.nth(1).selectOption('0');
+    await page.waitForTimeout(700);
+    const depois = await ordem();
+    checar(depois.join(',') === 'peca-2.jpg,peca-1.jpg',
+        `19. escolher a posição move a peça: ${depois.join(', ')}`);
+
+    // Setas fazem o mesmo, um passo por vez.
+    await page.getByRole('button', { name: /Mover peça 1 para frente/ }).click();
+    await page.waitForTimeout(700);
+    const comSeta = await ordem();
+    checar(comSeta.join(',') === 'peca-1.jpg,peca-2.jpg',
+        `19. e a seta devolve um passo: ${comSeta.join(', ')}`);
+
+    checar(erros.length === 0, `19. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-reordenar.png' });
+    await page.close();
+}
+
+// O TEMPLATE agora e de ENTREGA, por tipo de peca - e nao de acervo.
+{
+    const { page } = await abrir('ficha-cliente');
+    await page.waitForTimeout(600);
+    const texto = await page.locator('body').innerText();
+    const esperados = ['Carrossel', 'Estático', 'Reels', 'Criativo', 'Contratos e Documentos'];
+    checar(esperados.every(t => texto.includes(t)),
+        `19b. o cadastro anuncia as pastas de entrega: ${esperados.filter(t => texto.includes(t)).join(', ')}`);
+    checar(!texto.includes('Identidade Visual') && !texto.includes('Referências'),
+        '19b. e não anuncia mais as de acervo (bruto foi para o Drive)');
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 20
+// MIDIA SEM DEPENDER DO "SALVAR". A ordem do carrossel ficava no rascunho: reordenar
+// e fechar sem salvar perdia o trabalho.
+{
+    const { page, erros } = await abrir('modal-midia');
+    await page.waitForTimeout(900);
+
+    const posicoes = page.locator('select[aria-label^="Posição da peça"]');
+    await posicoes.nth(1).selectOption('0');
+    await page.waitForTimeout(800);
+
+    const w = await writes(page);
+    const gravou = w.filter(x => x.op === 'update' && Array.isArray(x.data?.midias)).pop();
+    checar(Boolean(gravou) && gravou.path.includes('/events/ev0'),
+        `20. reordenar grava no evento na hora: ${gravou ? gravou.path : '(nada)'}`);
+    checar(Boolean(gravou) && gravou.data.midias.length === 3
+        && gravou.data.midias[0].path === 'p2',
+        `20. e a lista gravada está na ordem nova: ${gravou ? gravou.data.midias.map(m => m.path).join(',') : '-'}`);
+
+    // A previa le a MESMA lista ao vivo: o contador do carrossel prova que as tres
+    // pecas chegaram nela, e nao so na grade de upload.
+    checar(await page.getByText('1/3').count() === 1,
+        '20. a prévia do feed usa a lista ao vivo');
+    checar(erros.length === 0, `20. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.close();
+}
+
+// Em post NOVO a midia continua no rascunho - sem id nao ha o que atualizar - e
+// PRECISA viajar na criacao, senao a publicacao nasce sem as pecas.
+{
+    const { page } = await abrir('modal-novo');
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: /Escolher a pasta e enviar/ }).click();
+    await page.waitForTimeout(500);
+    const picker = page.getByRole('dialog', { name: 'Escolher pasta' });
+    await picker.getByRole('button', { name: /^Imagens/ }).click();
+    await page.waitForTimeout(400);
+    await picker.getByRole('button', { name: /Usar “Imagens”/ }).click();
+    await page.waitForTimeout(400);
+    await page.locator('input[type=file]').first()
+        .setInputFiles({ name: 'nova.png', mimeType: 'image/png', buffer: PNG });
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
+    await page.waitForTimeout(400);
+    const salvo = await page.evaluate(() => globalThis.__save || null);
+    checar(Boolean(salvo) && salvo.midias === 1 && Array.isArray(salvo.campos?.midias),
+        `20b. post novo leva a mídia na criação: ${salvo ? salvo.midias : '-'} arquivo(s)`);
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 21
+// ATALHO DO DRIVE DENTRO DA PASTA. Antes era uma lista separada na raiz - segunda
+// navegacao na mesma tela, sem relacao com a arvore.
+{
+    const { page, erros } = await abrir('materiais');
+    await page.waitForTimeout(900);
+
+    // Na raiz aparecem os dois do cadastro ANTIGO (sem `caminho`).
+    checar(await page.getByText('Atalhos · bruto no Drive').count() === 1,
+        '21. a raiz mostra a seção de atalhos');
+    checar(await page.getByText('Material antigo sem pasta').count() === 1,
+        '21. atalho do cadastro antigo continua aparecendo (sem caminho = raiz)');
+
+    // E DENTRO de Imagens aparece o atalho daquela pasta, nao o da raiz.
+    await page.locator('button:has-text("Imagens")').first().click();
+    await page.waitForTimeout(900);
+    checar(await page.getByText('Captação Agosto (bruto)').count() === 1,
+        '21. dentro da pasta aparece o atalho daquela pasta');
+    checar(await page.getByText('Material antigo sem pasta').count() === 0,
+        '21. e não os das outras pastas');
+
+    // Criar um atalho aqui grava com o caminho da pasta aberta.
+    await page.getByRole('button', { name: /Atalho do Drive/ }).click();
+    await page.waitForTimeout(400);
+    await page.getByLabel('Nome do atalho').fill('Ensaio outubro');
+    await page.getByLabel('Link do Drive').fill('https://drive.google.com/drive/folders/xyz');
+    await page.getByRole('button', { name: 'Criar', exact: true }).click();
+    await page.waitForTimeout(700);
+
+    const w = await writes(page);
+    const criado = w.find(x => x.op === 'add' && x.path.includes('drive_links'));
+    checar(Boolean(criado) && JSON.stringify(criado.data.caminho) === JSON.stringify(['Imagens']),
+        `21. o atalho nasce com o caminho da pasta: ${criado ? JSON.stringify(criado.data.caminho) : '(nada)'}`);
+
+    // Link perigoso e RECUSADO na entrada.
+    await page.getByRole('button', { name: /Atalho do Drive/ }).click();
+    await page.waitForTimeout(300);
+    await page.getByLabel('Nome do atalho').fill('Malicioso');
+    await page.getByLabel('Link do Drive').fill('javascript:alert(1)');
+    await page.getByRole('button', { name: 'Criar', exact: true }).click();
+    await page.waitForTimeout(500);
+    const depois = await writes(page);
+    checar(depois.filter(x => x.op === 'add' && x.path.includes('drive_links')).length === 1,
+        '21. link javascript: é recusado antes de gravar');
+    checar(await page.getByText(/link http ou https válido/).count() > 0,
+        '21. e a tela diz por quê');
+    checar(erros.length === 0, `21. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-atalhos.png' });
     await page.close();
 }
 

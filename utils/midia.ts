@@ -122,6 +122,32 @@ export async function enviarMidiaDoPost(
     return { url, path, contentType: file.type, bytes: file.size, thumb };
 }
 
+/**
+ * Miniatura a partir de uma URL ja no bucket.
+ *
+ * Existe por causa da REORDENACAO do carrossel: a capa do post e gerada da PRIMEIRA
+ * peca no momento do upload, e reordenar troca quem e a primeira. Sem regerar, a
+ * grade do calendario continuaria mostrando a peca que era a capa antes - a
+ * interface mentindo sobre o proprio post.
+ *
+ * Baixa o arquivo de novo, o que nao e gratis. Por isso o chamador so aciona quando
+ * a peca da POSICAO 1 realmente mudou, e nunca em video: quadro de video pede o
+ * arquivo inteiro em memoria, e o ganho nao paga a espera. Falha (CORS, rede,
+ * arquivo grande) devolve null, e a capa antiga fica - degradacao visual, nao perda.
+ */
+export async function thumbDeUrl(url: string, contentType: string): Promise<string | null> {
+    if (!contentType.startsWith('image/')) return null;
+    try {
+        const resposta = await fetch(url);
+        if (!resposta.ok) return null;
+        const blob = await resposta.blob();
+        return await arquivoParaThumb(new File([blob], 'capa', { type: blob.type || contentType }));
+    } catch (erro) {
+        console.error('Não foi possível gerar a capa da nova primeira peça:', erro);
+        return null;
+    }
+}
+
 // --- MINIATURA NO FIRESTORE ---------------------------------------------
 
 const coverRef = (empresaId: string, eventId: string) =>
