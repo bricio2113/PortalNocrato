@@ -17,6 +17,7 @@ import { Subtarefa, subscribeSubtarefas, progresso } from '../utils/subtarefas';
 import { lerEquipeAgencia, indexarPorUid, pessoasDeUids } from '../utils/equipe';
 import { registrarMudancas } from '../utils/historico';
 import { getClientStage, CLIENT_STAGES, stageView } from '../utils/eventState';
+import { ehTesteAB, totalVersoes } from '../utils/variantes';
 
 /** Sobra do modelo antigo: card de quadro que nunca teve post na agenda. */
 interface CardOrfao {
@@ -599,6 +600,17 @@ const ClientProductionView: React.FC<ClientProductionViewProps> = ({
                                                     {sla && (
                                                         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-chip border flex items-center gap-1 ${slaClasses(sla.tone)}`}>
                                                             <Clock className="w-2.5 h-2.5" /> {sla.label}
+                                                        </span>
+                                                    )}
+                                                    {/* Teste A/B tambem no quadro: quem acompanha
+                                                        producao precisa saber que aquele card tem
+                                                        duas pecas para revisar, nao uma. */}
+                                                    {ehTesteAB(event) && (
+                                                        <span
+                                                            title={`Teste A/B · ${totalVersoes(event)} versões`}
+                                                            className="text-[9px] font-bold px-1.5 py-0.5 rounded-chip bg-white/10 text-zinc-300"
+                                                        >
+                                                            A/B {totalVersoes(event)}
                                                         </span>
                                                     )}
                                                 </div>

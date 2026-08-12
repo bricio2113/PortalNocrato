@@ -148,6 +148,42 @@ export interface MidiaArquivo {
   bytes: number;
 }
 
+/**
+ * VARIANTE de um conteudo - teste A/B.
+ *
+ * O que varia e a CRIACAO: legenda, peca e previa. O resto - data, status, prazo,
+ * responsaveis, subtarefas, aprovacao - e do POST, e continua um so. Duas variantes
+ * nao sao duas entregas: e a mesma entrega com duas versoes da mensagem, e por isso
+ * elas moram dentro do evento em vez de virarem dois documentos. Dois documentos
+ * apareceriam como dois cards no calendario, contariam duas vezes na pendencia e
+ * exigiriam sincronizar data e status entre eles.
+ *
+ * A PRINCIPAL NAO ESTA NESTA LISTA. Ela e o proprio evento (`copy`, `midias`,
+ * `previewUrl`, `metrics` no nivel de cima), e `variantes` guarda apenas as
+ * SECUNDARIAS. Assim tudo o que le o post - a grade do calendario, a previa do feed,
+ * a miniatura, o portal do cliente - continua lendo os mesmos campos, sem saber que
+ * variante existe. Promover uma secundaria a principal TROCA o conteudo dos dois
+ * lugares (ver utils/variantes.ts).
+ */
+export interface VarianteConteudo {
+    /** Id local, estavel enquanto a variante existir. */
+    id: string;
+    /** "B", "C"... ou um nome que a equipe der. */
+    rotulo: string;
+    copy?: string;
+    midias?: MidiaArquivo[];
+    pastaMidia?: string[] | null;
+    previewUrl?: string;
+    /**
+     * Numeros DESTA versao.
+     *
+     * E o unico jeito de o teste responder a pergunta que o motiva: qual das duas
+     * funcionou. Metrica so no post nao distingue as versoes, e um A/B que nao se
+     * mede e so trabalho dobrado.
+     */
+    metrics?: EventMetrics;
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -172,6 +208,15 @@ export interface CalendarEvent {
 
   /** Arquivos enviados para o Storage. A ordem e a do carrossel. */
   midias?: MidiaArquivo[];
+
+  /**
+   * Versoes SECUNDARIAS deste conteudo (teste A/B). Ver VarianteConteudo.
+   *
+   * Ausente ou vazio = post normal, que e a maioria absoluta. Nada no app precisa
+   * saber que variante existe para funcionar: quem le `copy` e `midias` esta lendo
+   * a versao principal.
+   */
+  variantes?: VarianteConteudo[];
 
   /**
    * Pasta em Arquivos & Materiais onde a midia deste conteudo mora.
@@ -219,6 +264,22 @@ export interface CalendarEvent {
   /** Nome de quem decidiu, copiado no momento da decisao (ver PostComment). */
   approvalByName?: string | null;
   approvalAt?: Date | null;
+
+  /**
+   * Rotulo da versao que o cliente escolheu ao aprovar - teste A/B.
+   *
+   * Aponta para uma POSICAO ("aprovei a B"), nao para o conteudo: promover troca o
+   * conteudo de lugar e este campo e remapeado junto (ver promoverVariante).
+   *
+   * Vazio em post sem A/B, e vazio tambem quando o cliente pede ajuste - decisao
+   * nova apaga a escolha anterior, senao o post ficaria marcado como "cliente
+   * escolheu a B" depois de ele voltar atras.
+   *
+   * A escolha NAO promove por si: o cliente so pode escrever campos de aprovacao
+   * (ver firestore.rules), e promover reescreve legenda e midia. Quem aplica e a
+   * agencia, com a tela avisando que a versao escolhida ainda nao e a principal.
+   */
+  approvalVersao?: string | null;
 
   /**
    * Imagem de previa definida a mao pela agencia. Tem prioridade sobre tudo:

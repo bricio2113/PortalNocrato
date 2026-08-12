@@ -4,6 +4,7 @@ import EventDetailModal, { ExtrasDoSave } from './EventDetailModal';
 import { db } from '../utils/firebase';
 import { getTypeStyles } from '../utils/eventStyles';
 import { getClientStage, CLIENT_STAGES, stageView, stageCurto } from '../utils/eventState';
+import { ehTesteAB, totalVersoes } from '../utils/variantes';
 import { stripUndefined } from '../utils/firestore';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
@@ -594,6 +595,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                             </span>
                                                                         )}
                                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
+                                                                        {/* A/B no card: o time precisa varrer o mes e ver
+                                                                            onde tem teste rodando sem abrir post por post. */}
+                                                                        {ehTesteAB(event) && (
+                                                                            <span
+                                                                                title={`Teste A/B · ${totalVersoes(event)} versões`}
+                                                                                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-zinc-300 shrink-0"
+                                                                            >
+                                                                                A/B {totalVersoes(event)}
+                                                                            </span>
+                                                                        )}
                                                                         {/* Estagio direto no card: sem isso o contador do menu
                                                                             dizia "3 pendentes" e o usuario tinha que abrir post
                                                                             por post para descobrir quais. */}
@@ -749,6 +760,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ empresaId, userRole = 'agen
                                                                         aparecia depois de abrir o post. */}
                                                                     <div className="flex items-center gap-1.5 flex-wrap mt-3 pt-2.5 border-t border-white/5">
                                                                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${styles.label}`}>{event.type}</span>
+                                                                        {/* A/B no card: o time precisa varrer o mes e ver
+                                                                            onde tem teste rodando sem abrir post por post. */}
+                                                                        {ehTesteAB(event) && (
+                                                                            <span
+                                                                                title={`Teste A/B · ${totalVersoes(event)} versões`}
+                                                                                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-zinc-300 shrink-0"
+                                                                            >
+                                                                                A/B {totalVersoes(event)}
+                                                                            </span>
+                                                                        )}
                                                                         <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${stage.bg} ${stage.text} ${stage.border}`}>
                                                                             {stageView(stageOf(event), userRole).label}
                                                                         </span>

@@ -50,6 +50,17 @@ const EVENTS = Array.from({ length: 14 }, (_, i) => ({
         { url: 'https://exemplo.invalido/peca-3.mp4', path: 'p3', contentType: 'video/mp4', bytes: 5000 }
     ] : undefined,
     pastaMidia: i === 0 ? ['Imagens', '2026', 'Estatico Captacao'] : undefined,
+    // ev0 e o post de teste A/B: duas versoes secundarias, uma com metrica melhor
+    // que a principal. Sem metrica nas duas, a comparacao nunca seria exercitada.
+    variantes: i === 0 ? [
+        {
+            id: 'vb', rotulo: 'B', copy: 'Legenda da versão B, mais direta.',
+            midias: [{ url: 'https://exemplo.invalido/b1.jpg', path: 'pb1', contentType: 'image/jpeg', bytes: 1000 }],
+            pastaMidia: ['Imagens'], metrics: { alcance: 9000, interacoes: 780 }
+        },
+        { id: 'vc', rotulo: 'C', copy: '', midias: [], pastaMidia: null }
+    ] : undefined,
+    metrics: i === 0 ? { alcance: 12000, interacoes: 300 } : undefined,
     copy: 'Legenda de exemplo '.repeat(8)
 }));
 
@@ -230,8 +241,35 @@ const makeCollection = (path: string, filtros: [string, string, any][] = []): an
 // vez de apenas nao ter dado erro. Foi o que faltava para verificar o arraste do
 // calendario: sem isto, "nenhum erro no console" era todo o teste.
 const registrar = (op: string, path: string, data?: any) => {
+    if (data !== undefined) recusarUndefined(op, path, data);
     const w = (globalThis as any).__writes || ((globalThis as any).__writes = []);
     w.push({ op, path, data: data ? JSON.parse(JSON.stringify(data, (_k, v) => v instanceof Date ? v.toISOString() : v)) : undefined });
+};
+
+/**
+ * Recusa `undefined` como o Firestore recusa - em QUALQUER profundidade.
+ *
+ * O mock aceitava tudo, e uma gravacao com `undefined` passava por todas as
+ * verificacoes aqui para falhar em producao com "Unsupported field value:
+ * undefined". O caso que motivou: o teste A/B guarda a variante DENTRO de um array,
+ * onde o `stripUndefined` do projeto (um nivel so) nao alcanca, e `previewUrl` e
+ * `metrics` faltam na maioria dos posts - ou seja, o caminho comum.
+ *
+ * Fica dentro do `registrar` porque toda escrita passa por ele. E nem no `__writes`
+ * dava para ver o problema: `JSON.stringify` apaga a chave com undefined.
+ */
+const recusarUndefined = (op: string, path: string, valor: any, onde = ''): void => {
+    if (valor === undefined) {
+        throw new Error(`${op} em ${path}: "${onde || 'raiz'}" veio undefined — o Firestore recusa`);
+    }
+    if (Array.isArray(valor)) {
+        valor.forEach((v, i) => recusarUndefined(op, path, v, `${onde}[${i}]`));
+        return;
+    }
+    // Date e Timestamp sao valores, nao mapas para percorrer.
+    if (valor && typeof valor === 'object' && !(valor instanceof Date) && typeof valor.toDate !== 'function') {
+        Object.keys(valor).forEach(k => recusarUndefined(op, path, valor[k], onde ? `${onde}.${k}` : k));
+    }
 };
 
 /**

@@ -10,10 +10,12 @@
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import { db } from './firebase';
-import { ApprovalState, EventMetrics, PostComment, MidiaArquivo } from '../types';
+import { ApprovalState, EventMetrics, PostComment, MidiaArquivo, VarianteConteudo, CalendarEvent } from '../types';
 import { needsClientAction, needsAgencyAction, getClientStage, ClientStage } from './eventState';
 import { registrar } from './historico';
 import { slaAtual } from './sla';
+import { stripUndefined } from './firestore';
+import { varianteGravavel } from './variantes';
 
 const empresaRef = (empresaId: string) => db.collection('empresas').doc(empresaId);
 
@@ -28,13 +30,23 @@ export async function setApproval(
     eventId: string,
     state: ApprovalState,
     by: string | null,
-    byName?: string | null
+    byName?: string | null,
+    /**
+     * Rotulo da versao escolhida, no teste A/B. `null` em post normal e tambem em
+     * pedido de ajuste - ver o comentario da escrita abaixo.
+     */
+    versao?: string | null
 ): Promise<void> {
     await empresaRef(empresaId).collection('events').doc(eventId).update({
         approval: state,
         approvalBy: by,
         approvalByName: byName || null,
-        approvalAt: new Date()
+        approvalAt: new Date(),
+        // SEMPRE escrito, inclusive como null. Decisao nova tem que APAGAR a escolha
+        // anterior: sem isto, pedir ajuste depois de aprovar a B deixaria o post
+        // marcado como "cliente escolheu a versao B" - e a agencia promoveria uma
+        // versao que acabou de ser recusada.
+        approvalVersao: versao || null
     });
 
     // Historico DEPOIS da escrita principal, e sem await bloqueante: registrar()
@@ -44,6 +56,9 @@ export async function setApproval(
     if (by) {
         void registrar(empresaId, {
             eventId, tipo: 'aprovacao', para: state,
+            // A versao entra no historico porque e prova: numa discussao sobre "eu
+            // aprovei a outra", "Aprovado - versao B" responde e o estado atual nao.
+            versao: versao || null,
             por: by, porNome: byName || null,
             // Quem chama setApproval na interface e sempre o cliente - a agencia
             // ve o estado e nao vota (ver EventDetailModal).
@@ -190,7 +205,12 @@ export async function salvarResponsaveis(
 export function subscribeMidiaDoPost(
     empresaId: string,
     eventId: string,
-    onData: (dados: { midias: MidiaArquivo[]; pastaMidia: string[] | null }) => void
+    onData: (dados: {
+        midias: MidiaArquivo[];
+        pastaMidia: string[] | null;
+        /** Versoes secundarias (teste A/B). Ver utils/variantes.ts. */
+        variantes: VarianteConteudo[];
+    }) => void
 ): () => void {
     return db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
         .onSnapshot(
@@ -198,11 +218,41 @@ export function subscribeMidiaDoPost(
                 const data = doc.exists ? (doc.data() || {}) : {};
                 onData({
                     midias: Array.isArray(data.midias) ? data.midias as MidiaArquivo[] : [],
-                    pastaMidia: Array.isArray(data.pastaMidia) ? data.pastaMidia as string[] : null
+                    pastaMidia: Array.isArray(data.pastaMidia) ? data.pastaMidia as string[] : null,
+                    variantes: Array.isArray(data.variantes) ? data.variantes as VarianteConteudo[] : []
                 });
             },
             erro => console.error('Erro ao acompanhar a mídia do post:', erro)
         );
+}
+
+/**
+ * Grava um patch do conteudo do post.
+ *
+ * Usada pelas acoes ESTRUTURAIS do teste A/B - criar, remover e promover variante -
+ * e pelo upload dentro de uma variante. Sao acoes atomicas: nao ha meia-variante nem
+ * meia-promocao, e por isso elas nao esperam o "Salvar" (o rascunho guarda texto
+ * digitado, nao estrutura).
+ *
+ * Recebe patch e nao o evento inteiro: `promoverVariante` devolve exatamente os
+ * campos que mudam, e escrever o documento completo levaria junto o texto do
+ * rascunho que ainda nao foi salvo.
+ */
+export async function salvarConteudoDoPost(
+    empresaId: string,
+    eventId: string,
+    patch: Partial<CalendarEvent>
+): Promise<void> {
+    // LIMPEZA EM DOIS NIVEIS. O Firestore recusa `undefined`, e a variante vive dentro
+    // de um array - o `stripUndefined`, que olha so o primeiro nivel, nao a alcanca.
+    // Como `previewUrl` e `metrics` faltam na maioria dos posts, sem isto a gravacao
+    // falharia no caso comum, e nao num canto raro.
+    const limpo = stripUndefined({
+        ...patch,
+        ...(patch.variantes ? { variantes: patch.variantes.map(varianteGravavel) } : {})
+    } as Record<string, unknown>);
+    await db.collection('empresas').doc(empresaId).collection('events').doc(eventId)
+        .update(limpo);
 }
 
 /** Grava a lista de midias e a pasta. Escrita imediata, sem passar pelo "Salvar". */

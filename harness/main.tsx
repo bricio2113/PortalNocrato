@@ -43,6 +43,23 @@ const evento: any = {
 };
 
 /**
+ * Versoes secundarias do teste A/B, usadas por tres telas (agencia, cliente e o
+ * caso "cliente ja escolheu"). Iguais as do mock, para o dado da prop e o do
+ * documento nao se contradizerem quando a tela le dos dois.
+ *
+ * A B tem peça e metrica PROPRIAS - e o que prova que trocar de aba troca o
+ * conteudo. A C nasce vazia, que e o estado real de uma versao recem-criada.
+ */
+const VARIANTES_AB = [
+    {
+        id: 'vb', rotulo: 'B', copy: 'Legenda da versão B, mais direta.',
+        midias: [{ url: 'https://exemplo.invalido/b1.jpg', path: 'pb1', contentType: 'image/jpeg', bytes: 1000 }],
+        pastaMidia: ['Imagens'], metrics: { alcance: 9000, interacoes: 780 }
+    },
+    { id: 'vc', rotulo: 'C', copy: '', midias: [], pastaMidia: null }
+];
+
+/**
  * MIDIA E PASTAS LADO A LADO.
  *
  * Existe para verificar a promessa "o que subir no conteudo aparece nas pastas".
@@ -225,6 +242,57 @@ const SCREENS: Record<string, React.ReactNode> = {
             pendingByEmpresa={{ 'MarcioFisio': { aguardandoAgencia: 3 } as any }}
             userEmail={profile.email}
             userName="Pedro Vidal"
+        />
+    </div>,
+    // TESTE A/B: post com duas versoes secundarias, uma delas com metrica melhor que
+    // a principal - o caso em que a tela precisa dizer qual funcionou.
+    'modal-ab': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{
+                ...evento, id: 'ev0',
+                metrics: { alcance: 12000, interacoes: 300 },
+                variantes: VARIANTES_AB
+            } as any}
+            onSave={(ev) => { (globalThis as any).__save = { campos: ev }; }}
+            onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
+            userEmail={profile.email} userName="Pedro Vidal"
+        />
+    </div>,
+    // O MESMO POST NA TELA DO CLIENTE. Ele escolhe entre as versoes e aprova a que
+    // preferir; nao tem acao de estrutura (criar, apagar, promover).
+    'modal-cliente-ab': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{ ...evento, id: 'ev0', variantes: VARIANTES_AB } as any}
+            onSave={noop} onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="cliente" perfilHandle="drasylviafisio"
+            userEmail="cliente@exemplo.com" userName="Cliente Exemplo"
+        />
+    </div>,
+    // CLIENTE em post SEM A/B - o caso normal. Aponta para `ev1`, que no mock nao tem
+    // variantes: em `ev0` (o post de teste A/B) o documento tem, e a tela le do
+    // documento, nao da prop - entao ev0 nao serve para provar a ausencia do bloco.
+    'modal-cliente-sem-ab': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{ ...evento, id: 'ev1', midias: [] } as any}
+            onSave={noop} onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="cliente" perfilHandle="drasylviafisio"
+            userEmail="cliente@exemplo.com" userName="Cliente Exemplo"
+        />
+    </div>,
+    // A/B com o cliente JA TENDO ESCOLHIDO a versao B - que ainda nao e a principal.
+    // E o unico estado do teste que exige aviso: sem ele a agencia publica a A.
+    'modal-ab-escolhido': <div className="bg-[#111111] min-h-screen">
+        <EventDetailModal
+            event={{
+                ...evento, id: 'ev0', variantes: VARIANTES_AB,
+                approval: 'aprovado', approvalVersao: 'B',
+                approvalBy: 'cliente@exemplo.com', approvalByName: 'Cliente Exemplo',
+                approvalAt: new Date()
+            } as any}
+            onSave={noop} onDelete={noop} onClose={noop}
+            empresaId="agencia-mara" userRole="agencia" perfilHandle="drasylviafisio"
+            userEmail={profile.email} userName="Pedro Vidal"
         />
     </div>,
     'modal-gestao': <div className="bg-[#111111] min-h-screen">
