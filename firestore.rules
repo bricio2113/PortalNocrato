@@ -84,14 +84,23 @@ service cloud.firestore {
     // O cliente pode gravar a decisao dele numa publicacao, e mais nada.
     //
     // diff().affectedKeys() lista os campos que a escrita mexeu; exigimos que
-    // esse conjunto caiba dentro dos tres campos de aprovacao. Assim o cliente
+    // esse conjunto caiba dentro dos campos de aprovacao. Assim o cliente
     // aprova sem conseguir, na mesma requisicao, mudar data, legenda, status
     // ou as metricas do post.
+    //
+    // `approvalVersao` e o rotulo da versao escolhida no teste A/B ("B"). Ele fica
+    // AQUI, e nao entre os campos livres, exatamente porque promover uma versao
+    // reescreve legenda e midia - o cliente escolhe, e a agencia aplica. Limitado a
+    // texto curto: e um rotulo, e um campo de texto livre gravado pelo cliente e
+    // exibido para a agencia nao precisa aceitar parede de texto.
     function onlyApprovalChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['approval', 'approvalBy', 'approvalAt', 'approvalByName'])
+               .hasOnly(['approval', 'approvalBy', 'approvalAt', 'approvalByName', 'approvalVersao'])
              && request.resource.data.approval in ['aguardando', 'aprovado', 'ajuste_solicitado']
-             && request.resource.data.approvalBy == request.auth.token.email;
+             && request.resource.data.approvalBy == request.auth.token.email
+             && (request.resource.data.approvalVersao == null
+                 || (request.resource.data.approvalVersao is string
+                     && request.resource.data.approvalVersao.size() <= 8));
     }
 
     // ---------------------------------------------------------------

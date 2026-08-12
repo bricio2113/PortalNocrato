@@ -28,6 +28,24 @@ export interface ConteudoVariavel {
 export const ehTesteAB = (event: Pick<CalendarEvent, 'variantes'>) =>
     Boolean(event.variantes && event.variantes.length > 0);
 
+/** Rotulo da principal. Fixo: ela e a primeira posicao, sempre. */
+export const ROTULO_PRINCIPAL = 'A';
+
+/**
+ * A versao que o cliente escolheu, quando ela NAO e a principal.
+ *
+ * E o unico estado do teste A/B que precisa de aviso na tela: o cliente aprovou a
+ * B e o que vai publicado e a A. O cliente nao pode promover (as regras so deixam
+ * ele escrever campos de aprovacao, e promover reescreve legenda e midia), entao
+ * sem um aviso a agencia publicaria a peca que ele nao escolheu.
+ */
+export const escolhaForaDaPrincipal = (
+    event: Pick<CalendarEvent, 'approvalVersao' | 'variantes'>
+): string | null =>
+    ehTesteAB(event) && event.approvalVersao && event.approvalVersao !== ROTULO_PRINCIPAL
+        ? event.approvalVersao
+        : null;
+
 /** Quantas versoes o post tem, contando a principal. */
 export const totalVersoes = (event: Pick<CalendarEvent, 'variantes'>) =>
     1 + (event.variantes?.length || 0);
@@ -114,12 +132,28 @@ export function promoverVariante(
         metrics: principal.metrics || {}
     });
 
+    /**
+     * A ESCOLHA DO CLIENTE ANDA JUNTO.
+     *
+     * `approvalVersao` guarda uma posicao ("aprovei a B") e promover troca o conteudo
+     * de posicao - a peca que estava na B passa a ser a principal. Sem remapear, a
+     * tela continuaria dizendo "aprovado - versao B" apontando para o conteudo que o
+     * cliente NAO escolheu, e o aviso de "escolha ainda nao aplicada" apareceria
+     * justamente depois de a escolha ter sido aplicada.
+     */
+    const escolha = event.approvalVersao;
+    const novaEscolha =
+        escolha === ROTULO_PRINCIPAL ? escolhida.rotulo
+        : escolha === escolhida.rotulo ? ROTULO_PRINCIPAL
+        : null;
+
     return semVazios({
         copy: escolhida.copy || '',
         midias: escolhida.midias || [],
         pastaMidia: escolhida.pastaMidia || null,
         previewUrl: escolhida.previewUrl || '',
         metrics: escolhida.metrics || {},
+        ...(novaEscolha ? { approvalVersao: novaEscolha } : {}),
         variantes: novas
     });
 }

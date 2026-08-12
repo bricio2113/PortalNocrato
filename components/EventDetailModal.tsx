@@ -11,7 +11,8 @@ import {
     salvarMidiaDoPost, salvarConteudoDoPost
 } from '../utils/posts';
 import {
-    novaVariante, promoverVariante, mesclarVariantes, ehTesteAB, versaoComMaisInteracao
+    novaVariante, promoverVariante, mesclarVariantes, ehTesteAB, versaoComMaisInteracao,
+    escolhaForaDaPrincipal, ROTULO_PRINCIPAL
 } from '../utils/variantes';
 import { VarianteConteudo } from '../types';
 import PostComments from './PostComments';
@@ -115,6 +116,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     const [isDeleting, setIsDeleting] = useState(false);
     const [showDiscardWarning, setShowDiscardWarning] = useState(false);
     const isCreating = !event.id;
+    const isClient = userRole === 'cliente';
     const titleRef = useRef<HTMLTextAreaElement>(null);
 
     /**
@@ -221,6 +223,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     const atual = variantesVivas.find(v => v.id === varianteAtiva) || null;
     const testeAB = ehTesteAB({ variantes: variantesVivas });
     const disputa = versaoComMaisInteracao({ ...editableEvent, variantes: variantesVivas });
+    /** Rotulo da versao aberta. A principal e sempre "A". */
+    const rotuloAtivo = atual?.rotulo || ROTULO_PRINCIPAL;
+
+    /**
+     * As abas, numa lista - para as duas telas usarem os mesmos rotulos.
+     *
+     * O cliente ve "Versão A", e nao "A · principal": "principal" e vocabulario
+     * interno (qual delas vai publicada se ninguem escolher) e nao ajuda quem so
+     * precisa comparar duas peças e dizer qual prefere.
+     */
+    const abasDeVersao = [
+        { id: null as string | null, rotulo: ROTULO_PRINCIPAL, texto: isClient ? 'Versão A' : 'A · principal' },
+        ...variantesVivas.map(v => ({ id: v.id as string | null, rotulo: v.rotulo, texto: isClient ? `Versão ${v.rotulo}` : v.rotulo }))
+    ];
+    /** Versao escolhida pelo cliente que AINDA nao e a principal - ver variantes.ts. */
+    const escolhaPendente = escolhaForaDaPrincipal({
+        approvalVersao: editableEvent.approvalVersao,
+        variantes: variantesVivas
+    });
 
     // A variante escolhida pode ter sido removida por outra pessoa; sem isto o
     // formulario ficaria editando o vazio.
@@ -326,7 +347,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             v.id === atual.id ? { ...v, midias: midias || [], pastaMidia: pasta } : v));
     };
 
-    const isClient = userRole === 'cliente';
     // Janela de revisao do cliente, derivada da data e do formato. Nao e campo
     // gravado: um campo teria que ser recalculado a cada mudanca de data ou de
     // formato, e um esquecimento ali mentiria na tela.
@@ -367,8 +387,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         setApprovalBusy(state);
         setApprovalError('');
         try {
-            await setApproval(empresaId, event.id, state, userEmail || null, userName || null);
+            /**
+             * A VERSAO VAI JUNTO NA APROVACAO.
+             *
+             * Em post com teste A/B, "aprovado" sem dizer qual versao nao e resposta:
+             * a agencia tem duas peças na mao e continua sem saber qual publicar. Vai
+             * a versao ABERTA - o botao diz o rotulo, entao o que a pessoa leu antes
+             * de clicar e o que fica gravado.
+             *
+             * Em pedido de ajuste vai `null` de proposito: recusa nao escolhe versao,
+             * e manter a escolha anterior faria a agencia promover uma peça que o
+             * cliente acabou de recusar.
+             */
+            const versao = testeAB && state === 'aprovado' ? rotuloAtivo : null;
+            await setApproval(empresaId, event.id, state, userEmail || null, userName || null, versao);
             setLocalApproval(state);
+            setEditableEvent(prev => ({ ...prev, approvalVersao: versao }));
             onApprovalChange?.(state);
         } catch (err) {
             console.error(err);
@@ -522,6 +556,174 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
      */
     const vista = stageView(stage, isClient ? 'cliente' : 'agencia');
 
+    /**
+     * As VERSOES deste conteudo - teste A/B.
+     *
+     * Vive em DOIS lugares, por papel:
+     *
+     *   agencia -> no formulario, entre o que e do post (data, status, responsaveis)
+     *              e o que varia por versao (peca, legenda, previa, resultado): a
+     *              barra e a linha divisoria, e o que esta abaixo pertence a versao
+     *              aberta;
+     *   cliente -> na coluna da peca, junto do botao de aprovar.
+     *
+     * A posicao no cliente nao e estetica: no celular a coluna da peca vem PRIMEIRO,
+     * e com as abas do outro lado ele encontraria o "Aprovar" antes de descobrir que
+     * existem duas versoes - aprovando a primeira por inercia.
+     *
+     * O CLIENTE TAMBEM VE, e escolhe: aprovar "o post" quando existem duas peças nao
+     * e resposta, a agencia continua com as duas na mao. Ele ve as abas e os rotulos,
+     * sem nenhuma acao de estrutura - criar, apagar e promover reescrevem legenda e
+     * midia, e as regras do Firestore so deixam ele gravar campos de aprovacao.
+     *
+     * Em post sem A/B o bloco nao aparece para o cliente: seria anunciar a ele uma
+     * mecanica interna que nao esta em uso.
+     */
+    const BlocoVersoes = () => (
+        (!isClient || testeAB) ? (
+            <div className="border border-white/10 rounded-card overflow-hidden">
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 bg-white/[0.03]">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400">
+                        <FlaskConical className="w-3.5 h-3.5 text-[#FABE01]" />
+                        {isClient ? 'Duas versões' : 'Teste A/B'}
+                    </span>
+
+                    {testeAB ? (
+                        <>
+                            <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Versões do conteúdo">
+                                {abasDeVersao.map(aba => (
+                                    <button
+                                        key={aba.id || 'principal'}
+                                        role="tab"
+                                        aria-selected={varianteAtiva === aba.id}
+                                        onClick={() => setVarianteAtiva(aba.id)}
+                                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                                            varianteAtiva === aba.id ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                                        }`}
+                                    >
+                                        {aba.texto}
+                                        {/* A escolhida pelo cliente, para os dois lados: e o
+                                            dado que decide o que vai publicado. O ★ da
+                                            metrica e interno - nao serve para o cliente
+                                            decidir, e antes de publicar nem existe. */}
+                                        {editableEvent.approvalVersao === aba.rotulo && ' ✓'}
+                                        {!isClient && disputa?.rotulo === aba.rotulo && aba.id && ' ★'}
+                                    </button>
+                                ))}
+                                {!isClient && variantesVivas.length < 5 && (
+                                    <button
+                                        onClick={criarVariante}
+                                        aria-label="Adicionar versão"
+                                        className="px-2 py-1 rounded-full text-[11px] font-semibold text-zinc-400 hover:text-white border border-dashed border-white/15 hover:border-white/30 transition-colors"
+                                    >
+                                        + versão
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Estrutura e da agencia. Para o cliente estas acoes
+                                nem existem no DOM: as regras do Firestore
+                                recusariam a escrita, e botao que falha ao clicar
+                                e pior do que botao ausente. */}
+                            {!isClient && (
+                                <div className="ml-auto flex items-center gap-1.5">
+                                    {atual && (
+                                        <>
+                                            <button
+                                                onClick={() => promover(atual)}
+                                                className="text-[11px] font-semibold text-[#FABE01] hover:bg-[#FABE01]/10 px-2 py-1 rounded-full transition-colors"
+                                            >
+                                                tornar principal
+                                            </button>
+                                            <button
+                                                onClick={() => removerVariante(atual)}
+                                                aria-label={`Remover versão ${atual.rotulo}`}
+                                                className="p-1.5 rounded-full text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </>
+                                    )}
+                                    <button
+                                        onClick={alternarAB}
+                                        className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded-full transition-colors"
+                                    >
+                                        desligar
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-[11px] text-zinc-500 leading-relaxed flex-1 min-w-[12rem]">
+                                Mesma entrega, versões diferentes de legenda e peça — para medir qual funciona.
+                            </p>
+                            <button
+                                onClick={alternarAB}
+                                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-zinc-200 px-3 py-1.5 rounded-full transition-colors"
+                            >
+                                <Plus className="w-3 h-3" /> Criar versão B
+                            </button>
+                        </>
+                    )}
+                </div>
+
+                {testeAB && (
+                    <div className="px-3 py-2 border-t border-white/5 bg-black/20">
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                            {isClient
+                                // Para o cliente o texto e instrucao, nao descricao: ele
+                                // precisa saber que pode olhar as duas antes de decidir,
+                                // senao a primeira aba vira a escolha por inercia.
+                                ? (editableEvent.approvalVersao === rotuloAtivo
+                                    ? `Você aprovou a versão ${rotuloAtivo}. Dá para mudar: abra a outra e aprove ela.`
+                                    : `Vendo a versão ${rotuloAtivo}: a peça, a legenda e a prévia são dela. Data e formato são do post. Veja as duas e aprove a que preferir.`)
+                                : (atual
+                                    ? `Editando a versão ${atual.rotulo}: peça, legenda, prévia e resultado abaixo são dela. Data, status, prazo e responsáveis são do post e valem para todas.`
+                                    : 'Editando a principal — é a versão que o cliente vê, que aparece na grade e que vai publicada.')}
+                            {!isClient && disputa && ` · Mais interação até agora: versão ${disputa.rotulo}.`}
+                        </p>
+                    </div>
+                )}
+
+                {/* A ESCOLHA DO CLIENTE QUE AINDA NAO FOI APLICADA.
+                    O cliente aprovou a B e o que vai publicado e a A - ele
+                    nao pode promover, so a agencia pode. Sem este aviso a
+                    escolha ficaria escondida num ✓ de chip, e a agencia
+                    publicaria a peça recusada achando que estava aprovada. */}
+                {!isClient && escolhaPendente && (
+                    <div className="px-3 py-2.5 border-t border-white/5 bg-amber-500/10 flex flex-wrap items-center gap-2">
+                        {/* O icone e IRMAO do paragrafo, nao filho dele: num container
+                            flex cada pedaco de texto vira um item, e o "versão B" em
+                            <strong> se separava da frase com o gap no meio. */}
+                        <div className="flex items-start gap-1.5 flex-1 min-w-[14rem]">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-300" />
+                            <p className="text-[11px] text-amber-300 leading-relaxed">
+                                O cliente aprovou a <strong>versão {escolhaPendente}</strong>, que não é a
+                                principal — do jeito que está, é a A que vai publicada.
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                const v = variantesVivas.find(x => x.rotulo === escolhaPendente);
+                                if (v) promover(v);
+                            }}
+                            className="shrink-0 text-[11px] font-bold bg-amber-500 hover:bg-amber-400 text-black px-3 py-1.5 rounded-full transition-colors"
+                        >
+                            Tornar a {escolhaPendente} principal
+                        </button>
+                    </div>
+                )}
+
+                {abErro && (
+                    <p className="text-red-400 text-xs px-3 py-2 flex items-start gap-1.5 border-t border-white/5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {abErro}
+                    </p>
+                )}
+            </div>
+        ) : null
+    );
+
     const ApprovalBlock = () => (
                             <div className="flex items-start gap-3">
                                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${stageStyle.dot}`} />
@@ -537,7 +739,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     {localApproval === 'aprovado' && (event.approvalByName || event.approvalBy) && (
                                         <p className="text-emerald-400/80 text-xs mt-2">
                                             Aprovado por {event.approvalByName || event.approvalBy}
-                                            {event.approvalAt ? ` em ${event.approvalAt.toLocaleDateString('pt-BR')}` : ''}.
+                                            {event.approvalAt ? ` em ${event.approvalAt.toLocaleDateString('pt-BR')}` : ''}
+                                            {/* QUAL versao foi aprovada, junto de quem e quando.
+                                                "Aprovado" num post com duas peças nao diz o que
+                                                publicar - e esta linha e a que a equipe le. */}
+                                            {editableEvent.approvalVersao ? ` — versão ${editableEvent.approvalVersao}` : ''}.
                                         </p>
                                     )}
 
@@ -559,13 +765,28 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                     {/* Só o cliente decide. A agência vê o estado, não vota. */}
                                     {isClient && stage !== 'publicado' && stage !== 'cancelado' && (
                                         <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                                            {/* COM TESTE A/B O BOTAO DIZ A VERSAO.
+                                                "Aprovar" com duas peças na tela e ambiguo - e o
+                                                que fica gravado e a versao ABERTA, entao o rotulo
+                                                precisa estar no botao que a pessoa clica.
+
+                                                E ele volta a ficar ativo ao trocar de aba mesmo
+                                                depois de aprovado: mudar de ideia entre as versoes
+                                                e uso previsto, nao erro. So fica travado na versao
+                                                que ja esta aprovada. */}
                                             <button
                                                 onClick={() => handleApproval('aprovado')}
-                                                disabled={approvalBusy !== null || localApproval === 'aprovado'}
+                                                disabled={approvalBusy !== null
+                                                    || (localApproval === 'aprovado'
+                                                        && (!testeAB || editableEvent.approvalVersao === rotuloAtivo))}
                                                 className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm rounded-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 {approvalBusy === 'aprovado' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
-                                                {localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar'}
+                                                {!testeAB
+                                                    ? (localApproval === 'aprovado' ? 'Aprovado' : 'Aprovar')
+                                                    : editableEvent.approvalVersao === rotuloAtivo && localApproval === 'aprovado'
+                                                        ? `Versão ${rotuloAtivo} aprovada`
+                                                        : `Aprovar a versão ${rotuloAtivo}`}
                                             </button>
                                             {/* Fora da janela o botao SAI, em vez de
                                                 ficar apagado: um botao desabilitado sem
@@ -688,6 +909,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
 
                 <aside className="lg:w-[360px] xl:w-[400px] shrink-0 lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/5 p-4 sm:p-5 bg-[#151515]">
+                    {/* PARA O CLIENTE as abas vem ANTES da peça: elas trocam o que
+                        esta logo abaixo, e a ordem "escolha a versão → veja a peça →
+                        aprove" e a mesma no celular e no computador. */}
+                    {isClient && testeAB && (
+                        <div className="mb-4">
+                            <BlocoVersoes />
+                        </div>
+                    )}
+
                     {/* A previa le a lista AO VIVO: reordenar tem que aparecer
                         aqui na hora, senao a simulacao do feed mostra uma ordem que
                         o post nao tem mais. */}
@@ -901,117 +1131,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         )}
                     </div>
 
-                    {/* TESTE A/B - as versoes deste conteudo.
-                        Fica ENTRE o que e do post (data, status, responsaveis) e o que
-                        varia (peca, legenda, previa, resultado): a barra e a linha
-                        divisoria, e o que esta abaixo dela pertence a versao aberta.
-
-                        O cliente nao ve nada disso: ele recebe a versao principal e
-                        aprova o post, nao escolhe entre versoes internas. */}
-                    {!isClient && (
-                        <div className="border border-white/10 rounded-card overflow-hidden">
-                            <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 bg-white/[0.03]">
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400">
-                                    <FlaskConical className="w-3.5 h-3.5 text-[#FABE01]" /> Teste A/B
-                                </span>
-
-                                {testeAB ? (
-                                    <>
-                                        <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Versões do conteúdo">
-                                            <button
-                                                role="tab"
-                                                aria-selected={!varianteAtiva}
-                                                onClick={() => setVarianteAtiva(null)}
-                                                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
-                                                    !varianteAtiva ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
-                                                }`}
-                                            >
-                                                A · principal
-                                            </button>
-                                            {variantesVivas.map(v => (
-                                                <button
-                                                    key={v.id}
-                                                    role="tab"
-                                                    aria-selected={varianteAtiva === v.id}
-                                                    onClick={() => setVarianteAtiva(v.id)}
-                                                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
-                                                        varianteAtiva === v.id ? 'bg-[#FABE01] text-black' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
-                                                    }`}
-                                                >
-                                                    {v.rotulo}
-                                                    {disputa?.rotulo === v.rotulo && ' ★'}
-                                                </button>
-                                            ))}
-                                            {variantesVivas.length < 5 && (
-                                                <button
-                                                    onClick={criarVariante}
-                                                    aria-label="Adicionar versão"
-                                                    className="px-2 py-1 rounded-full text-[11px] font-semibold text-zinc-400 hover:text-white border border-dashed border-white/15 hover:border-white/30 transition-colors"
-                                                >
-                                                    + versão
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="ml-auto flex items-center gap-1.5">
-                                            {atual && (
-                                                <>
-                                                    <button
-                                                        onClick={() => promover(atual)}
-                                                        className="text-[11px] font-semibold text-[#FABE01] hover:bg-[#FABE01]/10 px-2 py-1 rounded-full transition-colors"
-                                                    >
-                                                        tornar principal
-                                                    </button>
-                                                    <button
-                                                        onClick={() => removerVariante(atual)}
-                                                        aria-label={`Remover versão ${atual.rotulo}`}
-                                                        className="p-1.5 rounded-full text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </>
-                                            )}
-                                            <button
-                                                onClick={alternarAB}
-                                                className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded-full transition-colors"
-                                            >
-                                                desligar
-                                            </button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="text-[11px] text-zinc-500 leading-relaxed flex-1 min-w-[12rem]">
-                                            Mesma entrega, versões diferentes de legenda e peça — para medir qual funciona.
-                                        </p>
-                                        <button
-                                            onClick={alternarAB}
-                                            className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-zinc-200 px-3 py-1.5 rounded-full transition-colors"
-                                        >
-                                            <Plus className="w-3 h-3" /> Criar versão B
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-
-                            {testeAB && (
-                                <div className="px-3 py-2 border-t border-white/5 bg-black/20">
-                                    <p className="text-[10px] text-zinc-500 leading-relaxed">
-                                        {atual
-                                            ? `Editando a versão ${atual.rotulo}: peça, legenda, prévia e resultado abaixo são dela. Data, status, prazo e responsáveis são do post e valem para todas.`
-                                            : 'Editando a principal — é a versão que o cliente vê, que aparece na grade e que vai publicada.'}
-                                        {disputa && ` · Mais interação até agora: versão ${disputa.rotulo}.`}
-                                    </p>
-                                </div>
-                            )}
-
-                            {abErro && (
-                                <p className="text-red-400 text-xs px-3 py-2 flex items-start gap-1.5 border-t border-white/5">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {abErro}
-                                </p>
-                            )}
-                        </div>
-                    )}
+                    {/* As VERSOES do conteudo (teste A/B). Para o cliente este bloco
+                        vive na coluna da peca - ver a nota em BlocoVersoes. */}
+                    {!isClient && <BlocoVersoes />}
 
                     {/* LINKS: MATERIAL BRUTO E FINALIZADO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

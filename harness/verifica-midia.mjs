@@ -26,6 +26,8 @@
  *  21. atalho do Drive vive DENTRO da pasta
  *  22. TESTE A/B: as abas trocam o conteudo editado, "tornar principal" troca de
  *      lugar e "desligar" avisa antes de apagar
+ *  23. o CLIENTE ve as versoes e aprova UMA delas, sem acao de estrutura
+ *  24. escolha do cliente que ainda nao e a principal: a agencia e avisada e aplica
  */
 import { chromium } from 'playwright';
 import http from 'node:http';
@@ -91,8 +93,10 @@ const corpo = page => page.locator('body').innerText();
 const versoes = page => page.getByRole('tablist', { name: 'Versões do conteúdo' }).getByRole('tab');
 // Pelo INICIO do nome: `hasText: 'C'` casa com "A · principal" (busca por trecho,
 // sem diferenciar maiuscula) e a escolha da aba vira sorteio.
+// `Versão B` no cliente e `B` na agencia sao a MESMA aba com rotulo diferente: a
+// palavra "principal" e vocabulario interno e nao aparece na tela dele.
 const versao = (page, rotulo) => page.getByRole('tablist', { name: 'Versões do conteúdo' })
-    .getByRole('tab', { name: rotulo === 'principal' ? /principal/ : new RegExp(`^${rotulo}\\b`) });
+    .getByRole('tab', { name: rotulo === 'principal' ? /principal/ : new RegExp(`^(Versão )?${rotulo}\\b`) });
 
 // ---------------------------------------------------------------- 1 e 2 e 3
 {
@@ -1116,13 +1120,117 @@ const versao = (page, rotulo) => page.getByRole('tablist', { name: 'Versões do 
     await page.close();
 }
 
-// O CLIENTE nao ve versao nenhuma: ele aprova o post, e o post e a principal. Uma
-// aba "B" na tela dele transformaria uma decisao interna em pergunta ao cliente.
+// Em post SEM A/B o cliente nao ve o bloco: seria anunciar a ele uma mecanica
+// interna que nao esta em uso.
 {
-    const { page } = await abrir('modal-cliente');
+    const { page } = await abrir('modal-cliente-sem-ab');
     await page.waitForTimeout(700);
-    checar(await versoes(page).count() === 0 && !(await corpo(page)).includes('Teste A/B'),
-        '22f. o cliente não vê o bloco de versões');
+    checar(await versoes(page).count() === 0 && !(await corpo(page)).includes('Duas versões'),
+        '22f. em post sem A/B o cliente não vê bloco de versões');
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 23
+// O CLIENTE ESCOLHE A VERSAO. "Aprovado" num post com duas peças nao e resposta: a
+// agencia continua com as duas na mao. Ele ve as versoes, compara e aprova UMA.
+{
+    const { page, erros } = await abrir('modal-cliente-ab');
+    await page.waitForTimeout(900);
+
+    const legenda = page.getByLabel('Legenda / Copy');
+    checar(await versoes(page).count() === 3,
+        `23. o cliente vê uma aba por versão (${await versoes(page).count()})`);
+    checar(await existe(versao(page, 'A')) && (await corpo(page)).includes('Versão A'),
+        '23. com rótulo que ele entende ("Versão A", não "principal")');
+
+    // ESTRUTURA nao aparece: as regras recusariam a escrita, e botao que falha ao
+    // clicar e pior do que botao ausente.
+    const proibido = ['Adicionar versão', 'tornar principal', 'desligar'];
+    const vazados = [];
+    for (const nome of proibido) {
+        if (await existe(page.getByRole('button', { name: nome }))) vazados.push(nome);
+    }
+    checar(vazados.length === 0, `23. e nenhuma ação de estrutura: ${vazados.join(', ') || 'ok'}`);
+    checar(await page.getByRole('button', { name: /Remover versão/ }).count() === 0,
+        '23. nem apagar versão');
+
+    // Trocar de aba troca a peça e a legenda para ele também - senão comparar as
+    // versões seria impossível e a escolha viraria chute.
+    checar((await legenda.inputValue()).startsWith('Legenda de exemplo'),
+        '23. abre na versão A');
+    await versao(page, 'B').click();
+    await page.waitForTimeout(500);
+    checar(await legenda.inputValue() === 'Legenda da versão B, mais direta.',
+        '23. e a versão B mostra a legenda dela');
+    checar((await corpo(page)).includes('1 arquivo(s)'), '23. com a peça dela');
+    checar((await corpo(page)).includes('Veja as duas e aprove a que preferir'),
+        '23. a tela diz que ele pode ver as duas antes de decidir');
+
+    // O botao DIZ a versao: e o rotulo que a pessoa leu antes de clicar que fica
+    // gravado. "Aprovar" com duas peças na tela e ambiguo.
+    const aprovar = page.getByRole('button', { name: /^Aprovar a versão B$/ });
+    checar(await existe(aprovar), '23. o botão de aprovar diz qual versão será aprovada');
+    await aprovar.click();
+    await page.waitForTimeout(800);
+
+    const gravou = (await writes(page)).filter(x => x.op === 'update' && x.data?.approval).pop();
+    checar(Boolean(gravou) && gravou.data.approvalVersao === 'B',
+        `23. aprovar grava a versão escolhida: ${gravou ? JSON.stringify(gravou.data.approvalVersao) : '(nada)'}`);
+    checar(Boolean(gravou) && gravou.data.approval === 'aprovado',
+        '23. junto da aprovação, na mesma escrita');
+    // As regras do Firestore so deixam o cliente tocar nos campos de aprovacao: se a
+    // tela mandasse mais um campo, a escrita inteira seria recusada em producao.
+    const permitidos = ['approval', 'approvalBy', 'approvalByName', 'approvalAt', 'approvalVersao'];
+    const extras = Object.keys(gravou?.data || {}).filter(k => !permitidos.includes(k));
+    checar(extras.length === 0, `23. e nada além dos campos de aprovação: ${extras.join(', ') || 'ok'}`);
+    checar((await corpo(page)).includes('Versão B aprovada'),
+        '23. a tela confirma qual foi aprovada');
+    checar(erros.length === 0, `23. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-ab-cliente.png' });
+
+    // MUDAR DE IDEIA e uso previsto: abrir outra versão reativa o botão.
+    await versao(page, 'C').click();
+    await page.waitForTimeout(400);
+    const outra = page.getByRole('button', { name: /^Aprovar a versão C$/ });
+    checar(await existe(outra) && await outra.isEnabled(),
+        '23. e ele pode mudar a escolha para outra versão');
+    await page.close();
+}
+
+// ----------------------------------------------------------------------- 24
+// A ESCOLHA DO CLIENTE QUE AINDA NAO FOI APLICADA. Ele aprovou a B; o que vai
+// publicado e a A. O cliente nao pode promover - so a agencia pode -, entao a
+// tela dela tem que gritar isso.
+{
+    const { page, erros } = await abrir('modal-ab-escolhido');
+    await page.waitForTimeout(900);
+
+    checar((await corpo(page)).includes('O cliente aprovou a versão B'),
+        '24. a agência é avisada de que a escolha do cliente não é a principal');
+    checar((await corpo(page)).includes('é a A que vai publicada'),
+        '24. e do que acontece se ninguém agir');
+    checar((await corpo(page)).includes('versão B'),
+        '24. a linha de aprovação também registra a versão');
+
+    const aplicar = page.getByRole('button', { name: /Tornar a B principal/ });
+    checar(await existe(aplicar), '24. com um botão para aplicar a escolha');
+    await aplicar.click();
+    await page.waitForTimeout(800);
+
+    const gravou = (await writes(page))
+        .filter(x => x.op === 'update' && Array.isArray(x.data?.variantes)).pop();
+    checar(Boolean(gravou) && gravou.data.copy === 'Legenda da versão B, mais direta.',
+        '24. aplicar promove a versão escolhida');
+    // O rotulo descreve a POSICAO, e promover troca o conteudo de posicao: sem
+    // remapear, a tela diria "aprovado - versao B" apontando para a peça que o
+    // cliente recusou, e o aviso voltaria a aparecer para sempre.
+    checar(Boolean(gravou) && gravou.data.approvalVersao === 'A',
+        `24. e a escolha passa a apontar para a principal: ${gravou ? JSON.stringify(gravou.data.approvalVersao) : '-'}`);
+    await page.waitForTimeout(400);
+    checar(!(await corpo(page)).includes('O cliente aprovou a versão B'),
+        '24. o aviso sai depois de aplicada');
+    checar(erros.length === 0, `24. sem erro de JavaScript${erros.length ? ': ' + erros[0] : ''}`);
+    await page.screenshot({ path: 'dist-harness/v-ab-escolha.png' });
     await page.close();
 }
 

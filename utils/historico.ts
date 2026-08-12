@@ -41,6 +41,14 @@ export interface HistoricoEntrada {
     porNome?: string | null;
     /** 'agencia' | 'cliente' - o portal precisa distinguir de que lado veio. */
     porPapel: 'agencia' | 'cliente';
+    /**
+     * Rotulo da versao, em post com teste A/B: o cliente aprovou a A ou a B.
+     *
+     * Vazio em post normal. Fica gravado no registro em vez de ser lido do post
+     * porque promover troca as versoes de lugar depois - o historico tem que dizer o
+     * que foi escolhido NAQUELE dia, e nao o que esta na posicao B hoje.
+     */
+    versao?: string | null;
     em: Date;
 }
 
@@ -169,7 +177,9 @@ export function descreverHistorico(e: HistoricoEntrada): { texto: string; destaq
             };
         }
         case 'aprovacao':
-            if (e.para === 'aprovado') return { texto: 'Aprovado' };
+            if (e.para === 'aprovado') {
+                return { texto: e.versao ? `Aprovado — versão ${e.versao}` : 'Aprovado' };
+            }
             if (e.para === 'ajuste_solicitado') return { texto: 'Ajuste solicitado' };
             return { texto: 'Voltou para aprovação' };
     }

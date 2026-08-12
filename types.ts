@@ -266,6 +266,22 @@ export interface CalendarEvent {
   approvalAt?: Date | null;
 
   /**
+   * Rotulo da versao que o cliente escolheu ao aprovar - teste A/B.
+   *
+   * Aponta para uma POSICAO ("aprovei a B"), nao para o conteudo: promover troca o
+   * conteudo de lugar e este campo e remapeado junto (ver promoverVariante).
+   *
+   * Vazio em post sem A/B, e vazio tambem quando o cliente pede ajuste - decisao
+   * nova apaga a escolha anterior, senao o post ficaria marcado como "cliente
+   * escolheu a B" depois de ele voltar atras.
+   *
+   * A escolha NAO promove por si: o cliente so pode escrever campos de aprovacao
+   * (ver firestore.rules), e promover reescreve legenda e midia. Quem aplica e a
+   * agencia, com a tela avisando que a versao escolhida ainda nao e a principal.
+   */
+  approvalVersao?: string | null;
+
+  /**
    * Imagem de previa definida a mao pela agencia. Tem prioridade sobre tudo:
    * e o conserto de quando a resolucao automatica escolhe o arquivo errado.
    */

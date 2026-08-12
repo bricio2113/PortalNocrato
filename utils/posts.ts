@@ -30,13 +30,23 @@ export async function setApproval(
     eventId: string,
     state: ApprovalState,
     by: string | null,
-    byName?: string | null
+    byName?: string | null,
+    /**
+     * Rotulo da versao escolhida, no teste A/B. `null` em post normal e tambem em
+     * pedido de ajuste - ver o comentario da escrita abaixo.
+     */
+    versao?: string | null
 ): Promise<void> {
     await empresaRef(empresaId).collection('events').doc(eventId).update({
         approval: state,
         approvalBy: by,
         approvalByName: byName || null,
-        approvalAt: new Date()
+        approvalAt: new Date(),
+        // SEMPRE escrito, inclusive como null. Decisao nova tem que APAGAR a escolha
+        // anterior: sem isto, pedir ajuste depois de aprovar a B deixaria o post
+        // marcado como "cliente escolheu a versao B" - e a agencia promoveria uma
+        // versao que acabou de ser recusada.
+        approvalVersao: versao || null
     });
 
     // Historico DEPOIS da escrita principal, e sem await bloqueante: registrar()
@@ -46,6 +56,9 @@ export async function setApproval(
     if (by) {
         void registrar(empresaId, {
             eventId, tipo: 'aprovacao', para: state,
+            // A versao entra no historico porque e prova: numa discussao sobre "eu
+            // aprovei a outra", "Aprovado - versao B" responde e o estado atual nao.
+            versao: versao || null,
             por: by, porNome: byName || null,
             // Quem chama setApproval na interface e sempre o cliente - a agencia
             // ve o estado e nao vota (ver EventDetailModal).

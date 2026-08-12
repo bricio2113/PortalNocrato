@@ -3,14 +3,14 @@
  *
  *   npx tsx utils/variantes.test.mts
  *
- * Estas quatro funcoes sao puras e mexem em dado que o usuario escreveu - legenda,
- * arquivo, metrica. Errar aqui nao quebra a tela: TROCA o conteudo de lugar em
+ * Funcoes puras que mexem em dado que o usuario escreveu - legenda, arquivo, metrica
+ * e a escolha do cliente. Errar aqui nao quebra a tela: TROCA o conteudo de lugar em
  * silencio, e a pessoa descobre quando o post sai publicado com a legenda da outra
  * versao. Por isso teste, e nao so verificacao de interface.
  */
 import {
     novaVariante, promoverVariante, mesclarVariantes, versaoComMaisInteracao,
-    ehTesteAB, totalVersoes
+    ehTesteAB, totalVersoes, escolhaForaDaPrincipal
 } from './variantes.js';
 import type { CalendarEvent, VarianteConteudo } from '../types.js';
 
@@ -105,6 +105,50 @@ ok(promoverVariante(base({ variantes: [] }), 'nao-existe') === null,
     );
     ok(Object.values(juntas[0]).every(x => x !== undefined),
         'o merge não devolve variante com campo undefined');
+}
+
+// --- 3c. a escolha do cliente anda junto na promocao --------------------
+// `approvalVersao` aponta para uma POSICAO ("aprovei a B") e promover troca o
+// conteudo de posicao. Errar aqui e o pior defeito possivel deste recurso: a tela
+// diria "aprovado - versao B" apontando para a peca que o cliente RECUSOU.
+{
+    const comEscolha = base({
+        copy: 'da principal', approvalVersao: 'B',
+        variantes: [v('vb', 'B', { copy: 'da B' })]
+    });
+    const patch = promoverVariante(comEscolha, 'vb')!;
+    ok(patch.approvalVersao === 'A',
+        `a escolha do cliente segue o conteudo dele: ${patch.approvalVersao}`);
+
+    // E vale ao contrario: se o aprovado era a principal e outra versao sobe, o
+    // conteudo aprovado desceu para a posicao dela.
+    const aprovouA = base({ approvalVersao: 'A', variantes: [v('vb', 'B')] });
+    ok(promoverVariante(aprovouA, 'vb')!.approvalVersao === 'B',
+        'e o conteudo que desce leva a aprovacao com ele');
+
+    // Escolha em OUTRA versao (aprovou a C, promoveram a B): nenhuma das duas
+    // posicoes mexidas e a dela, entao o campo nao pode ser tocado.
+    const aprovouC = base({ approvalVersao: 'C', variantes: [v('vb', 'B'), v('vc', 'C')] });
+    ok(!('approvalVersao' in promoverVariante(aprovouC, 'vb')!),
+        'promover outra versao nao encosta na escolha do cliente');
+
+    // Post sem escolha nenhuma: nada de `approvalVersao: undefined` no patch, que o
+    // Firestore recusaria.
+    ok(!('approvalVersao' in promoverVariante(base({ variantes: [v('vb', 'B')] }), 'vb')!),
+        'sem escolha, o campo nem entra na gravacao');
+}
+
+// --- 3d. quando avisar que a escolha nao foi aplicada -------------------
+{
+    ok(escolhaForaDaPrincipal({ approvalVersao: 'B', variantes: [v('vb', 'B')] }) === 'B',
+        'cliente aprovou a B e a principal e outra: precisa de aviso');
+    ok(escolhaForaDaPrincipal({ approvalVersao: 'A', variantes: [v('vb', 'B')] }) === null,
+        'cliente aprovou a principal: nada a aplicar');
+    ok(escolhaForaDaPrincipal({ variantes: [v('vb', 'B')] }) === null,
+        'ainda sem decisao do cliente: nada a avisar');
+    // Dado velho: campo sobrou de quando havia variante, e o A/B foi desligado.
+    ok(escolhaForaDaPrincipal({ approvalVersao: 'B', variantes: [] }) === null,
+        'post que deixou de ser A/B nao fica pedindo para promover uma versao que nao existe');
 }
 
 // --- 4. merge: cada metade com o seu dono -------------------------------
