@@ -9,7 +9,7 @@ F_BLACKI = '/usr/share/fonts/opentype/inter/InterDisplay-BlackItalic.otf'
 F_XB = '/usr/share/fonts/opentype/inter/Inter-ExtraBold.otf'
 font = lambda p, s: ImageFont.truetype(p, s)
 
-YEL = (255, 212, 0); RED = (227, 27, 35); NAVY = (6, 26, 74); WHITE = (255, 255, 255)
+YEL = (255, 210, 0); RED = (227, 27, 35); NAVY = (12, 12, 12); WHITE = (255, 255, 255); BLK = (12, 12, 12); AMB = (255, 170, 0)
 
 # ---------------- easing ----------------
 clamp = lambda x: max(0.0, min(1.0, x))
@@ -33,7 +33,7 @@ def text_img(txt, fpath, size, fill, stroke=0, stroke_fill=NAVY, shadow=True, pa
     pos = (pad - bb[0], pad - bb[1])
     if shadow:
         sh = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-        ImageDraw.Draw(sh).text((pos[0] + 8, pos[1] + 12), txt, font=f, fill=(0, 0, 30, 170), stroke_width=stroke, stroke_fill=(0, 0, 30, 170))
+        ImageDraw.Draw(sh).text((pos[0] + 8, pos[1] + 12), txt, font=f, fill=(0, 0, 0, 150), stroke_width=stroke, stroke_fill=(0, 0, 0, 150))
         im = Image.alpha_composite(im, sh.filter(ImageFilter.GaussianBlur(6)))
         d = ImageDraw.Draw(im)
     d.text(pos, txt, font=f, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
@@ -68,7 +68,7 @@ def with_shadow(im, off=(0, 14), blur=14, a=150):
     out = Image.new('RGBA', (im.width + pad * 2, im.height + pad * 2), (0, 0, 0, 0))
     sh = Image.new('RGBA', out.size, (0, 0, 0, 0))
     mask = im.getchannel('A')
-    sh.paste((0, 0, 30, a), (pad + off[0], pad + off[1]), mask)
+    sh.paste((0, 0, 0, a), (pad + off[0], pad + off[1]), mask)
     out = Image.alpha_composite(out, sh.filter(ImageFilter.GaussianBlur(blur)))
     out.alpha_composite(im, (pad, pad))
     return out
@@ -78,8 +78,9 @@ def with_shadow(im, off=(0, 14), blur=14, a=150):
 yy, xx = np.mgrid[0:H, 0:W]
 r = np.sqrt(((xx - W / 2) / W) ** 2 + ((yy - H * 0.45) / H) ** 2)
 r = np.clip(r / 0.75, 0, 1)[..., None]
-c_in = np.array([40, 120, 230]); c_out = np.array([4, 18, 60])
-BG = Image.fromarray((c_in * (1 - r) + c_out * r).astype(np.uint8), 'RGB').convert('RGBA')
+mk = lambda ci, co: Image.fromarray((np.array(ci) * (1 - r) + np.array(co) * r).astype(np.uint8), 'RGB').convert('RGBA')
+BG_D = mk([48, 42, 20], [0, 0, 0])
+BG_Y = mk([255, 226, 40], [245, 160, 0])
 
 # sunburst rays
 RS = 2600
@@ -89,15 +90,29 @@ n = 24
 for k in range(n):
     a0 = 2 * math.pi * k / n; a1 = a0 + math.pi / n
     d.polygon([(RS / 2, RS / 2), (RS / 2 + RS * math.cos(a0), RS / 2 + RS * math.sin(a0)),
-               (RS / 2 + RS * math.cos(a1), RS / 2 + RS * math.sin(a1))], fill=(255, 255, 255, 26))
+               (RS / 2 + RS * math.cos(a1), RS / 2 + RS * math.sin(a1))], fill=(255, 255, 255, 255))
 rays_small = rays.resize((RS // 2, RS // 2), Image.BILINEAR)
+def tint(im, col, a):
+    al = im.getchannel('A').point(lambda v: v * a // 255)
+    out = Image.new('RGBA', im.size, col + (0,)); out.putalpha(al); return out
+RAYS_D = tint(rays_small, YEL, 34)
+RAYS_Y = tint(rays_small, (255, 255, 255), 70)
+
+# hazard stripes band
+def hazard(w, h, step=60):
+    im = Image.new('RGBA', (w + step * 4, h), BLK + (255,)); dd = ImageDraw.Draw(im)
+    for x in range(-h, w + step * 4, step):
+        dd.polygon([(x, h), (x + step / 2, h), (x + step / 2 + h, 0), (x + h, 0)], fill=YEL)
+    return im
+HAZ = hazard(W, 46)
 
 # glow
 def glow(size, color, a=200):
     g = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     ImageDraw.Draw(g).ellipse((size * .2, size * .2, size * .8, size * .8), fill=color + (a,))
     return g.filter(ImageFilter.GaussianBlur(size * .12))
-GLOW = glow(1100, (120, 210, 255), 170)
+GLOW = glow(1100, (0, 0, 0), 235)
+GLOW_Y = glow(1300, (255, 255, 255), 120)
 
 # bottles
 bot = Image.open('cut/1394b966.png').convert('RGBA')
@@ -108,15 +123,17 @@ bot = bot.resize((int(bot.width * BH / bot.height), BH), Image.LANCZOS)
 BOT = with_shadow(bot, off=(0, 30), blur=22, a=160)
 
 # texts
-T_PROMO = text_img('PROMOÇÃO', F_BLACKI, 168, WHITE, stroke=8, stroke_fill=NAVY)
-T_IMPER = text_img('IMPERDÍVEL', F_BLACKI, 150, YEL, stroke=0)
-rib_w = T_IMPER.width + 40
-RIB = rounded(rib_w, T_IMPER.height - 30, 26, RED)
-RIB.alpha_composite(T_IMPER, (20, -15))
-RIB = with_shadow(RIB)
+T_PROMO_D = text_img('PROMOÇÃO', F_BLACKI, 168, YEL, stroke=6, stroke_fill=BLK)
+T_PROMO_Y = text_img('PROMOÇÃO', F_BLACKI, 168, BLK, stroke=6, stroke_fill=WHITE)
+def ribbon(bg, fg):
+    ti = text_img('IMPERDÍVEL', F_BLACKI, 150, fg, stroke=0, shadow=False)
+    rb = rounded(ti.width + 40, ti.height - 30, 26, bg)
+    rb.alpha_composite(ti, (20, -15)); return with_shadow(rb)
+RIB_D = ribbon(WHITE, BLK)
+RIB_Y = ribbon(BLK, YEL)
 
-T_BRAND = text_img('SMIRNOFF ICE', F_BLACK, 104, WHITE, stroke=6, stroke_fill=NAVY)
-T_SUB = text_img('sabor limão clássico', F_XB, 44, (200, 230, 255), shadow=True)
+T_BRAND = text_img('SMIRNOFF ICE', F_BLACK, 104, BLK, stroke=6, stroke_fill=WHITE)
+T_SUB = text_img('sabor limão clássico', F_XB, 44, BLK, shadow=False)
 
 # price starburst
 def starburst(R, pts=18, inner=0.86):
@@ -126,13 +143,13 @@ def starburst(R, pts=18, inner=0.86):
     for k in range(pts * 2):
         rr = R if k % 2 == 0 else R * inner; ang = math.pi * k / pts
         poly.append((S / 2 + rr * math.cos(ang), S / 2 + rr * math.sin(ang)))
-    dd.polygon(poly, fill=RED)
-    dd.ellipse((S / 2 - R * .78, S / 2 - R * .78, S / 2 + R * .78, S / 2 + R * .78), outline=YEL, width=8)
+    dd.polygon(poly, fill=BLK)
+    dd.ellipse((S / 2 - R * .78, S / 2 - R * .78, S / 2 + R * .78, S / 2 + R * .78), outline=YEL, width=9)
     return im
 BURST = starburst(250)
 P_LBL = text_img('POR APENAS', F_XB, 38, WHITE, shadow=False, pad=10)
-P_RS = text_img('R$', F_BLACK, 70, YEL, shadow=False, pad=10)
-P_VAL = text_img('9,00', F_BLACK, 168, WHITE, shadow=False, pad=10)
+P_RS = text_img('R$', F_BLACK, 70, WHITE, shadow=False, pad=10)
+P_VAL = text_img('9,00', F_BLACK, 168, YEL, shadow=False, pad=10)
 PRICE = Image.new('RGBA', (560, 420), (0, 0, 0, 0))
 PRICE.alpha_composite(P_LBL, ((560 - P_LBL.width) // 2, 70))
 row_w = P_RS.width + P_VAL.width - 10
@@ -141,21 +158,21 @@ PRICE.alpha_composite(P_RS, (x0, 160)); PRICE.alpha_composite(P_VAL, (x0 + P_RS.
 PRICE = with_shadow(PRICE, off=(0, 6), blur=6, a=120)
 
 # long neck pill
-T_LN = text_img('LONG NECK 275ml', F_BLACK, 50, NAVY, shadow=False, pad=8)
-PILL = rounded(T_LN.width + 60, T_LN.height + 30, (T_LN.height + 30) // 2, YEL)
+T_LN = text_img('LONG NECK 275ml', F_BLACK, 50, YEL, shadow=False, pad=8)
+PILL = rounded(T_LN.width + 60, T_LN.height + 30, (T_LN.height + 30) // 2, BLK)
 PILL.alpha_composite(T_LN, (30, 15)); PILL = with_shadow(PILL)
 
 # "só esse mês" ribbon
-T_MES = text_img('SÓ ESSE MÊS!', F_BLACKI, 96, NAVY, shadow=False, pad=10)
-MES = rounded(T_MES.width + 90, T_MES.height + 40, 30, YEL)
+T_MES = text_img('SÓ ESSE MÊS!', F_BLACKI, 96, YEL, shadow=False, pad=10)
+MES = rounded(T_MES.width + 90, T_MES.height + 40, 30, BLK, outline=WHITE, ow=6)
 MES.alpha_composite(T_MES, (45, 20)); MES = with_shadow(MES)
 
 # store card
 def store_card():
     w, h = 940, 210
-    im = rounded(w, h, 40, (255, 255, 255, 245), outline=YEL, ow=8)
-    t1 = text_img('APENAS NA', F_XB, 40, (30, 80, 170), shadow=False, pad=6)
-    t2 = text_img('Tabadega dos Caiçaras', F_BLACK, 76, NAVY, shadow=False, pad=6)
+    im = rounded(w, h, 40, BLK + (250,), outline=WHITE, ow=6)
+    t1 = text_img('APENAS NA', F_XB, 40, WHITE, shadow=False, pad=6)
+    t2 = text_img('Tabadega dos Caiçaras', F_BLACK, 76, YEL, shadow=False, pad=6)
     im.alpha_composite(t1, ((w - t1.width) // 2, 22))
     im.alpha_composite(t2, ((w - t2.width) // 2, 80))
     return with_shadow(im)
@@ -171,12 +188,12 @@ def share_icon(s, col):
     return im
 def share_card():
     w, h = 940, 300
-    im = rounded(w, h, 40, (10, 40, 110, 235), outline=(120, 200, 255), ow=5)
+    im = rounded(w, h, 40, WHITE + (250,), outline=BLK, ow=8)
     ic_bg = Image.new('RGBA', (130, 130), (0, 0, 0, 0))
-    ImageDraw.Draw(ic_bg).ellipse((0, 0, 129, 129), fill=YEL)
-    ic_bg.alpha_composite(share_icon(90, NAVY), (20, 20))
+    ImageDraw.Draw(ic_bg).ellipse((0, 0, 129, 129), fill=BLK)
+    ic_bg.alpha_composite(share_icon(90, YEL), (20, 20))
     im.alpha_composite(ic_bg, (40, (h - 130) // 2))
-    lines = [('Compartilhe com aquela', WHITE, 54), ('pessoa que não pode', WHITE, 54), ('perder essa oferta!', YEL, 60)]
+    lines = [('Compartilhe com aquela', BLK, 54), ('pessoa que não pode', BLK, 54), ('perder essa oferta!', (210, 120, 0), 60)]
     y = 40
     for txt, col, sz in lines:
         t = text_img(txt, F_BLACK, sz, col, shadow=False, pad=4)
@@ -198,20 +215,35 @@ def draw_spark(d, x, y, s, a):
 # ---------------- frame ----------------
 def frame(fi):
     t = fi / FPS
-    im = BG.copy()
-    # rays rotate
     ang = t * 12
-    ry = rays_small.rotate(ang, Image.BILINEAR).resize((RS, RS), Image.BILINEAR)
     pulse = 1 + 0.04 * math.sin(t * 2 * math.pi * 124 / 60) * (t > 1.55)
-    rcy = H * 0.42 if t > 1.5 else H * 0.47
-    paste_c(im, ry, W / 2, rcy, scale=pulse)
+    WA, WB = 1.4, 1.72  # diagonal wipe black -> yellow
+    def bg(kind):
+        b = (BG_D if kind == 'd' else BG_Y).copy()
+        ry = (RAYS_D if kind == 'd' else RAYS_Y).rotate(ang, Image.BILINEAR).resize((RS, RS), Image.BILINEAR)
+        paste_c(b, ry, W / 2, H * 0.47 if kind == 'd' else H * 0.42, scale=pulse)
+        return b
+    if t < WA: im = bg('d')
+    elif t >= WB: im = bg('y')
+    else:
+        pw = ease_in(prog(t, WA, WB)) * 1.0 if False else ease_out(prog(t, WA, WB))
+        im = bg('d'); y = bg('y')
+        m = Image.new('L', (W, H), 0); md = ImageDraw.Draw(m)
+        e = -H * 0.6 + (W + H * 0.6 + 200) * pw
+        md.polygon([(0, H), (e, H), (e + H * 0.6, 0), (0, 0)] if e > -H else [(0, 0)], fill=255)
+        # black edge stripe + yellow stripe on the leading edge
+        im.paste(y, (0, 0), m)
+        ed = ImageDraw.Draw(im)
+        ed.polygon([(e, H), (e + 60, H), (e + 60 + H * 0.6, 0), (e + H * 0.6, 0)], fill=BLK)
+        ed.polygon([(e + 60, H), (e + 90, H), (e + 90 + H * 0.6, 0), (e + 60 + H * 0.6, 0)], fill=WHITE)
+    dark = t < 1.5
 
     # particles
     pl = Image.new('RGBA', (W, H), (0, 0, 0, 0)); pd = ImageDraw.Draw(pl)
     for p in PART:
         y = (p['y0'] - p['sp'] * t) % (H + 40) - 20
         x = p['x'] + 18 * math.sin(t * 2 + p['ph'])
-        pd.ellipse((x - p['r'], y - p['r'], x + p['r'], y + p['r']), outline=(255, 255, 255, int(p['a'])), width=3)
+        pd.ellipse((x - p['r'], y - p['r'], x + p['r'], y + p['r']), outline=((255, 210, 0) if dark else (255, 255, 255)) + (int(p['a']),), width=3)
     im.alpha_composite(pl)
 
     # shake
@@ -232,11 +264,11 @@ def frame(fi):
         s1 = 2.6 - 1.6 * p1
     else:
         s1 = 1.0
-    paste_c(L, T_PROMO, W / 2, hy - 95 * hs, scale=s1 * hs, alpha=clamp(p1 * 3) if t < 0.38 else 1)
+    paste_c(L, T_PROMO_D if dark else T_PROMO_Y, W / 2, hy - 95 * hs, scale=s1 * hs, alpha=clamp(p1 * 3) if t < 0.38 else 1)
     if t >= 0.38:
         rib_x = -W / 2 + (W / 2 + W) * p2 if p2 < 1 else W / 2
         rib_x = W * 1.5 + (W / 2 - W * 1.5) * p2
-        paste_c(L, RIB, rib_x, hy + 105 * hs, scale=hs, rot=4)
+        paste_c(L, RIB_D if dark else RIB_Y, rib_x, hy + 105 * hs, scale=hs, rot=4)
 
     # ===== bottles =====
     if t >= 1.55:
@@ -248,7 +280,8 @@ def frame(fi):
         bx = 420 - 20 * shrink
         by = by - 40 * shrink
         gl = clamp(prog(t, 1.7, 2.3))
-        paste_c(im, GLOW, bx, by + 30, scale=1 + 0.05 * math.sin(t * 3), alpha=gl)
+        paste_c(im, GLOW_Y, bx, by + 30, scale=1.1, alpha=gl)
+        paste_c(im, GLOW, bx, by + 60, scale=0.85 + 0.04 * math.sin(t * 3), alpha=gl * 0.9)
         paste_c(L, BOT, bx, by + bob, scale=bsc)
 
         # brand title
@@ -271,14 +304,14 @@ def frame(fi):
         pn = back(prog(t, 3.45, 3.85), 1.6)
         out = ease_in(prog(t, 6.1, 6.45))
         x = -500 + (290 + 500) * pn - 900 * out
-        paste_c(L, PILL, x, 1440, rot=3)
+        paste_c(L, PILL, x, 1405, rot=3)
 
     # ===== só esse mês =====
     if 4.1 <= t < 6.6:
         pm = back(prog(t, 4.1, 4.5), 1.6)
         out = ease_in(prog(t, 6.15, 6.5))
         x = W + 500 + (W / 2 - (W + 500)) * pm + 1300 * out
-        paste_c(L, MES, x, 1555, rot=-3, scale=1 + 0.03 * math.sin(t * 8))
+        paste_c(L, MES, x, 1570, rot=-3, scale=1 + 0.03 * math.sin(t * 8))
 
     # ===== store card =====
     if t >= 4.85:
@@ -294,6 +327,11 @@ def frame(fi):
         paste_c(L, SHARE, W / 2, y, scale=beat if t > 6.9 else 1)
 
     im.alpha_composite(L, (int(sx), int(sy)))
+    if t > 1.6:
+        ph = ease_out(prog(t, 1.6, 1.95)); off = int((t * 160) % 60)
+        hb = HAZ.crop((off, 0, off + W, HAZ.height))
+        safe_paste(im, hb, 0, int(-HAZ.height + HAZ.height * ph))
+        safe_paste(im, hb.transpose(Image.FLIP_LEFT_RIGHT), 0, int(H - HAZ.height * ph))
 
     # sparkles
     if t > 2.8:
