@@ -173,16 +173,24 @@ def octagon(R, fill, outline=None, ow=0, inset=0):
     return im
 def badge():
     B = octagon(250, NAVY, WHITE, 6, 18)
-    S = B.width
-    rs = text_img('R$', MONT[900], 54, WHITE, pad=4)
-    n9 = text_img('9', MONT[900], 270, WHITE, pad=4)
-    c00 = text_img(',00', MONT[900], 92, WHITE, pad=4)
-    x = (S - (rs.width + n9.width + c00.width - 16)) // 2
-    B.alpha_composite(rs, (x, 190)); B.alpha_composite(n9, (x + rs.width - 6, 70))
-    B.alpha_composite(c00, (x + rs.width + n9.width - 16, 88))
-    l1 = text_img('POR UNIDADE', MONT[800], 42, WHITE, pad=4)
-    l2 = text_img('APROVEITE!', MONT[900], 52, WHITE, pad=4)
-    B.alpha_composite(l1, ((S - l1.width) // 2, 345)); B.alpha_composite(l2, ((S - l2.width) // 2, 395))
+    S = B.width; C = S / 2
+    rs = text_img('R$', MONT[900], 46, WHITE, pad=0)
+    n9 = text_img('9', MONT[900], 215, WHITE, pad=0)
+    c00 = text_img(',00', MONT[900], 76, WHITE, pad=0)
+    l1 = text_img('POR UNIDADE', MONT[800], 36, WHITE, pad=0)
+    l2 = text_img('APROVEITE!', MONT[900], 46, WHITE, pad=0)
+    gap = 8
+    row_w = rs.width + gap + n9.width + gap + c00.width
+    row_h = n9.height
+    total_h = row_h + 26 + l1.height + 12 + l2.height
+    y0 = int(C - total_h / 2)
+    x = int(C - row_w / 2)
+    B.alpha_composite(rs, (x, y0 + row_h - rs.height - 18))          # R$ sits low, beside the 9
+    B.alpha_composite(n9, (x + rs.width + gap, y0))
+    B.alpha_composite(c00, (x + rs.width + gap + n9.width + gap, y0 + 4))  # cents superscript
+    y = y0 + row_h + 26
+    B.alpha_composite(l1, (int(C - l1.width / 2), y)); y += l1.height + 12
+    B.alpha_composite(l2, (int(C - l2.width / 2), y))
     return with_shadow(B, off=(0, 16), blur=16, a=120)
 BADGE = badge()
 
