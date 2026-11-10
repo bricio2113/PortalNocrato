@@ -10,7 +10,7 @@ for l in open(M+'tokens.txt',encoding='utf8'):
     tok,i=l.rsplit(' ',1); vocab[tok if tok else ' ']=int(i)
 voices=np.fromfile(M+'voices.bin',dtype=np.float32).reshape(54,510,256)
 sess=ort.InferenceSession(M+'model.onnx')
-lines=["Promoção imperdível!","Smirnoff Ice, por apenas nove reais! Long neck!","Só esse mês, na Tabadega dos Caiçaras.","Compartilhe com aquela pessoa que não pode perder essa oferta!"]
+lines=["Promoção imperdível!","Smirnoff Ice, por apenas nove reais!","Só esse mês, na Tabadega dos Caiçaras.","Compartilhe com aquela pessoa que não pode perder essa oferta!","Long neck!"]
 fix={'Smirnoff':'Ismírnof','Ice':'Aice','Long neck':'Lóng néc','Tabadega':'Tabadéga'}
 sid=int(sys.argv[1]) if len(sys.argv)>1 else 42; sp=float(sys.argv[2]) if len(sys.argv)>2 else 1.1
 for i,t in enumerate(lines):

@@ -259,7 +259,7 @@ def frame(fi):
     im = bg.crop((ox, oy, ox + W, oy + H))
 
     shake = 0
-    for ti in (0.12, 0.42, 2.78):
+    for ti in (0.12, 0.42, 3.6):
         if ti <= t < ti + 0.22: shake = 16 * (1 - (t - ti) / 0.22)
     sx = int(shake * math.sin(t * 95)); sy = int(shake * math.cos(t * 83))
     L = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -288,8 +288,8 @@ def frame(fi):
     pl = ease_io(prog(t, 0.0, 0.9))
     lp = reveal(LOGO, pl)
     lscale = 1 + 0.015 * math.sin(t * 2 * math.pi * BPM / 60) * (t > 1.6)
-    if 4.2 <= t < 4.9:  # emphasis when the store name is said
-        lscale *= 1 + 0.08 * math.sin(prog(t, 4.2, 4.9) * math.pi)
+    if 5.4 <= t < 6.1:  # emphasis when the store name is said
+        lscale *= 1 + 0.08 * math.sin(prog(t, 5.4, 6.1) * math.pi)
     paste_c(L, lp, W / 2, 255, scale=lscale)
 
     # ---------- headline ----------
@@ -315,27 +315,28 @@ def frame(fi):
         paste_tl(L, SAB, 76, 812 - 20 * (1 - pl2), alpha=pl2)
 
     # ---------- price badge ----------
-    if t >= 2.72:
-        pp = elastic(prog(t, 2.72, 3.5))
+    if t >= 2.8:
+        pp = elastic(prog(t, 2.8, 3.55))
+        pp *= 1 + 0.12 * math.sin(math.pi * prog(t, 3.6, 3.9))  # bump on the cash-register hit
         beat = 1 + 0.03 * max(0, math.sin(t * 2 * math.pi * BPM / 60)) * (t > 3.5)
-        paste_c(L, BADGE, 290, 1170, scale=pp * beat, rot=(1 - clamp(prog(t, 2.72, 3.2))) * -120)
+        paste_c(L, BADGE, 290, 1170, scale=pp * beat, rot=(1 - clamp(prog(t, 2.8, 3.25))) * -120)
 
     # ---------- só esse mês sticker ----------
-    if 4.15 <= t:
-        pm = back(prog(t, 4.15, 4.5), 2.2)
+    if 4.6 <= t:
+        pm = back(prog(t, 4.6, 4.95), 2.2)
         paste_c(L, MES, 300, 935, scale=pm, rot=6)
 
     # ---------- bottom contact block ----------
-    if t >= 4.75:
-        pd_ = ease_out(prog(t, 4.75, 5.15)); pt = back(prog(t, 4.9, 5.35), 1.5); p18 = prog(t, 5.2, 5.5)
+    if t >= 5.15:
+        pd_ = ease_out(prog(t, 5.15, 5.55)); pt = back(prog(t, 5.3, 5.75), 1.5); p18 = prog(t, 5.6, 5.9)
         paste_c(L, T_DEL, W / 2, 1745 + 60 * (1 - pd_), alpha=pd_, scale=0.9 + 0.1 * pt)
         paste_c(L, T_18, W / 2, 1845, alpha=p18)
 
     # ---------- share banner ----------
-    if t >= 6.4:
-        ps = back(prog(t, 6.4, 6.85), 1.3)
+    if t >= 6.72:
+        ps = back(prog(t, 6.72, 7.15), 1.3)
         x = -W + (W / 2 + W) * ps
-        beat = 1 + 0.02 * max(0, math.sin(t * 2 * math.pi * BPM / 60)) * (t > 7)
+        beat = 1 + 0.02 * max(0, math.sin(t * 2 * math.pi * BPM / 60)) * (t > 7.3)
         paste_c(L, SHARE, x, 1560, scale=beat, rot=-1.5)
 
     im.alpha_composite(L, (sx, sy))
@@ -349,11 +350,11 @@ def frame(fi):
 
     out = im.convert('RGB')
     fl = 0
-    for ti, dur, amp in ((0.42, 0.18, 0.45), (2.75, 0.18, 0.45), (6.38, 0.15, 0.25)):
+    for ti, dur, amp in ((0.42, 0.18, 0.45), (3.6, 0.18, 0.4), (6.7, 0.15, 0.25)):
         if ti <= t < ti + dur: fl = max(fl, amp * (1 - (t - ti) / dur))
     if fl > 0: out = Image.blend(out, Image.new('RGB', (W, H), (255, 255, 255)), fl)
-    if t < 0.12 or t > 9.7:
-        k = clamp(t / 0.12) if t < 0.12 else clamp((10 - t) / 0.3)
+    if t < 0.12 or t > 9.8:
+        k = clamp(t / 0.12) if t < 0.12 else clamp((10 - t) / 0.2)
         out = Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), out, k)
     return out
 

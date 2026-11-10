@@ -124,9 +124,9 @@ music *= fade
 
 # ---------------- voice ----------------
 voice = np.zeros(N)
-VOICE_T = [0.25, 1.6, 4.2, 6.4]
-for k, t in enumerate(VOICE_T):
-    place(voice, load(f'v{k}.wav'), t, 1.0)
+# v0 promo | v1 smirnoff..nove reais | (gap for cash register) | v4 long neck | v2 so esse mes | v3 compartilhe
+for fn, t in (('v0', 0.25), ('v1', 1.55), ('v4', 3.9), ('v2', 4.66), ('v3', 6.78)):
+    place(voice, load(fn + '.wav'), t, 1.0)
 # light presence: tiny short slap for "radio" feel
 voice = voice + 0.12 * np.concatenate([np.zeros(int(0.045 * SR)), voice[: -int(0.045 * SR)]])
 
@@ -143,17 +143,17 @@ place(sfx, impact(), 0.12, 0.8)
 place(sfx, impact(), 0.42, 0.6)
 place(sfx, whoosh(0.4), 1.3, 0.45)
 place(sfx, pop(), 1.75, 0.5)
-place(sfx, whoosh(0.3), 2.5, 0.35)
-place(sfx, ching(), 2.78, 0.9)
-place(sfx, sparkle(), 2.85, 0.5)
-place(sfx, pop(), 3.5, 0.5)
-place(sfx, whoosh(0.4), 4.05, 0.45)
-place(sfx, pop(), 4.95, 0.45)
-place(sfx, whoosh(0.4), 6.2, 0.45)
-place(sfx, pop(), 7.0, 0.35)
+place(sfx, whoosh(0.3), 2.75, 0.25)
+CH = ching(); CH *= np.exp(-np.arange(len(CH)) / SR * 2.5)  # shorter tail, ends before "long neck"
+place(sfx, CH, 3.6, 0.9)
+place(sfx, whoosh(0.4), 4.45, 0.45)
+place(sfx, pop(), 5.2, 0.45)
+place(sfx, whoosh(0.4), 6.55, 0.45)
+place(sfx, pop(), 7.2, 0.35)
 place(sfx, sparkle(), 9.2, 0.55)
 
-mix = voice * 1.0 + music * duck * 0.28 + sfx * 0.44
+sfx_duck = 1 - 0.5 * np.clip(venv / 0.08, 0, 1)
+mix = voice * 1.0 + music * duck * 0.28 + sfx * sfx_duck * 0.44
 mix = np.tanh(mix * 1.1) / np.tanh(1.1)
 mix = mix / np.abs(mix).max() * 0.95
 st = np.stack([mix, mix], 1)
