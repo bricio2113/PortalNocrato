@@ -117,10 +117,11 @@ TABLE = with_shadow(TABLE, off=(0, -10), blur=18, a=90)
 TABLE = TABLE.crop((54, 54, 54 + W, 54 + H))
 
 # bottles
-bot = Image.open('cut/1394b966.png').convert('RGBA')
-a = np.array(bot.getchannel('A')); a[a < 40] = 0
-bot.putalpha(Image.fromarray(a)); bot = bot.crop(bot.getbbox())
-BH = 770
+bot = Image.open('cut/bottles_trio.png').convert('RGBA')
+bot = bot.crop(bot.getbbox())
+from PIL import ImageEnhance
+bot = ImageEnhance.Brightness(bot).enhance(1.1)
+BH = 840
 BOT = bot.resize((int(bot.width * BH / bot.height), BH), Image.LANCZOS)
 # contact shadow
 CSH = Image.new('RGBA', (760, 160), (0, 0, 0, 0))
@@ -271,7 +272,7 @@ def frame(fi):
     if t >= 1.6:
         pb = back(prog(t, 1.6, 2.2), 1.3)
         by = 1560 + 1100 * (1 - pb)
-        bx = 790
+        bx = 830
         paste_c(L, CSH, bx + 10, 1548 + 600 * (1 - pb), alpha=clamp(pb))
         safe_paste(L, BOT, int(bx - BOT.width / 2), int(by - BOT.height))
 
