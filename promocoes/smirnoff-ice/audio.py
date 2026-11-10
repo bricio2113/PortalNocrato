@@ -134,7 +134,7 @@ voice = voice + 0.12 * np.concatenate([np.zeros(int(0.045 * SR)), voice[: -int(0
 venv = np.abs(voice)
 win = int(0.08 * SR)
 venv = np.convolve(venv, np.ones(win) / win, mode='same')
-duck = 1 - 0.55 * np.clip(venv / 0.08, 0, 1)
+duck = 1 - 0.75 * np.clip(venv / 0.08, 0, 1)
 
 # ---------------- sfx ----------------
 sfx = np.zeros(N)
@@ -153,7 +153,7 @@ place(sfx, whoosh(0.4), 6.2, 0.45)
 place(sfx, pop(), 7.0, 0.35)
 place(sfx, sparkle(), 9.2, 0.55)
 
-mix = voice * 1.0 + music * duck * 0.55 + sfx * 0.55
+mix = voice * 1.0 + music * duck * 0.28 + sfx * 0.44
 mix = np.tanh(mix * 1.1) / np.tanh(1.1)
 mix = mix / np.abs(mix).max() * 0.95
 st = np.stack([mix, mix], 1)

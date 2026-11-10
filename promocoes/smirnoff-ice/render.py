@@ -214,7 +214,7 @@ def phone_icon(s, col):
     h = h.rotate(-40, Image.BICUBIC, center=(s * .5, s * .49))
     im.alpha_composite(h)
     return im
-T_DEL = text_img('Atendemos por delivery!', MONT[700], 46, NAVY, pad=8)
+T_DEL = text_img('Atendemos por delivery!', MONT[800], 60, NAVY, pad=8)
 T_TEL = text_img('(13) 98161-0521', MONT[900], 92, NAVY, pad=8)
 PH_IC = phone_icon(104, NAVY)
 TEL = Image.new('RGBA', (PH_IC.width + 14 + T_TEL.width, max(PH_IC.height, T_TEL.height)), (0, 0, 0, 0))
@@ -328,8 +328,7 @@ def frame(fi):
     # ---------- bottom contact block ----------
     if t >= 4.75:
         pd_ = ease_out(prog(t, 4.75, 5.15)); pt = back(prog(t, 4.9, 5.35), 1.5); p18 = prog(t, 5.2, 5.5)
-        paste_c(L, T_DEL, W / 2, 1640 + 60 * (1 - pd_), alpha=pd_ * (1 - prog(t, 6.3, 6.5)))
-        paste_c(L, TEL, W / 2, 1745, scale=pt)
+        paste_c(L, T_DEL, W / 2, 1745 + 60 * (1 - pd_), alpha=pd_, scale=0.9 + 0.1 * pt)
         paste_c(L, T_18, W / 2, 1845, alpha=p18)
 
     # ---------- share banner ----------
