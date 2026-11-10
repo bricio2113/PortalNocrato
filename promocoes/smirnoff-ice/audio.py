@@ -125,10 +125,34 @@ music *= fade
 # ---------------- voice ----------------
 voice = np.zeros(N)
 # v0 promo | v1 smirnoff..nove reais | (gap for cash register) | v4 long neck | v2 so esse mes | v3 compartilhe
-for fn, t in (('v0', 0.25), ('v1', 1.55), ('v4', 3.9), ('v2', 4.66), ('v3', 6.78)):
-    place(voice, load(fn + '.wav'), t, 1.0)
+# laid out back-to-back with natural breaths; a 0.3s gap after "nove reais" holds the cash-register hit
+t = 0.15
+VT = {}
+for fn, gap in (('v0', 0.06), ('v1', 0.28), ('v4', 0.05), ('v2', 0.05), ('v3', 0)):
+    sig = load(fn + '.wav'); VT[fn] = t
+    place(voice, sig, t, 1.0); t += len(sig) / SR + gap
+print('voice times', {k: round(v, 2) for k, v in VT.items()}, 'end', round(t, 2))
+CH_T = VT['v4'] - 0.27
+# --- voice polish: gentle compression, low-cut, presence, small room ---
+def onepole_hp(x, fc):
+    k = np.exp(-2 * np.pi * fc / SR); y = np.empty_like(x); prev_x = prev_y = 0.0
+    for i, v in enumerate(x):
+        prev_y = k * (prev_y + v - prev_x); prev_x = v; y[i] = prev_y
+    return y
+voice = onepole_hp(voice, 90)
+envv = np.convolve(np.abs(voice), np.ones(480) / 480, mode='same')
+gain = np.where(envv > 0.12, (0.12 / np.maximum(envv, 1e-6)) ** 0.5, 1.0)
+voice = voice * gain
+# presence: add a little of the high band
+hi = voice - np.convolve(voice, np.ones(12) / 12, mode='same')
+voice = voice + 0.25 * hi
+# small room reverb (few early reflections + short diffuse tail)
+rv = np.zeros_like(voice)
+for d_ms, g in ((13, .22), (21, .17), (34, .12), (47, .09), (61, .07), (83, .05)):
+    d = int(d_ms * SR / 1000); rv[d:] += voice[:-d] * g
+voice = voice + 0.6 * rv
+voice = voice / np.abs(voice).max() * 0.9
 # light presence: tiny short slap for "radio" feel
-voice = voice + 0.12 * np.concatenate([np.zeros(int(0.045 * SR)), voice[: -int(0.045 * SR)]])
 
 # ducking envelope from voice
 venv = np.abs(voice)
@@ -145,11 +169,11 @@ place(sfx, whoosh(0.4), 1.3, 0.45)
 place(sfx, pop(), 1.75, 0.5)
 place(sfx, whoosh(0.3), 2.75, 0.25)
 CH = ching(); CH *= np.exp(-np.arange(len(CH)) / SR * 2.5)  # shorter tail, ends before "long neck"
-place(sfx, CH, 3.6, 0.9)
+place(sfx, CH, CH_T, 0.9)
 place(sfx, whoosh(0.4), 4.45, 0.45)
 place(sfx, pop(), 5.2, 0.45)
-place(sfx, whoosh(0.4), 6.55, 0.45)
-place(sfx, pop(), 7.2, 0.35)
+place(sfx, whoosh(0.4), 6.72, 0.45)
+place(sfx, pop(), 7.35, 0.35)
 place(sfx, sparkle(), 9.2, 0.55)
 
 sfx_duck = 1 - 0.5 * np.clip(venv / 0.08, 0, 1)

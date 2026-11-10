@@ -259,7 +259,7 @@ def frame(fi):
     im = bg.crop((ox, oy, ox + W, oy + H))
 
     shake = 0
-    for ti in (0.12, 0.42, 3.6):
+    for ti in (0.12, 0.42, 3.65):
         if ti <= t < ti + 0.22: shake = 16 * (1 - (t - ti) / 0.22)
     sx = int(shake * math.sin(t * 95)); sy = int(shake * math.cos(t * 83))
     L = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -317,7 +317,7 @@ def frame(fi):
     # ---------- price badge ----------
     if t >= 2.8:
         pp = elastic(prog(t, 2.8, 3.55))
-        pp *= 1 + 0.12 * math.sin(math.pi * prog(t, 3.6, 3.9))  # bump on the cash-register hit
+        pp *= 1 + 0.12 * math.sin(math.pi * prog(t, 3.65, 3.95))  # bump on the cash-register hit
         beat = 1 + 0.03 * max(0, math.sin(t * 2 * math.pi * BPM / 60)) * (t > 3.5)
         paste_c(L, BADGE, 290, 1170, scale=pp * beat, rot=(1 - clamp(prog(t, 2.8, 3.25))) * -120)
 
@@ -333,8 +333,8 @@ def frame(fi):
         paste_c(L, T_18, W / 2, 1845, alpha=p18)
 
     # ---------- share banner ----------
-    if t >= 6.72:
-        ps = back(prog(t, 6.72, 7.15), 1.3)
+    if t >= 6.88:
+        ps = back(prog(t, 6.88, 7.3), 1.3)
         x = -W + (W / 2 + W) * ps
         beat = 1 + 0.02 * max(0, math.sin(t * 2 * math.pi * BPM / 60)) * (t > 7.3)
         paste_c(L, SHARE, x, 1560, scale=beat, rot=-1.5)
@@ -350,7 +350,7 @@ def frame(fi):
 
     out = im.convert('RGB')
     fl = 0
-    for ti, dur, amp in ((0.42, 0.18, 0.45), (3.6, 0.18, 0.4), (6.7, 0.15, 0.25)):
+    for ti, dur, amp in ((0.42, 0.18, 0.45), (3.65, 0.18, 0.4), (6.86, 0.15, 0.25)):
         if ti <= t < ti + dur: fl = max(fl, amp * (1 - (t - ti) / dur))
     if fl > 0: out = Image.blend(out, Image.new('RGB', (W, H), (255, 255, 255)), fl)
     if t < 0.12 or t > 9.8:
